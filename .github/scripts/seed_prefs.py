@@ -23,6 +23,8 @@ CHECKINS = [
         "enabled": True, "aboutYesterday": True,
         "mathCount": 3, "mathLevel": 3,
         "scanCode": "GIST-DEMO-SINK", "scanLabel": "Bathroom sink",
+        "repeat": {"kind": "weekly", "days": [1, 2, 3, 4, 5]},
+        "background": {"kind": "none", "intervalSec": 10, "caption": "Rise and shine. Future you says thanks."},
         "questions": [
             q("latefood", "Did you eat anything after 9 PM last night?"),
             q("alcohol", "Did you drink alcohol last night?"),

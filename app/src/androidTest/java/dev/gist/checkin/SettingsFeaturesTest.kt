@@ -249,12 +249,11 @@ class SoundAndBackgroundTest {
             Backgrounds.savePhoto(TestEnv.ctx, "b", 1, solidPhoto(Color.GREEN))
         }
         alarmScreen().use {
-            onView(tagged("ringing-background")).check(matches(withContentDescription("Background photo 1 of 2")))
-            TestEnv.eventually(6_000) {
-                onView(tagged("ringing-background")).check(matches(withContentDescription("Background photo 2 of 2")))
-            }
-            TestEnv.eventually(6_000) {
-                onView(tagged("ringing-background")).check(matches(withContentDescription("Background photo 1 of 2")))
+            // Every second it moves on: we should see both photos, then the first again.
+            for (n in listOf(2, 1, 2)) {
+                TestEnv.eventually(6_000) {
+                    onView(tagged("ringing-background")).check(matches(withContentDescription("Background photo $n of 2")))
+                }
             }
         }
     }

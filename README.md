@@ -6,13 +6,15 @@ about what you ate. Each step is optional, so a check-in can be a plain hard-to-
 wake-up alarm, a diet survey, or both. You can have as many check-ins as you like. It keeps a simple log so you can see the *gist* of your
 diet without counting calories.
 
-- **One dependency:** [ZXing core](https://github.com/zxing/zxing) (Apache-2.0), an
-  open-source barcode decoder written in plain Java, for scanning. Everything else
-  (camera, UI, storage) uses Android's built-in APIs. There's no AndroidX and no Google
-  Play services.
+- **Two small dependencies**, both open-source plain Java (Apache-2.0):
+  [ZXing core](https://github.com/zxing/zxing), a barcode decoder, for scanning; and
+  [SnakeYAML Engine](https://bitbucket.org/snakeyaml/snakeyaml-engine), a YAML parser,
+  for backup files. Everything else (camera, UI, storage, video) uses Android's built-in
+  APIs. There's no AndroidX and no Google Play services. SnakeYAML Engine stays on 2.x
+  on purpose: 3.x needs Java 11 library methods that Android 10–12 don't have.
 - **No internet permission.** Nothing ever leaves your phone. Answers live in the app's
   private storage, and the only way out is the **Export CSV** button.
-- About 1,900 lines of Kotlin in 12 files. You can read all of it in one sitting.
+- About 4,400 lines of Kotlin in 25 files, with no generated code.
 
 <p>
 <img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/01-start.png" width="200" alt="Start page">
@@ -127,7 +129,7 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
 - **Unit tests** (`app/src/test`, plain JVM, seconds): with several times, the next alarm
   is the soonest one ahead and wraps to tomorrow's first; math problems always have the right
   answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
-  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions.
+  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions; the check-in library templates are well formed and copies get free names; background descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
   - multiple times: each time's results are saved separately; History shows ✗ for a day if
@@ -149,12 +151,19 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     rules save and move the real alarm to the right day; delete
   - History: correct stats, and fixing a day from the grid updates them
   - saving and loading, including data from the first version
-  - backup: export → import on a "fresh phone" restores check-ins, answers and photos;
-    bad files are rejected without changing anything
+  - backup: YAML export → import on a "fresh phone" restores check-ins, answers, slideshow
+    photos and video; old JSON backups and hand-edited YAML import; bad files are
+    rejected without changing anything
   - Light and Dark override the phone's setting
   - a real alarm plays the check-in's chosen sound; Silent plays nothing; a missing sound
-    falls back to a default; the background photo shows behind the ringing screen and can
-    be removed
+    falls back to a default; a photo, a cycling slideshow and a playing (muted) video show
+    behind the ringing screen, with the caption; caption-only works; background type,
+    slideshow speed and caption save from the edit page
+  - library: + Add check-in opens it; adding a template copies it (new id, schedule,
+    questions), arms its alarm and opens it; a second copy gets "Water 2"; Create your own
+    starts blank
+  - leaving a ringing alarm with Home brings it back to the front, both while ringing and
+    after Start check-in
   - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
     over, the alarm rings until the question is answered, and the answer is saved
 
@@ -215,14 +224,21 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **Skip** cancels just that ring. It's only possible before the ring goes off, and
     **Undo** brings it back.
   Both apply to the next ring only.
-- **Sound and photo per check-in:** On a check-in's page, under **While it rings**, pick
-  its alarm sound from the phone's sounds (or "Silent" to only vibrate), and optionally a
-  background photo for the ringing screen. The photo is copied into the app (resized), so
-  deleting the original doesn't break it.
+- **Sound, background and caption per check-in:** On a check-in's page, under **While it
+  rings**:
+  - **Sound:** any of the phone's sounds, or "Silent" to only vibrate.
+  - **Background:** **None**, **One photo**, a **Slideshow of photos** (pick up to 20;
+    they cross-fade every 3, 5, 10, 30 or 60 seconds), or a **Video** (up to 30 MB;
+    plays muted and loops, so you still hear the alarm). Media is copied into the app
+    (photos resized), so deleting the originals doesn't break it.
+  - **Caption:** optional text shown in large type on the ringing screen, e.g. "Future
+    you says thanks". It works with or without a background.
 - **Settings** (button at the bottom of the start page):
   - **Appearance:** same as phone, Light, or Dark.
-  - **Backup:** *Export backup…* saves one `.json` file with all check-ins, their
-    answers and background photos. On a new phone, install Gist and use *Import
+  - **Backup:** *Export backup…* saves one `.yaml` file with all check-ins, their
+    answers and backgrounds (photos and videos, as base64). It's readable and you can
+    edit it by hand (times are `"HH:mm"`; a comment at the top says how to import it).
+    Old `.json` backups still import, since JSON is valid YAML. On a new phone, install Gist and use *Import
     backup…*. It replaces everything on that phone (after a confirmation) and sets the
     alarms. A bad or unrelated file is rejected without changing anything. Alarm sounds
     are saved by reference, so if the new phone lacks a sound, that check-in uses the
@@ -236,8 +252,11 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   (solved problems, answers) is kept.
 - **Can't dismiss it:** The check-in screen shows over the lock screen, the Back button
   does nothing, and **Submit** only unlocks once every question is answered. Leaving
-  with Home doesn't stop the sound, and opening the app takes you straight back to the
-  questions.
+  with Home or the app switcher doesn't stop the sound, and the check-in **comes straight
+  back to the front** within a second, ringing or paused. Android only lets an app do
+  that with **Display over other apps**, so the start page's "Finish setup" card asks for
+  it (Gist never draws anything over other apps). Without it, the alarm keeps ringing and
+  opening the app takes you straight back to the questions.
 - **Safety valve:** After 60 minutes the sound stops so it can't drain your battery.
   The check-in stays pending as a sticky notification until you answer.
 - **Steps (per check-in, always in this order):**
@@ -252,7 +271,13 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   A check-in with no steps at all just shows a Dismiss button.
 - **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
   **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
-  them, and add as many more as you like with **+ Add check-in**. The start page lists
+  them, and add as many more as you like with **+ Add check-in**, which opens the
+  **library**: ready-made check-ins grouped by Food (diet gist, last night, water),
+  Wake-up (weekday math alarm, gentler weekend one), Health (medication, brush teeth,
+  bedtime), Fitness (workout Mon/Wed/Fri, stand & stretch on work days, daily steps,
+  Sunday weigh-in), Mind (journal, reading) and Money (monthly money check on the 1st,
+  bills on the 15th and last day). Tap **Add** to copy one into your list and open it to
+  adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
   right of its name, and two buttons:
   - **Edit** opens its own page: name, on/off, times, "previous day" option, math, scan,
@@ -277,13 +302,19 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 app/src/main/java/dev/gist/checkin/
   MainActivity.kt    start page: setup warnings, check-in list, 7-day stats, CSV export
   HistoryActivity.kt one check-in's last 30 days: stats, per-question counts, day grid
-  CheckinEditActivity.kt  one check-in's page: name, time, steps, questions, test, delete
+  CheckinEditActivity.kt  one check-in's page: name, schedule, sound, background, steps, questions
+  LibraryActivity.kt "Add a check-in": the library of templates, or start blank
+  Library.kt         the ready-made check-in templates
+  Repeat.kt          repeat rules (every day, weekdays, chosen days, monthly dates)
+  Background.kt      background type (none / photo / slideshow / video) and caption
+  Backgrounds.kt     stores the background photos and video in the app's private files
+  Backup.kt / Yaml.kt  backup file export/import (YAML via SnakeYAML Engine)
   CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
   CheckinActivity.kt the alarm screen: runs math → scan → questions, then stops alarm
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
   ScanActivity.kt    registers a code for a check-in
   MathGen.kt         math problem generator
-  AlarmService.kt    plays sound/vibration, guards volume, 60-min safety stop
+  AlarmService.kt    plays sound/vibration, guards volume, brings the alarm back to the front, 60-min safety stop
   AlarmScheduler.kt  schedules each check-in's alarm with AlarmManager.setAlarmClock
   Receivers.kt       alarm fired → start ringing; reboot/time change → reschedule
   Notif.kt           notification channels + full-screen alarm notification

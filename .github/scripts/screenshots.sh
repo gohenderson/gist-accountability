@@ -51,6 +51,7 @@ echo "::group::Install and grant permissions"
 adb install -r -g "$APK"   # -g grants runtime permissions (notifications, camera)
 adb shell appops set "$PKG" USE_FULL_SCREEN_INTENT allow || echo "::warning::appops USE_FULL_SCREEN_INTENT failed"
 adb shell dumpsys deviceidle whitelist "+$PKG" || echo "::warning::battery whitelist failed"
+adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow || echo "::warning::appops SYSTEM_ALERT_WINDOW failed"
 echo "::endgroup::"
 
 echo "::group::Clean status bar"
@@ -150,6 +151,12 @@ echo "::group::Settings"
 seed none
 launch .SettingsActivity
 shot 06-settings
+echo "::endgroup::"
+
+echo "::group::Library"
+seed none
+launch .LibraryActivity
+shot 08-library
 echo "::endgroup::"
 
 echo "::group::Dark mode"

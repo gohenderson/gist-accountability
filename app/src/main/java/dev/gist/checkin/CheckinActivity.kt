@@ -506,12 +506,11 @@ class CheckinActivity : BaseActivity() {
     }
 
     private fun releaseVideo() {
-        video?.let {
-            try { it.stop() } catch (e: Exception) {}
-            it.release()
-        }
+        val mp = video ?: return
         video = null
         videoPlaying = false
+        try { mp.stop() } catch (e: Exception) {}
+        mp.release()
     }
 
     private fun stopBackground() {
