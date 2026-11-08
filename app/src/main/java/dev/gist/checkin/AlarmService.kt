@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -29,6 +30,8 @@ class AlarmService : Service() {
     private var originalVolume = -1
     private var floorVolume = 1
     private var ringing = false
+    private var paused = false
+    private var attrs: AudioAttributes? = null
 
     private val volumeGuard = object : Runnable {
         override fun run() {
@@ -38,6 +41,13 @@ class AlarmService : Service() {
     }
 
     private val giveUp = Runnable { stopSelf() }
+
+    private val resumeRinging = Runnable { resume() }
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -75,6 +85,7 @@ class AlarmService : Service() {
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
+        this.attrs = attrs
 
         // Use the phone's default alarm sound; fall back to ringtone, then notification sound.
         for (type in intArrayOf(
@@ -104,7 +115,42 @@ class AlarmService : Service() {
             getSystemService(Vibrator::class.java)
         }
         vibrator = vib
-        vib?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 700), 0), attrs)
+        startVibration()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun startVibration() {
+        val a = attrs ?: return
+        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 700), 0), a)
+    }
+
+    /**
+     * Silence the alarm for [ms] while the person works through the check-in. Calling it
+     * again (on every tap or keystroke) restarts the countdown. When it runs out, ringing
+     * resumes, even if the alarm screen isn't open.
+     */
+    fun pauseFor(ms: Long = pauseMs) {
+        if (!ringing) return
+        pausedUntil = SystemClock.elapsedRealtime() + ms
+        if (!paused) {
+            paused = true
+            isPaused = true
+            try { player?.pause() } catch (e: Exception) {}
+            vibrator?.cancel()
+            handler.removeCallbacks(volumeGuard)
+        }
+        handler.removeCallbacks(resumeRinging)
+        handler.postDelayed(resumeRinging, ms)
+    }
+
+    private fun resume() {
+        if (!paused) return
+        paused = false
+        isPaused = false
+        pausedUntil = 0L
+        try { player?.start() } catch (e: Exception) {}
+        startVibration()
+        handler.post(volumeGuard)
     }
 
     private fun enforceVolume() {
@@ -119,6 +165,9 @@ class AlarmService : Service() {
 
     override fun onDestroy() {
         running = false
+        isPaused = false
+        pausedUntil = 0L
+        if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
         player?.let {
             try { it.stop() } catch (e: Exception) {}
@@ -140,7 +189,26 @@ class AlarmService : Service() {
     }
 
     companion object {
-        /** True while the alarm is ringing (its own notification is showing). */
+        /** The running service, for the alarm screen to pause it (same process). */
+        @Volatile
+        var instance: AlarmService? = null
+            private set
+
+        /** True while ringing is paused for the check-in. */
+        @Volatile
+        var isPaused = false
+            private set
+
+        /** When the pause ends, in SystemClock.elapsedRealtime() time; 0 when not paused. */
+        @Volatile
+        var pausedUntil = 0L
+            private set
+
+        /** How long the alarm stays quiet after the last tap. Tests shorten it. */
+        @Volatile
+        var pauseMs = 30_000L
+
+        /** True while the alarm is active (its own notification is showing). */
         @Volatile
         var running = false
             private set

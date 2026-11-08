@@ -3,11 +3,17 @@ package dev.gist.checkin
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -15,6 +21,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -49,6 +56,19 @@ class CheckinActivity : Activity() {
     private val answers = mutableMapOf<String, Boolean>()
     private var scanner: ScannerView? = null
     private val ui = Handler(Looper.getMainLooper())
+
+    // Pause countdown (see showRinging / updateBar). Separate handler so showStep's
+    // removeCallbacks doesn't stop it.
+    private val ticks = Handler(Looper.getMainLooper())
+    private var showingRinging = false
+    private var barLabel: TextView? = null
+    private var barProgress: ProgressBar? = null
+    private val ticker = object : Runnable {
+        override fun run() {
+            tick()
+            ticks.postDelayed(this, 100)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,12 +108,59 @@ class CheckinActivity : Activity() {
         // You're looking at the check-in, so the "still waiting" reminder would only cover it.
         if (forced) Notif.clearWaiting(this)
         showStep()
+        if (forced) ticks.post(ticker)
     }
 
     override fun onPause() {
         stopScanner()
         ui.removeCallbacksAndMessages(null)
+        ticks.removeCallbacksAndMessages(null)
         super.onPause()
+    }
+
+    // Any tap or key press while the alarm is paused restarts the quiet countdown.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) keepQuiet()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        keepQuiet()
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun keepQuiet() {
+        if (forced && AlarmService.isPaused) AlarmService.instance?.pauseFor()
+    }
+
+    /** The alarm is sounding right now (not paused) and this screen is the alarm. */
+    private fun ringingNow() = forced && AlarmService.running && !AlarmService.isPaused
+
+    /** The alarm is paused and the countdown bar should be shown. */
+    private fun quietNow() = forced && AlarmService.running && AlarmService.isPaused
+
+    private fun tick() {
+        if (ringingNow() != showingRinging || (barLabel != null && !quietNow())) {
+            showStep() // paused ↔ ringing changed (countdown ran out, or alarm stopped)
+            return
+        }
+        updateBar()
+    }
+
+    private fun updateBar() {
+        val label = barLabel ?: return
+        val bar = barProgress ?: return
+        val total = AlarmService.pauseMs.coerceAtLeast(1)
+        val left = (AlarmService.pausedUntil - SystemClock.elapsedRealtime()).coerceIn(0, total)
+        val secs = ((left + 999) / 1000).toInt()
+        bar.progress = (left * 1000 / total).toInt()
+        val warn = left <= 10_000
+        bar.progressTintList = ColorStateList.valueOf(if (warn) COLOR_BAD else COLOR_GOOD)
+        label.text = if (warn) {
+            "Alarm resumes in $secs s. Tap anything to keep it quiet."
+        } else {
+            "Alarm paused · $secs s. Each tap resets it."
+        }
     }
 
     override fun onStop() {
@@ -188,6 +255,14 @@ class CheckinActivity : Activity() {
         stopScanner()
         ui.removeCallbacksAndMessages(null)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+        barLabel = null
+        barProgress = null
+
+        showingRinging = ringingNow()
+        if (showingRinging) {
+            showRinging()
+            return
+        }
 
         val col = column()
         val title = if (forced) checkin.name else "Edit: ${checkin.name}"
@@ -205,12 +280,68 @@ class CheckinActivity : Activity() {
             is Step.Dismiss -> col.add(button("Dismiss") { nextStep() }, dp(36))
         }
 
+        setScreen(col, withBar = quietNow())
+    }
+
+    /** The alarm is sounding: one big button pauses it and shows the steps. */
+    private fun showRinging() {
+        val col = column()
+        col.add(label(checkin.name, 30f, bold = true), dp(24))
+        col.add(label("Alarm ringing", 18f), dp(8))
+        if (steps.size > 1 || stepIndex > 0) {
+            col.add(label("Step ${stepIndex + 1} of ${steps.size} · ${CheckinText.steps(checkin)}", 15f), dp(4))
+        }
+        col.add(
+            button("Start check-in") {
+                AlarmService.instance?.pauseFor()
+                showStep()
+            }.apply {
+                textSize = 22f
+                minHeight = dp(96)
+            },
+            dp(48)
+        )
+        col.add(
+            label("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
+                "if it runs out, the alarm rings again and your progress is kept.", 14f).apply {
+                setTextColor(COLOR_MUTED)
+            },
+            dp(16)
+        )
+        setScreen(col, withBar = false)
+    }
+
+    /** Scrolling content, with the countdown bar fixed above it while the alarm is paused. */
+    private fun setScreen(content: View, withBar: Boolean) {
         val sv = ScrollView(this).apply {
             clipToPadding = false
-            addView(col)
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            addView(content)
         }
-        applySystemBarInsets(sv, dp(20))
-        setContentView(sv)
+        val root = column()
+        if (withBar) root.addView(pauseBar())
+        root.addView(sv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        applySystemBarInsets(root, 0)
+        setContentView(root)
+        updateBar()
+    }
+
+    private fun pauseBar(): View {
+        val box = column().apply {
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+            setBackgroundColor(0x1A808080)
+            tag = "pause-bar"
+        }
+        val text = label("", 14f, bold = true)
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = false
+            max = 1000
+        }
+        box.add(text)
+        box.add(bar, dp(6))
+        barLabel = text
+        barProgress = bar
+        return box
     }
 
     private fun mathUi(col: LinearLayout, step: Step.Math) {
@@ -239,6 +370,11 @@ class CheckinActivity : Activity() {
                 }
             }
         }
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = keepQuiet()
+            override fun afterTextChanged(s: Editable?) {}
+        })
         input.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { check(); true } else false
         }

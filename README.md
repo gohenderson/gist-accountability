@@ -104,6 +104,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   years); next-alarm time, including daylight-saving changes; stats; step descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
+  - pausing: Start check-in silences a real ringing alarm and shows the countdown bar;
+    each tap restarts the countdown; when it runs out the alarm rings again and progress
+    is kept
   - the alarm screen can't be escaped with Back; Submit stays disabled until every
     question is answered; a wrong math answer gives a new problem; steps run in order;
     two waiting check-ins run back to back; with no camera, the scan step offers the math
@@ -143,6 +146,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Ringing:** At the chosen time it plays your phone's default alarm sound on the alarm
   stream and vibrates. While it rings, the alarm volume can't go below 80%; if you turn
   it down, it goes straight back up. The original volume is restored afterwards.
+- **Pause while you work:** While it rings, the alarm screen shows one big **Start
+  check-in** button. Tapping it silences the sound and vibration for 30 seconds and shows
+  the steps, with a countdown bar fixed at the top of the screen. Every tap or keystroke
+  restarts the 30 seconds. If the countdown runs out, even with the app in the
+  background, the alarm rings again and the Start screen comes back. Your progress
+  (solved problems, answers) is kept.
 - **Can't dismiss it:** The check-in screen shows over the lock screen, the Back button
   does nothing, and **Submit** only unlocks once every question is answered. Leaving
   with Home doesn't stop the sound, and opening the app takes you straight back to the

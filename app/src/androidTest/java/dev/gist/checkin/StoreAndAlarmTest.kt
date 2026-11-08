@@ -134,8 +134,12 @@ class EndToEndAlarmTest {
             device.wait(Until.hasObject(By.text("E2E Check-in")), 30_000) == true
         )
         assertTrue("alarm should be ringing", AlarmService.running)
+        assertFalse("alarm shouldn't be paused yet", AlarmService.isPaused)
         assertEquals(listOf("e2e"), TestEnv.store.pending.map { it.checkinId })
 
+        device.findObject(By.text("Start check-in")).click()
+        assertTrue(device.wait(Until.hasObject(By.text("No")), 5_000) == true)
+        assertTrue("Start check-in should pause the alarm", AlarmService.isPaused)
         device.findObject(By.text("No")).click()
         assertTrue(device.wait(Until.hasObject(By.text("Submit").enabled(true)), 5_000) == true)
         device.findObject(By.text("Submit")).click()
