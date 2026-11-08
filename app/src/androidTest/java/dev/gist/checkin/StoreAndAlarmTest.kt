@@ -5,6 +5,8 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.After
@@ -119,6 +121,23 @@ class EndToEndAlarmTest {
         TestEnv.reset(emptyList())
     }
 
+    /**
+     * Finds [selector] fresh and taps it, retrying if the screen redraws in between
+     * (the pause countdown updates the screen several times a second).
+     */
+    private fun tap(selector: BySelector) {
+        repeat(5) { attempt ->
+            val obj = device.wait(Until.findObject(selector), 5_000)
+                ?: throw AssertionError("not on screen: $selector")
+            try {
+                obj.click()
+                return
+            } catch (e: StaleObjectException) {
+                if (attempt == 4) throw e
+            }
+        }
+    }
+
     @Test
     fun realAlarmRingsShowsTheCheckinAndStopsWhenAnswered() {
         val q = Question("e2e", "End to end question?")
@@ -137,12 +156,10 @@ class EndToEndAlarmTest {
         assertFalse("alarm shouldn't be paused yet", AlarmService.isPaused)
         assertEquals(listOf("e2e"), TestEnv.store.pending.map { it.checkinId })
 
-        device.findObject(By.text("Start check-in")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("No")), 5_000) == true)
+        tap(By.text("Start check-in"))
+        tap(By.text("No"))
         assertTrue("Start check-in should pause the alarm", AlarmService.isPaused)
-        device.findObject(By.text("No")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Submit").enabled(true)), 5_000) == true)
-        device.findObject(By.text("Submit")).click()
+        tap(By.text("Submit").enabled(true))
 
         val deadline = SystemClock.uptimeMillis() + 10_000
         while (AlarmService.running && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(200)
