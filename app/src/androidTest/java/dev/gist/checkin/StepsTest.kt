@@ -11,7 +11,6 @@ import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.startsWith
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -52,7 +51,7 @@ class StepsTest {
         edit("c").use {
             onView(withText("1. Questions")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(withText("2. Math problems")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(withText(containsString("answer 1 question → solve 2 math"))).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("answer 1 question → solve 2 math")).perform(scrollTo()).check(matches(isDisplayed()))
         }
     }
 
