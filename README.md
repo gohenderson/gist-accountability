@@ -159,6 +159,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     long enough run; the step watcher runs only while needed (or says the phone has no step
     sensor); choosing "finish running" and a minimum on the edit page saves them
   - a test ring can be stopped part-way with End test, logging nothing
+  - the first ring starts soft and ramps to full volume; after a pause it resumes at full
+    volume
   - the pause after each tap defaults to 45 s and can be changed in Settings; on the
     ringing screen, Start check-in sits in the bottom half
   - edit page: rename saves as you type; add and reorder questions; turning the alarm
@@ -309,6 +311,9 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     anything. Alarm sounds are saved by reference, so if the new phone lacks a sound, that
     check-in uses the default alarm sound.
   - **Export answers (CSV)…**, for spreadsheets.
+- **Gentle start:** The first ring starts quietly and swells to full alarm volume over about
+  30 seconds (vibration starts right away). If a pause runs out later, it comes back at
+  full volume: you're already awake.
 - **Pause while you work:** While it rings, the alarm screen shows the time, the check-in's
   name and caption at the top and one big **Start check-in** button at the bottom, so the
   background picture stays visible. Tapping it silences the sound and vibration and shows
