@@ -45,6 +45,7 @@ jobs:
         if: matrix.language == 'java-kotlin'
         uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
           gradle-version: "9.9.0"
 
       - name: Initialize CodeQL

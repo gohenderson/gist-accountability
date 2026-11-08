@@ -66,6 +66,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: Build debug APK
