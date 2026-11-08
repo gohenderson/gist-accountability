@@ -127,6 +127,17 @@ object Library {
             ),
         ),
         Template(
+            "after-run", "Fitness",
+            "Rings when you finish a run of 10 minutes or more (noticed from your steps): a cool-down check.",
+            Checkin(
+                id = "", name = "After my run", trigger = Trigger(kind = Trigger.RUN_END, minRunMinutes = 10, oncePerDay = true),
+                steps = qsteps(
+                    q("stretch-after", "Did you stretch after your run?", true),
+                    q("water-after", "Did you drink water after your run?", true),
+                ),
+            ),
+        ),
+        Template(
             "weigh-in", "Fitness",
             "Sunday mornings.",
             Checkin(
