@@ -8,11 +8,12 @@ import java.time.ZoneId
 object CheckinText {
     /** e.g. "solve 3 math → scan Bathroom sink → answer 2 questions" */
     fun steps(c: Checkin): String {
-        val parts = mutableListOf<String>()
-        if (c.mathCount > 0) parts += "solve ${c.mathCount} math"
-        if (c.scanCode != null) parts += "scan ${c.scanLabel.ifEmpty { "code" }}"
-        if (c.questions.isNotEmpty()) {
-            parts += "answer ${c.questions.size} question${if (c.questions.size == 1) "" else "s"}"
+        val parts = Steps.active(c).map { kind ->
+            when (kind) {
+                Steps.MATH -> "solve ${c.mathCount} math"
+                Steps.SCAN -> "scan ${c.scanLabel.ifEmpty { "code" }}"
+                else -> "answer ${c.questions.size} question${if (c.questions.size == 1) "" else "s"}"
+            }
         }
         return if (parts.isEmpty()) "tap Dismiss" else parts.joinToString(" → ")
     }

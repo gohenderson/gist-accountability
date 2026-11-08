@@ -39,6 +39,9 @@ class EditCheckinTest {
     private fun open(id: String): ActivityScenario<CheckinEditActivity> =
         ActivityScenario.launch(CheckinEditActivity.intent(TestEnv.ctx, id))
 
+    private fun questionsPage(id: String): ActivityScenario<StepEditActivity> =
+        ActivityScenario.launch(StepEditActivity.intent(TestEnv.ctx, id, Steps.QUESTIONS))
+
     @After
     fun tearDown() = TestEnv.reset(emptyList())
 
@@ -54,7 +57,7 @@ class EditCheckinTest {
     @Test
     fun addQuestionThroughTheDialog() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Evening", listOf(first))))
-        open("c").use {
+        questionsPage("c").use {
             onView(withText("+ Add question")).perform(scrollTo(), click())
             onView(withHint("e.g. Did you drink alcohol today?")).inRoot(isDialog())
                 .perform(replaceText("Did you walk today?"))
@@ -70,7 +73,7 @@ class EditCheckinTest {
     @Test
     fun moveQuestionUp() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Evening", listOf(first, second))))
-        open("c").use {
+        questionsPage("c").use {
             onView(withText("↑")).perform(scrollTo(), click())
         }
         assertEquals(listOf("second", "first"), TestEnv.store.checkin("c")!!.questions.map { it.id })

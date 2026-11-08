@@ -96,6 +96,37 @@ class CheckinFlowTest {
     }
 
     @Test
+    fun customOrderQuestionsThenMathIsFollowed() {
+        TestEnv.reset(
+            listOf(TestEnv.checkin("wake", "Wake up", listOf(soda), mathCount = 1).copy(steps = listOf(Steps.QUESTIONS, Steps.MATH))),
+            listOf(pendingToday("wake")),
+        )
+        launchAlarmScreen().use {
+            onView(withText(soda.text)).check(matches(isDisplayed()))
+            onView(tagged("q:soda:no")).perform(scrollTo(), click())
+            onView(withText("Submit")).perform(scrollTo(), click())
+            onView(withText("Problem 1 of 1")).check(matches(isDisplayed()))
+            answer(solve(textOf(tagged("math-problem"))))
+        }
+        assertEquals(mapOf("soda" to false), TestEnv.store.entry(TestEnv.today()))
+        assertTrue("finished", TestEnv.store.pending.isEmpty())
+    }
+
+    @Test
+    fun aStepThatIsntSetUpIsSkipped() {
+        // Scan added but no code registered: only the math runs.
+        TestEnv.reset(
+            listOf(TestEnv.checkin("wake", "Wake up", mathCount = 1).copy(steps = listOf(Steps.SCAN, Steps.MATH))),
+            listOf(pendingToday("wake")),
+        )
+        launchAlarmScreen().use {
+            onView(withText("Problem 1 of 1")).check(matches(isDisplayed()))
+            answer(solve(textOf(tagged("math-problem"))))
+        }
+        assertTrue("finished", TestEnv.store.pending.isEmpty())
+    }
+
+    @Test
     fun twoWaitingCheckinsRunBackToBack() {
         TestEnv.reset(
             listOf(TestEnv.checkin("a", "First check-in", listOf(soda)), TestEnv.checkin("b", "Second check-in", listOf(veg))),

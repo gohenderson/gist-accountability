@@ -43,7 +43,7 @@ import android.util.TypedValue
 
 /**
  * The alarm screen. When opened by an alarm ("forced") it shows over the lock screen,
- * ignores Back, and runs the check-in's steps in order: math → scan → questions.
+ * ignores Back, and runs the check-in's steps in the order chosen on its page (see Steps).
  * The alarm stops only after the last step. If several check-ins are waiting, it moves
  * straight on to the next one.
  * When opened from history, it's a normal screen for filling in or fixing a past day's answers.
@@ -239,10 +239,13 @@ class CheckinActivity : BaseActivity() {
 
     private fun buildSteps(c: Checkin): MutableList<Step> {
         if (!forced && !early) return mutableListOf(Step.Survey) // editing history: questions only
-        val list = mutableListOf<Step>()
-        if (c.mathCount > 0) list += Step.Math(c.mathCount, c.mathLevel)
-        if (c.scanCode != null) list += Step.Scan
-        if (c.questions.isNotEmpty()) list += Step.Survey
+        val list: MutableList<Step> = Steps.active(c).map { kind ->
+            when (kind) {
+                Steps.MATH -> Step.Math(c.mathCount, c.mathLevel)
+                Steps.SCAN -> Step.Scan
+                else -> Step.Survey
+            }
+        }.toMutableList()
         if (list.isEmpty()) list += Step.Dismiss
         return list
     }
@@ -476,9 +479,8 @@ class CheckinActivity : BaseActivity() {
                     mp.setOnVideoSizeChangedListener { _, vw, vh -> cropToFill(tv, vw, vh) }
                     mp.setOnPreparedListener {
                         it.start()
-                        videoPlaying = true
                     }
-                    mp.setOnErrorListener { _, _, _ -> videoPlaying = false; true }
+                    mp.setOnErrorListener { _, _, _ -> true }
                     mp.prepareAsync()
                     video = mp
                 } catch (e: Exception) {
@@ -497,6 +499,10 @@ class CheckinActivity : BaseActivity() {
         return tv
     }
 
+    /** Is this screen's background video playing? (For tests.) */
+    val videoIsPlaying: Boolean
+        get() = try { video?.isPlaying == true } catch (e: IllegalStateException) { false }
+
     private fun cropToFill(tv: TextureView, vw: Int, vh: Int) {
         val w = tv.width.toFloat()
         val h = tv.height.toFloat()
@@ -508,7 +514,6 @@ class CheckinActivity : BaseActivity() {
     private fun releaseVideo() {
         val mp = video ?: return
         video = null
-        videoPlaying = false
         try { mp.stop() } catch (e: Exception) {}
         mp.release()
     }
@@ -683,10 +688,6 @@ class CheckinActivity : BaseActivity() {
         var timesShown = 0
             private set
 
-        /** True while a background video is playing on the ringing screen (for tests). */
-        @Volatile
-        var videoPlaying = false
-            private set
 
         private const val EXTRA_CHECKIN = "checkin"
         private const val EXTRA_DAY = "day"

@@ -28,8 +28,9 @@ data class AlarmTime(val hour: Int, val minute: Int) : Comparable<AlarmTime> {
 }
 
 /**
- * One alarm with its own times and steps. It rings at each of [times] on the days [repeat] allows. When it rings, the steps run in this order:
- * [mathCount] math problems → scan [scanCode] → answer [questions]. Each step is optional.
+ * One alarm with its own times and steps. It rings at each of [times] on the days [repeat]
+ * allows. When it rings, its [steps] run in the chosen order (see [Steps]): [mathCount] math
+ * problems, scanning [scanCode], answering [questions]. Each step is optional.
  * [aboutYesterday]: answers are logged for the previous day (e.g. a morning check-in
  * asking about last night).
  */
@@ -48,6 +49,7 @@ data class Checkin(
     val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
+    val steps: List<String> = emptyList(), // order of Steps kinds; see Steps.order
 ) {
     companion object {
         const val SILENT = "silent"
@@ -237,6 +239,41 @@ class Store(context: Context) {
     fun entriesJson(): JSONObject =
         prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: JSONObject()
 
+    /** One check-in's history as stored: day → time → result. */
+    fun historyJson(checkinId: String): JSONObject {
+        val all = entriesJson()
+        val out = JSONObject()
+        all.keys().forEach { day -> all.optJSONObject(day)?.optJSONObject(checkinId)?.let { out.put(day, it) } }
+        return out
+    }
+
+    /** Forgets everything [checkinId] logged. */
+    fun deleteHistory(checkinId: String) {
+        val all = entriesJson()
+        all.keys().asSequence().toList().forEach { day ->
+            val d = all.optJSONObject(day) ?: return@forEach
+            d.remove(checkinId)
+            if (d.length() == 0) all.remove(day)
+        }
+        replaceEntries(all)
+    }
+
+    /**
+     * Writes [history] (day → time → result) for [checkinId]. With [merge], times already
+     * logged and not in [history] are kept; without it, the check-in's history is replaced.
+     */
+    fun putHistory(checkinId: String, history: JSONObject, merge: Boolean) {
+        if (!merge) deleteHistory(checkinId)
+        val all = entriesJson()
+        history.keys().forEach { day ->
+            val slots = history.optJSONObject(day) ?: return@forEach
+            val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
+            val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
+            slots.keys().forEach { time -> slots.optJSONObject(time)?.let { c.put(time, it) } }
+        }
+        replaceEntries(all)
+    }
+
     /** Replaces all results with [json] (same shape as [entriesJson]). */
     fun replaceEntries(json: JSONObject) {
         prefs.edit().putString(K_ENTRIES, json.toString()).commit()
@@ -267,6 +304,8 @@ class Store(context: Context) {
             soundUri = o.optString("soundUri", "").ifEmpty { null },
             soundTitle = o.optString("soundTitle", ""),
             background = Background.fromJson(o.optJSONObject("background")),
+            steps = o.optJSONArray("steps")?.let { a -> (0 until a.length()).map { a.optString(it) } }
+                ?.filter { it in Steps.ALL }?.distinct().orEmpty(),
         )
     }
 
@@ -288,6 +327,7 @@ class Store(context: Context) {
             .put("soundUri", c.soundUri ?: "")
             .put("soundTitle", c.soundTitle)
             .put("background", c.background.toJson())
+            .put("steps", JSONArray(c.steps))
     }
 
     companion object {

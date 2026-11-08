@@ -8,13 +8,14 @@ import org.json.JSONObject
 import java.time.Instant
 
 /**
- * One YAML file with everything needed to move to a new phone:
+ * Backup files (YAML). You choose which check-ins go in, and for each whether its history
+ * goes too:
  *
  *   format: gist-backup
  *   version: 3
  *   exportedAt: '2026-11-08T…'
  *   checkins: [ …same fields as Store… ]
- *   entries:
+ *   entries:                      # history, only for check-ins exported with it
  *     '2026-11-07':
  *       <checkinId>:
  *         '21:30': {s: answered, a: {soda: false}}
@@ -23,14 +24,13 @@ import java.time.Instant
  *       photos: [<base64 JPEG>, …]
  *       video: <base64 MP4>
  *
- * Version 2 backups (.json, one photo per check-in) still import. Alarm sounds are
- * references to sounds on the phone; if a sound doesn't exist on the new phone, that
- * check-in plays the default alarm sound instead.
+ * Importing is selective too (see [ImportChoice]): pick check-ins, and for one you already
+ * have, update it, replace it, or add it as a copy. Alarm sounds are references to sounds
+ * on the phone; if a sound doesn't exist on the new phone, the default alarm sound plays.
  */
 object Backup {
     const val FORMAT = "gist-backup"
     const val VERSION = 3
-    private const val OLDEST_READABLE = 2
 
     class Media(val photos: List<ByteArray>, val video: ByteArray?)
 
@@ -40,11 +40,51 @@ object Backup {
         val media: Map<String, Media>,
     ) {
         val days: Int get() = entries.length()
+
+        /** [checkinId]'s history in the file: day → time → result. */
+        fun history(checkinId: String): JSONObject {
+            val out = JSONObject()
+            entries.keys().forEach { day -> entries.optJSONObject(day)?.optJSONObject(checkinId)?.let { out.put(day, it) } }
+            return out
+        }
+
+        fun historyDays(checkinId: String): Int = history(checkinId).length()
     }
 
-    fun export(context: Context): String {
+    /** Export [checkinId], with its history or without. */
+    data class ExportChoice(val checkinId: String, val withHistory: Boolean)
+
+    /** What to do with a check-in from a backup. */
+    enum class Mode {
+        /** Not on this phone yet: add it. */
+        NEW,
+        /** Overwrite your check-in's settings and media; keep its history (and add the file's). */
+        UPDATE,
+        /** Swap your check-in for the file's, history included (yours is deleted). */
+        REPLACE,
+        /** Keep yours and add the file's as a separate check-in. */
+        COPY,
+    }
+
+    /** Import the file's [checkinId] this way, with its history or without. */
+    data class ImportChoice(val checkinId: String, val mode: Mode, val withHistory: Boolean)
+
+    /** Everything, with history. */
+    fun allChoices(context: Context): List<ExportChoice> = Store(context).checkins.map { ExportChoice(it.id, true) }
+
+    fun export(context: Context, choices: List<ExportChoice> = allChoices(context)): String {
         val store = Store(context)
-        val checkins = store.checkins
+        val chosen = choices.associateBy { it.checkinId }
+        val checkins = store.checkins.filter { it.id in chosen }
+        val entries = JSONObject()
+        for (c in checkins) {
+            if (chosen[c.id]?.withHistory != true) continue
+            val h = store.historyJson(c.id)
+            h.keys().forEach { day ->
+                val d = entries.optJSONObject(day) ?: JSONObject().also { entries.put(day, it) }
+                d.put(c.id, h.getJSONObject(day))
+            }
+        }
         val arr = JSONArray()
         checkins.forEach { arr.put(store.checkinToJson(it)) }
         val media = JSONObject()
@@ -67,11 +107,11 @@ object Backup {
             .put("version", VERSION)
             .put("exportedAt", Instant.now().toString())
             .put("checkins", arr)
-            .put("entries", store.entriesJson())
+            .put("entries", sortedByDay(entries))
             .put("media", media)
         return Yaml.dump(
             root,
-            header = "Gist backup. Import it with Settings → Import backup… (it replaces everything on that phone).\n" +
+            header = "Gist backup. Import it with Settings → Import backup… (you choose what to bring in).\n" +
                 "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly.",
         )
     }
@@ -87,13 +127,13 @@ object Backup {
         if (version > VERSION) {
             throw IllegalArgumentException("This backup is from a newer version of Gist. Update the app first.")
         }
-        if (version < OLDEST_READABLE) {
+        if (version < VERSION) {
             throw IllegalArgumentException("This backup is from an older version of Gist that this one can't read.")
         }
         val store = Store(context)
         try {
             val arr = root.getJSONArray("checkins")
-            var checkins = (0 until arr.length()).map { store.checkinFromJson(arr.getJSONObject(it)) }
+            val checkins = (0 until arr.length()).map { store.checkinFromJson(arr.getJSONObject(it)) }
             if (checkins.map { it.id }.toSet().size != checkins.size) {
                 throw IllegalArgumentException("The backup has duplicate check-ins.")
             }
@@ -102,21 +142,12 @@ object Backup {
                 entries.getJSONObject(day) // each day must be an object of answers
             }
             val media = mutableMapOf<String, Media>()
-            if (version == 2) {
-                // One photo per check-in under "backgrounds".
-                val bgs = root.optJSONObject("backgrounds") ?: JSONObject()
-                bgs.keys().forEach { id -> media[id] = Media(listOf(unb64(bgs.getString(id))), null) }
-                checkins = checkins.map { c ->
-                    if (c.id in media) c.copy(background = c.background.copy(kind = Background.PHOTO)) else c
-                }
-            } else {
-                val mj = root.optJSONObject("media") ?: JSONObject()
-                mj.keys().forEach { id ->
-                    val m = mj.getJSONObject(id)
-                    val photos = m.optJSONArray("photos")?.let { a -> (0 until a.length()).map { unb64(a.getString(it)) } }
-                    val video = m.optString("video", "").ifEmpty { null }?.let { unb64(it) }
-                    media[id] = Media(photos.orEmpty(), video)
-                }
+            val mj = root.optJSONObject("media") ?: JSONObject()
+            mj.keys().forEach { id ->
+                val m = mj.getJSONObject(id)
+                val photos = m.optJSONArray("photos")?.let { a -> (0 until a.length()).map { unb64(a.getString(it)) } }
+                val video = m.optString("video", "").ifEmpty { null }?.let { unb64(it) }
+                media[id] = Media(photos.orEmpty(), video)
             }
             return Contents(checkins, entries, media)
         } catch (e: JSONException) {
@@ -124,29 +155,65 @@ object Backup {
         }
     }
 
-    /** Replaces all check-ins, answers and media with [contents], and re-arms the alarms. */
-    fun restore(context: Context, contents: Contents) {
-        val store = Store(context)
-        store.checkins.forEach { AlarmScheduler.cancel(context, it.id) }
-        Backgrounds.deleteAll(context)
+    /** Your check-in that the file's [c] would update or replace: same id, else same name. */
+    fun match(local: List<Checkin>, c: Checkin): Checkin? =
+        local.firstOrNull { it.id == c.id } ?: local.firstOrNull { it.name.equals(c.name, ignoreCase = true) }
 
-        val restored = contents.checkins.map { c ->
-            val m = contents.media[c.id]
-            m?.photos?.take(Backgrounds.MAX_PHOTOS)?.forEachIndexed { i, bytes ->
-                Backgrounds.photoFile(context, c.id, i).writeBytes(bytes)
+    /** Applies [choices] to this phone and re-arms the affected alarms. Returns the check-ins it wrote. */
+    fun import(context: Context, contents: Contents, choices: List<ImportChoice>): List<Checkin> {
+        val store = Store(context)
+        val written = mutableListOf<Checkin>()
+        for (choice in choices) {
+            val src = contents.checkins.firstOrNull { it.id == choice.checkinId } ?: continue
+            val list = store.checkins
+            val local = match(list, src)
+            val mode = if (local == null && choice.mode != Mode.COPY) Mode.NEW else choice.mode
+            val history = contents.history(src.id)
+            val target: Checkin = when (mode) {
+                Mode.NEW, Mode.COPY -> {
+                    val idFree = list.none { it.id == src.id }
+                    val id = if (mode == Mode.NEW && idFree) src.id else Store.newId()
+                    val names = list.map { it.name.lowercase() }.toSet()
+                    val name = if (src.name.lowercase() !in names) src.name else
+                        (listOf("${src.name} (imported)") + (2..99).map { "${src.name} (imported $it)" })
+                            .first { it.lowercase() !in names }
+                    src.copy(id = id, name = name).also { store.checkins = list + it }
+                }
+                Mode.UPDATE, Mode.REPLACE -> {
+                    val keep = local!!
+                    AlarmScheduler.cancel(context, keep.id)
+                    src.copy(id = keep.id).also { n -> store.checkins = list.map { if (it.id == keep.id) n else it } }
+                }
             }
-            m?.video?.let { Backgrounds.videoFile(context, c.id).writeBytes(it) }
-            // A background whose media isn't in the file falls back to none (the caption stays).
-            if (c.background.hasMedia && !Backgrounds.ready(context, c.id, c.background)) {
-                c.copy(background = c.background.copy(kind = Background.NONE))
-            } else {
-                c
+            // Media follows the file's settings.
+            Backgrounds.delete(context, target.id)
+            contents.media[src.id]?.let { m ->
+                m.photos.take(Backgrounds.MAX_PHOTOS).forEachIndexed { i, bytes ->
+                    Backgrounds.photoFile(context, target.id, i).writeBytes(bytes)
+                }
+                m.video?.let { Backgrounds.videoFile(context, target.id).writeBytes(it) }
             }
+            var final = target
+            if (target.background.hasMedia && !Backgrounds.ready(context, target.id, target.background)) {
+                final = target.copy(background = target.background.copy(kind = Background.NONE))
+                store.updateCheckin(target.id) { final }
+            }
+            when (mode) {
+                Mode.REPLACE -> store.putHistory(target.id, if (choice.withHistory) history else JSONObject(), merge = false)
+                Mode.UPDATE -> if (choice.withHistory) store.putHistory(target.id, history, merge = true)
+                else -> if (choice.withHistory) store.putHistory(target.id, history, merge = false)
+            }
+            AlarmScheduler.schedule(context, final)
+            written += final
         }
-        store.checkins = restored
-        store.replaceEntries(contents.entries)
-        store.pending = emptyList()
-        AlarmScheduler.scheduleAll(context)
+        store.prunePending()
+        return written
+    }
+
+    private fun sortedByDay(entries: JSONObject): JSONObject {
+        val out = JSONObject()
+        entries.keys().asSequence().sorted().forEach { out.put(it, entries.get(it)) }
+        return out
     }
 
     private fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)

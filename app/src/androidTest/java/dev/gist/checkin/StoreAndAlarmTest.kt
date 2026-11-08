@@ -12,6 +12,7 @@ import androidx.test.uiautomator.Until
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -207,5 +208,28 @@ class PermissionAfterUpdateTest {
         TestEnv.shell("appops set $pkg USE_FULL_SCREEN_INTENT deny")
         BootReceiver().onReceive(TestEnv.ctx, android.content.Intent("com.example.SPOOFED"))
         assertFalse(nm.activeNotifications.any { it.id == Notif.ID_PERMISSION })
+    }
+}
+
+/** Only picker documents from other apps are opened. */
+@RunWith(AndroidJUnit4::class)
+class SafeUriTest {
+    @Test
+    fun acceptsPickerDocumentsAndRejectsEverythingElse() {
+        val ctx = TestEnv.ctx
+        val ok = listOf(
+            "content://com.android.externalstorage.documents/document/primary%3ADownload%2Fgist-backup.yaml",
+            "content://com.android.providers.downloads.documents/document/msf%3A42",
+            "content://com.android.providers.media.documents/document/image%3A7",
+        )
+        for (u in ok) assertNotNull(u, SafeUri.picked(ctx, android.net.Uri.parse(u)))
+        val bad = listOf(
+            "file:///data/data/${ctx.packageName}/shared_prefs/gist.xml",
+            "content://${ctx.packageName}.provider/anything",
+            "content://evil.provider/data/data/${ctx.packageName}/files/x",
+            "content://evil.provider/document/../../data/data/${ctx.packageName}/files/x",
+            "content://evil.provider",
+        )
+        for (u in bad) assertNull(u, SafeUri.picked(ctx, android.net.Uri.parse(u)))
     }
 }
