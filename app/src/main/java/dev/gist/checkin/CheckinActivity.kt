@@ -233,12 +233,14 @@ class CheckinActivity : BaseActivity() {
     }
 
     private fun complete() {
+        ticks.removeCallbacksAndMessages(null) // no more countdown redraws while finishing
         store.removePending(target)
         store.prunePending()
         val next = store.pending.firstOrNull()
         if (forced && next != null && load(next)) {
             answers.clear()
             showStep()
+            ticks.post(ticker)
             return
         }
         stopIfNothingPending()
@@ -255,6 +257,8 @@ class CheckinActivity : BaseActivity() {
     // ------------------------------------------------------------ UI
 
     private fun showStep() {
+        // Closing, or past the last step (a countdown tick can land right as we finish).
+        if (isFinishing || stepIndex !in steps.indices) return
         stopScanner()
         ui.removeCallbacksAndMessages(null)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
