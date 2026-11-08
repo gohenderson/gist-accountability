@@ -32,70 +32,132 @@ import org.junit.runner.RunWith
 private fun solidPhoto(color: Int): Bitmap =
     Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
 
-/** Backup file: a full round trip, and bad files change nothing. */
+/** Backup files: choosing what to export, and how each check-in is imported. */
 @RunWith(AndroidJUnit4::class)
 class BackupTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
     @After
     fun tearDown() {
         Backgrounds.deleteAll(TestEnv.ctx)
         TestEnv.reset(emptyList())
     }
 
+    private val q = Question("soda", "Soda?")
+    private fun all(contents: Backup.Contents, mode: Backup.Mode = Backup.Mode.NEW, history: Boolean = true) =
+        contents.checkins.map { Backup.ImportChoice(it.id, mode, history) }
+
     @Test
-    fun exportThenImportRestoresCheckinsAnswersPhotosAndVideo() {
-        val q = Question("soda", "Soda?")
+    fun roundTripToANewPhoneWithPhotosVideoAndHistory() {
         val slideshow = TestEnv.checkin("wake", "Starting the Day", listOf(q), mathCount = 3).copy(
             soundUri = Checkin.SILENT,
             repeat = Repeat.weekly(Repeat.WEEKDAYS),
+            steps = listOf(Steps.QUESTIONS, Steps.MATH),
             background = Background(Background.SLIDESHOW, intervalSec = 5, caption = "Up and at 'em"),
         )
         val withVideo = TestEnv.checkin("vid", "Video").copy(background = Background(Background.VIDEO, caption = "Go"))
-        val plain = TestEnv.checkin("eve", "Evening").copy(background = Background(caption = "Just a caption"))
-        TestEnv.reset(listOf(slideshow, withVideo, plain), entries = mapOf("2026-11-06" to mapOf("soda" to true)))
+        TestEnv.reset(listOf(slideshow, withVideo), entries = mapOf("2026-11-06" to mapOf("soda" to true)))
         Backgrounds.savePhoto(TestEnv.ctx, "wake", 0, solidPhoto(Color.RED))
         Backgrounds.savePhoto(TestEnv.ctx, "wake", 1, solidPhoto(Color.GREEN))
         val videoBytes = testVideoBytes()
         Backgrounds.videoFile(TestEnv.ctx, "vid").writeBytes(videoBytes)
 
         val backup = Backup.export(TestEnv.ctx)
-        assertTrue("backup should be YAML with a comment header", backup.startsWith("# Gist backup"))
+        assertTrue("YAML with a comment header", backup.startsWith("# Gist backup"))
         assertTrue("block-style YAML", backup.contains("\nformat: gist-backup\n"))
-        assertTrue("caption is readable in the file", backup.contains("Up and at 'em") || backup.contains("Up and at ''em"))
 
-        // A "new phone": different data, no media.
+        // A "new phone".
         Backgrounds.deleteAll(TestEnv.ctx)
-        TestEnv.reset(listOf(TestEnv.checkin("other", "Something else")), listOf(Pending("other", "2026-11-07")))
-
+        TestEnv.reset(emptyList())
         val contents = Backup.parse(TestEnv.ctx, backup)
-        assertEquals(3, contents.checkins.size)
-        assertEquals(1, contents.days)
-        Backup.restore(TestEnv.ctx, contents)
+        Backup.import(TestEnv.ctx, contents, all(contents))
 
         val s = TestEnv.store
-        assertEquals(listOf(slideshow, withVideo, plain), s.checkins)
+        assertEquals(listOf(slideshow.copy(steps = listOf(Steps.QUESTIONS, Steps.MATH)), withVideo), s.checkins)
         assertEquals(mapOf("soda" to true), s.entry("2026-11-06"))
-        assertTrue("waiting list is cleared on restore", s.pending.isEmpty())
-        val photos = Backgrounds.photos(TestEnv.ctx, "wake")
-        assertEquals(2, photos.size)
-        assertEquals(64, BitmapFactory.decodeFile(photos[0].path).width)
+        assertEquals(2, Backgrounds.photos(TestEnv.ctx, "wake").size)
         assertTrue("video restored", Backgrounds.videoFile(TestEnv.ctx, "vid").readBytes().contentEquals(videoBytes))
+        assertTrue("alarms are set", AlarmScheduler.upcoming(TestEnv.ctx, s.checkin("wake")!!) != null)
     }
 
     @Test
-    fun oldJsonBackupsStillImport() {
-        TestEnv.reset(emptyList())
-        val photo = java.io.ByteArrayOutputStream().also { solidPhoto(Color.BLUE).compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
-        val json = """
-            {"format": "gist-backup", "version": 2, "exportedAt": "2026-11-01T00:00:00Z",
-             "checkins": [{"id": "old", "name": "Old one", "times": ["07:00"], "hasBackground": true, "questions": []}],
-             "entries": {},
-             "backgrounds": {"old": "${android.util.Base64.encodeToString(photo, android.util.Base64.NO_WRAP)}"}}
-        """.trimIndent()
-        Backup.restore(TestEnv.ctx, Backup.parse(TestEnv.ctx, json))
-        val c = TestEnv.store.checkin("old")!!
-        assertEquals(Background.PHOTO, c.background.kind)
-        assertEquals(listOf(AlarmTime(7, 0)), c.times)
-        assertEquals(1, Backgrounds.photos(TestEnv.ctx, "old").size)
+    fun exportOnlyTheChosenCheckinsAndHistory() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "A", listOf(q)), TestEnv.checkin("b", "B", listOf(q)), TestEnv.checkin("c", "C")))
+        TestEnv.store.saveAnswers("2026-11-05", "a", "12:00", mapOf("soda" to false))
+        TestEnv.store.saveAnswers("2026-11-05", "b", "12:00", mapOf("soda" to true))
+
+        val text = Backup.export(TestEnv.ctx, listOf(Backup.ExportChoice("a", true), Backup.ExportChoice("b", false)))
+        val contents = Backup.parse(TestEnv.ctx, text)
+        assertEquals(listOf("a", "b"), contents.checkins.map { it.id })
+        assertEquals(1, contents.historyDays("a"))
+        assertEquals(0, contents.historyDays("b"))
+    }
+
+    /** This phone has "Wake" with a day of history; the file has a changed "Wake" with another day. */
+    private fun conflict(): Backup.Contents {
+        TestEnv.reset(listOf(TestEnv.checkin("wake", "Wake", listOf(q)).copy(times = listOf(AlarmTime(6, 0)))))
+        TestEnv.store.saveAnswers("2026-11-06", "wake", "06:00", mapOf("soda" to true))
+        val fileVersion = TestEnv.store.checkin("wake")!!.copy(times = listOf(AlarmTime(7, 30)), mathCount = 2)
+        TestEnv.store.checkins = listOf(fileVersion)
+        TestEnv.store.deleteHistory("wake")
+        TestEnv.store.saveAnswers("2026-11-07", "wake", "07:30", mapOf("soda" to false))
+        val text = Backup.export(TestEnv.ctx)
+        // Back to this phone's version.
+        TestEnv.reset(listOf(TestEnv.checkin("wake", "Wake", listOf(q)).copy(times = listOf(AlarmTime(6, 0)))))
+        TestEnv.store.saveAnswers("2026-11-06", "wake", "06:00", mapOf("soda" to true))
+        return Backup.parse(TestEnv.ctx, text)
+    }
+
+    private fun days(id: String) = TestEnv.store.allResults(id).keys.toList()
+
+    @Test
+    fun updateTakesTheSettingsAndMergesHistory() {
+        val contents = conflict()
+        Backup.import(TestEnv.ctx, contents, all(contents, Backup.Mode.UPDATE, history = true))
+        val c = TestEnv.store.checkins.single()
+        assertEquals(listOf(AlarmTime(7, 30)), c.times)
+        assertEquals(2, c.mathCount)
+        assertEquals(listOf("2026-11-06", "2026-11-07"), days("wake"))
+    }
+
+    @Test
+    fun updateWithoutHistoryKeepsYours() {
+        val contents = conflict()
+        Backup.import(TestEnv.ctx, contents, all(contents, Backup.Mode.UPDATE, history = false))
+        assertEquals(listOf(AlarmTime(7, 30)), TestEnv.store.checkins.single().times)
+        assertEquals(listOf("2026-11-06"), days("wake"))
+    }
+
+    @Test
+    fun replaceSwapsHistoryToo() {
+        val contents = conflict()
+        Backup.import(TestEnv.ctx, contents, all(contents, Backup.Mode.REPLACE, history = true))
+        assertEquals(listOf("2026-11-07"), days("wake"))
+        val again = conflict()
+        Backup.import(TestEnv.ctx, again, all(again, Backup.Mode.REPLACE, history = false))
+        assertEquals(emptyList<String>(), days("wake"))
+        assertEquals(listOf(AlarmTime(7, 30)), TestEnv.store.checkins.single().times)
+    }
+
+    @Test
+    fun copyKeepsYoursAndAddsTheFilesSeparately() {
+        val contents = conflict()
+        Backup.import(TestEnv.ctx, contents, all(contents, Backup.Mode.COPY, history = true))
+        val list = TestEnv.store.checkins
+        assertEquals(listOf("Wake", "Wake (imported)"), list.map { it.name })
+        assertEquals(listOf(AlarmTime(6, 0)), list[0].times)
+        assertEquals(listOf("2026-11-06"), days("wake"))
+        assertTrue("new id", list[1].id != "wake")
+        assertEquals(listOf("2026-11-07"), days(list[1].id))
+    }
+
+    @Test
+    fun checkinsNotChosenAreLeftAlone() {
+        val contents = conflict()
+        Backup.import(TestEnv.ctx, contents, emptyList())
+        assertEquals(listOf(AlarmTime(6, 0)), TestEnv.store.checkins.single().times)
+        assertEquals(listOf("2026-11-06"), days("wake"))
     }
 
     @Test
@@ -110,11 +172,13 @@ class BackupTest {
                 name: Walk
                 times: ["08:15", "18:00"]
                 repeat: {kind: weekly, days: [6, 7]}
+                steps: [questions]
                 enabled: True
                 questions:
                   - {id: walked, text: Did you walk?, yesIsGood: true}
         """.trimIndent()
-        Backup.restore(TestEnv.ctx, Backup.parse(TestEnv.ctx, yaml))
+        val contents = Backup.parse(TestEnv.ctx, yaml)
+        Backup.import(TestEnv.ctx, contents, all(contents))
         val c = TestEnv.store.checkin("walk")!!
         assertEquals(listOf(AlarmTime(8, 15), AlarmTime(18, 0)), c.times)
         assertEquals(Repeat.weekly(Repeat.WEEKENDS), c.repeat)
@@ -125,8 +189,9 @@ class BackupTest {
     fun badFilesAreRejectedWithoutChangingAnything() {
         val keep = TestEnv.checkin("keep", "Keep me")
         TestEnv.reset(listOf(keep))
-        for (bad in listOf("not json at all", """{"format":"something-else"}""", """{"format":"gist-backup","version":1}""",
-            """{"format":"gist-backup","version":99,"checkins":[]}""")) {
+        for (bad in listOf("not a backup at all", "format: something-else", "format: gist-backup\nversion: 2",
+            "format: gist-backup\nversion: 99\ncheckins: []", "format: gist-backup\nversion: 3\ncheckins: [{name: no id}]",
+            "{unclosed: [")) {
             try {
                 Backup.parse(TestEnv.ctx, bad)
                 fail("should reject: $bad")
@@ -135,6 +200,36 @@ class BackupTest {
             }
         }
         assertEquals(listOf(keep), TestEnv.store.checkins)
+    }
+
+    private fun settings() = ActivityScenario.launch<SettingsActivity>(Intent(TestEnv.ctx, SettingsActivity::class.java))
+
+    @Test
+    fun exportDialogChoosesCheckinsAndHistory() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha", listOf(q)), TestEnv.checkin("b", "Beta", listOf(q))))
+        TestEnv.store.saveAnswers("2026-11-05", "a", "12:00", mapOf("soda" to false))
+        var chosen: List<Backup.ExportChoice>? = null
+        settings().use { s ->
+            s.onActivity { it.showExportChoices { c -> chosen = c } }
+            onView(tagged("export:b")).inRoot(isDialog()).perform(click())          // leave Beta out
+            onView(tagged("export-history:a")).inRoot(isDialog()).perform(click())  // Alpha without history
+            onView(withText("Export…")).inRoot(isDialog()).perform(click())
+        }
+        assertEquals(listOf(Backup.ExportChoice("a", false)), chosen)
+    }
+
+    @Test
+    fun importDialogAsksPerCheckin() {
+        val contents = conflict()
+        settings().use { s ->
+            s.onActivity { it.showImportChoices(contents) }
+            onView(withText("You already have “Wake”:")).inRoot(isDialog()).check(matches(isDisplayed()))
+            onView(tagged("import-mode:wake:replace")).inRoot(isDialog()).perform(click())
+            onView(tagged("import-history:wake")).inRoot(isDialog()).perform(click()) // don't bring history
+            onView(withText("Import")).inRoot(isDialog()).perform(click())
+        }
+        assertEquals(listOf(AlarmTime(7, 30)), TestEnv.store.checkins.single().times)
+        assertEquals(emptyList<String>(), days("wake"))
     }
 }
 

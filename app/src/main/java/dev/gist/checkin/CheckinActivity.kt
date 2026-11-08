@@ -43,7 +43,7 @@ import android.util.TypedValue
 
 /**
  * The alarm screen. When opened by an alarm ("forced") it shows over the lock screen,
- * ignores Back, and runs the check-in's steps in order: math → scan → questions.
+ * ignores Back, and runs the check-in's steps in the order chosen on its page (see Steps).
  * The alarm stops only after the last step. If several check-ins are waiting, it moves
  * straight on to the next one.
  * When opened from history, it's a normal screen for filling in or fixing a past day's answers.
@@ -239,10 +239,13 @@ class CheckinActivity : BaseActivity() {
 
     private fun buildSteps(c: Checkin): MutableList<Step> {
         if (!forced && !early) return mutableListOf(Step.Survey) // editing history: questions only
-        val list = mutableListOf<Step>()
-        if (c.mathCount > 0) list += Step.Math(c.mathCount, c.mathLevel)
-        if (c.scanCode != null) list += Step.Scan
-        if (c.questions.isNotEmpty()) list += Step.Survey
+        val list: MutableList<Step> = Steps.active(c).map { kind ->
+            when (kind) {
+                Steps.MATH -> Step.Math(c.mathCount, c.mathLevel)
+                Steps.SCAN -> Step.Scan
+                else -> Step.Survey
+            }
+        }.toMutableList()
         if (list.isEmpty()) list += Step.Dismiss
         return list
     }

@@ -346,3 +346,50 @@ class BackgroundTest {
         assertFalse(Background(caption = "hi").hasMedia)
     }
 }
+
+class StepsTest {
+    private val q = Question("q", "Q?")
+    private val base = Checkin(id = "c", name = "C")
+
+    @Test
+    fun defaultOrderIsMathScanQuestions() {
+        val c = base.copy(mathCount = 2, scanCode = "X", questions = listOf(q))
+        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
+        assertEquals("solve 2 math → scan code → answer 1 question", CheckinText.steps(c))
+    }
+
+    @Test
+    fun savedOrderWinsAndUnsetStepsDontRun() {
+        val c = base.copy(mathCount = 2, questions = listOf(q), steps = listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH))
+        assertEquals(listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH), Steps.order(c))
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH), Steps.active(c)) // no code registered
+        assertEquals("answer 1 question → solve 2 math", CheckinText.steps(c))
+        assertEquals("Not set up: register a code", Steps.summary(c, Steps.SCAN))
+    }
+
+    @Test
+    fun moveAddAndRemove() {
+        var c = base.copy(mathCount = 1, scanCode = "X", questions = listOf(q))
+        c = Steps.move(c, 2, 0)
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), Steps.order(c))
+        c = Steps.move(c, 0, 2)
+        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
+        c = Steps.remove(c, Steps.SCAN)
+        assertEquals(null, c.scanCode)
+        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS), Steps.order(c))
+        assertEquals(listOf(Steps.SCAN), Steps.available(c))
+        c = Steps.add(c, Steps.SCAN)
+        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS, Steps.SCAN), Steps.order(c))
+
+        val math = Steps.add(base, Steps.MATH)
+        assertEquals(3, math.mathCount)
+        assertEquals(listOf(Steps.MATH), Steps.active(math))
+        assertEquals(emptyList<String>(), Steps.order(Steps.remove(math, Steps.MATH)))
+    }
+
+    @Test
+    fun noStepsMeansDismiss() {
+        assertEquals("tap Dismiss", CheckinText.steps(base))
+        assertEquals(Steps.ALL, Steps.available(base))
+    }
+}
