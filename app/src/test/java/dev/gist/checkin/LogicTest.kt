@@ -147,23 +147,42 @@ class StatsTest {
     private val veg = Question("veg", "Vegetables?", yesIsGood = true)
     private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), questions = listOf(soda, veg))
 
+    private fun day(vararg slots: Pair<String, Answers>): Map<String, Answers> = mapOf(*slots)
+
     @Test
     fun onTrackRespectsWhichAnswerIsGood() {
-        assertTrue(Stats.onTrack(c, mapOf("soda" to false, "veg" to true)))
-        assertFalse(Stats.onTrack(c, mapOf("soda" to true, "veg" to true)))
-        assertFalse(Stats.onTrack(c, mapOf("soda" to false, "veg" to false)))
+        assertTrue(Stats.onTrack(c, day("21:30" to mapOf("soda" to false, "veg" to true))))
+        assertFalse(Stats.onTrack(c, day("21:30" to mapOf("soda" to true, "veg" to true))))
+        assertFalse(Stats.onTrack(c, day("21:30" to mapOf("soda" to false, "veg" to false))))
     }
 
     @Test
     fun unansweredQuestionsDoNotCountAgainstADay() {
-        assertTrue(Stats.onTrack(c, mapOf("soda" to false)))
+        assertTrue(Stats.onTrack(c, day("21:30" to mapOf("soda" to false))))
+    }
+
+    @Test
+    fun anOffTrackTimeMakesTheWholeDayOffTrackEvenIfAnotherTimeWasOnTrack() {
+        val d = day("07:00" to mapOf("soda" to false), "21:30" to mapOf("soda" to true))
+        assertEquals(false, Stats.dayResult(soda, d))
+        assertFalse(Stats.onTrack(c, d))
+        // Order doesn't matter.
+        assertEquals(false, Stats.dayResult(soda, day("07:00" to mapOf("soda" to true), "21:30" to mapOf("soda" to false))))
+    }
+
+    @Test
+    fun aDayIsOnTrackOnlyIfEveryTimeWas() {
+        val d = day("07:00" to mapOf("soda" to false, "veg" to true), "21:30" to mapOf("soda" to false, "veg" to true))
+        assertEquals(true, Stats.dayResult(soda, d))
+        assertTrue(Stats.onTrack(c, d))
+        assertEquals(null, Stats.dayResult(soda, day()))
     }
 
     @Test
     fun loggedOnlyCountsDaysWithThisCheckinsAnswers() {
         val entries = mapOf(
-            "2026-11-07" to mapOf("soda" to false),
-            "2026-11-06" to mapOf("someOtherCheckinsQuestion" to true),
+            "2026-11-07" to day("21:30" to mapOf("soda" to false)),
+            "2026-11-06" to day("21:30" to mapOf("someOtherCheckinsQuestion" to true)),
         )
         val logged = Stats.logged(c, entries, listOf("2026-11-07", "2026-11-06", "2026-11-05"))
         assertEquals(1, logged.size)

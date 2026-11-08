@@ -53,13 +53,32 @@ class StoreTest {
     }
 
     @Test
-    fun answersFromDifferentCheckinsMergeIntoTheSameDay() {
+    fun eachTimeKeepsItsOwnAnswers() {
         TestEnv.reset(emptyList())
         val s = TestEnv.store
-        s.saveEntry("2026-11-07", mapOf("soda" to false))
-        s.saveEntry("2026-11-07", mapOf("latefood" to true))
-        s.saveEntry("2026-11-07", mapOf("soda" to true)) // fixing an answer overwrites it
-        assertEquals(mapOf("soda" to true, "latefood" to true), s.entry("2026-11-07"))
+        s.saveEntry("2026-11-07", "07:00", mapOf("soda" to false))
+        s.saveEntry("2026-11-07", "21:30", mapOf("soda" to true))
+        s.saveEntry("2026-11-07", "07:00", mapOf("latefood" to true)) // another check-in at the same time
+        assertEquals(mapOf("soda" to false, "latefood" to true), s.entry("2026-11-07", "07:00"))
+        assertEquals(mapOf("soda" to true), s.entry("2026-11-07", "21:30"))
+        s.saveEntry("2026-11-07", "21:30", mapOf("soda" to false)) // fixing an answer overwrites only that time
+        assertEquals(mapOf("soda" to false), s.entry("2026-11-07", "21:30"))
+        assertEquals(mapOf("soda" to false, "latefood" to true), s.entry("2026-11-07", "07:00"))
+    }
+
+    @Test
+    fun answersSavedPerDayMoveUnderTheCheckinsFirstTime() {
+        clearPrefs()
+        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
+            .putString("checkins", """[{"id":"eve","name":"Evening","times":["18:00","21:30"],"questions":[{"id":"soda","text":"Soda?"}]}]""")
+            .putString("entries", """{"2026-11-06":{"soda":true,"unknown":false}}""")
+            .commit()
+        val s = Store(TestEnv.ctx)
+        assertEquals(mapOf("soda" to true), s.entry("2026-11-06", "18:00"))
+        assertEquals(mapOf("unknown" to false), s.entry("2026-11-06", "12:00"))
+        // Converted once and saved in the new shape.
+        val raw = TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).getString("entries", "")!!
+        assertTrue(raw, raw.contains("\"18:00\""))
     }
 
     @Test

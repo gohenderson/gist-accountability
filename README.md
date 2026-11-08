@@ -105,7 +105,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   years); next-alarm time, including daylight-saving changes; stats; step descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
-  - multiple times: removing one re-arms for the rest, and the last time can't be removed;
+  - multiple times: each time's answers are saved separately; History shows ✗ for a day if
+    any time was off track, and fixing one time updates it; removing a time re-arms for
+    the rest, and the last time can't be removed;
     the start page switch turns a check-in's alarm off and on
   - pausing: Start check-in silences a real ringing alarm and shows the countdown bar;
     each tap restarts the countdown; when it runs out the alarm rings again and progress
@@ -157,9 +159,11 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   it down, it goes straight back up. The original volume is restored afterwards.
 - **Several times a day:** A check-in can ring at more than one time (e.g. brushing
   teeth at 7:30 AM and 10:15 PM). On its page, under **Schedule**, use **+ Add time**,
-  tap a time to change it, or ✕ to remove it. Answers are logged per day, so if a
-  check-in with questions rings twice in one day, the later answers replace the
-  earlier ones.
+  tap a time to change it, or ✕ to remove it. Each time keeps its own answers. Reports
+  roll them up per day: a question is ✓ for a day only if every time it was answered
+  that day was on track, so one off-track time makes the day ✗. Times you didn't answer
+  don't count either way. On History, tapping a day asks which time to fix. The CSV has
+  one row per day and time.
 - **Sound and photo per check-in:** On a check-in's page, under **While it rings**, pick
   its alarm sound from the phone's sounds (or "Silent" to only vibrate), and optionally a
   background photo for the ringing screen. The photo is copied into the app (resized), so

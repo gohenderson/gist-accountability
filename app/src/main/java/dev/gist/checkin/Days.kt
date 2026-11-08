@@ -29,6 +29,9 @@ object Days {
     fun short(day: String): String =
         LocalDate.parse(day).format(DateTimeFormatter.ofPattern("EEE MMM d"))
 
+    /** "21:30" → "9:30 PM" (in the phone's format); unparseable text is returned as is. */
+    fun timeOf(hhmm: String): String = AlarmTime.parse(hhmm)?.let { time(it.hour, it.minute) } ?: hhmm
+
     fun time(hour: Int, minute: Int): String =
         LocalTime.of(hour, minute).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
 }

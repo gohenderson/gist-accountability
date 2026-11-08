@@ -10,7 +10,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val store = Store(context)
         val id = intent.getStringExtra(AlarmScheduler.EXTRA_CHECKIN) ?: return
         val c = store.checkin(id) ?: return // deleted since it was scheduled
-        store.addPending(Pending(c.id, Days.forAlarmNow(c.aboutYesterday)))
+        val time = intent.getStringExtra(AlarmScheduler.EXTRA_TIME)?.takeIf { AlarmTime.parse(it) != null }
+            ?: AlarmScheduler.nearestTime(c).toString()
+        store.addPending(Pending(c.id, Days.forAlarmNow(c.aboutYesterday), time))
         try {
             context.startForegroundService(
                 Intent(context, AlarmService::class.java).putExtra(AlarmService.EXTRA_CHECKIN, c.id)

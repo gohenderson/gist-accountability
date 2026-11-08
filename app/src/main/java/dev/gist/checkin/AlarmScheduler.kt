@@ -5,10 +5,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import java.time.LocalTime
 import java.time.ZonedDateTime
 
 object AlarmScheduler {
     const val EXTRA_CHECKIN = "checkinId"
+    const val EXTRA_TIME = "time"
 
     fun nextTriggerMillis(hour: Int, minute: Int, now: ZonedDateTime = ZonedDateTime.now()): Long {
         var t = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
@@ -16,9 +18,21 @@ object AlarmScheduler {
         return t.toInstant().toEpochMilli()
     }
 
+    /** The check-in's next time to ring, strictly after [now], and when (epoch millis). */
+    fun nextTime(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Pair<AlarmTime, Long> =
+        c.times.map { it to nextTriggerMillis(it.hour, it.minute, now) }.minBy { it.second }
+
     /** The soonest of the check-in's times, strictly after [now]. */
-    fun nextTriggerMillis(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Long =
-        c.times.minOf { nextTriggerMillis(it.hour, it.minute, now) }
+    fun nextTriggerMillis(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Long = nextTime(c, now).second
+
+    /** The check-in's time closest to [at] (either direction, around midnight too). */
+    fun nearestTime(c: Checkin, at: LocalTime = LocalTime.now()): AlarmTime {
+        val m = at.hour * 60 + at.minute
+        return c.times.minBy { t ->
+            val d = Math.abs(t.hour * 60 + t.minute - m)
+            minOf(d, 24 * 60 - d)
+        }
+    }
 
     /** (Re)schedule every check-in from current settings. Safe to call any time. */
     fun scheduleAll(context: Context) {
@@ -27,14 +41,15 @@ object AlarmScheduler {
 
     fun schedule(context: Context, c: Checkin) {
         val am = context.getSystemService(AlarmManager::class.java)
-        val pi = broadcast(context, c.id, test = false)
         if (!c.enabled || c.times.isEmpty()) {
-            am.cancel(pi)
+            am.cancel(broadcast(context, c.id, test = false))
             return
         }
-        // One alarm per check-in, set for its next time; after it rings, AlarmReceiver
-        // calls this again, which picks the time after that.
-        set(context, am, nextTriggerMillis(c), pi)
+        // One alarm per check-in, set for its next time (passed along so the answers are
+        // saved under that time); after it rings, AlarmReceiver calls this again, which
+        // picks the time after that.
+        val (time, at) = nextTime(c)
+        set(context, am, at, broadcast(context, c.id, test = false, time = time.toString()))
     }
 
     /** Call when a check-in is deleted. */
@@ -46,7 +61,9 @@ object AlarmScheduler {
 
     fun scheduleTest(context: Context, checkinId: String, delayMs: Long = 10_000L) {
         val am = context.getSystemService(AlarmManager::class.java)
-        set(context, am, System.currentTimeMillis() + delayMs, broadcast(context, checkinId, test = true))
+        // A test ring is saved under whichever of its times is closest to now.
+        val time = Store(context).checkin(checkinId)?.let { nearestTime(it).toString() }
+        set(context, am, System.currentTimeMillis() + delayMs, broadcast(context, checkinId, test = true, time = time))
     }
 
     fun canExact(context: Context): Boolean =
@@ -67,9 +84,10 @@ object AlarmScheduler {
     }
 
     /** One distinct PendingIntent per check-in (and one more for its test ring). */
-    private fun broadcast(context: Context, checkinId: String, test: Boolean): PendingIntent {
+    private fun broadcast(context: Context, checkinId: String, test: Boolean, time: String? = null): PendingIntent {
         val requestCode = (checkinId.hashCode() and 0x3FFFFFFF) * 2 + (if (test) 1 else 0)
         val intent = Intent(context, AlarmReceiver::class.java).putExtra(EXTRA_CHECKIN, checkinId)
+        if (time != null) intent.putExtra(EXTRA_TIME, time)
         return PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT

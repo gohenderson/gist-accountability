@@ -58,12 +58,15 @@ def entries(today):
         if back in skip:
             continue
         day = (today - datetime.timedelta(days=back)).isoformat()
-        answers = {}
+        slots = {}
         for c in CHECKINS:
+            if not c["questions"]:
+                continue
+            answers = slots.setdefault(c["times"][0], {})
             for question in c["questions"]:
                 on_track = rnd.random() < 0.75
                 answers[question["id"]] = question["yesIsGood"] if on_track else not question["yesIsGood"]
-        out[day] = answers
+        out[day] = slots
     return out
 
 

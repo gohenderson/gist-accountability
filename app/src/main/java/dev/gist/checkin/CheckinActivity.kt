@@ -80,14 +80,15 @@ class CheckinActivity : BaseActivity() {
 
         val editId = intent.getStringExtra(EXTRA_CHECKIN)
         val editDay = intent.getStringExtra(EXTRA_DAY)
-        val t = if (editId != null && editDay != null) Pending(editId, editDay) else store.pending.firstOrNull()
+        val editTime = intent.getStringExtra(EXTRA_TIME) ?: ""
+        val t = if (editId != null && editDay != null) Pending(editId, editDay, editTime) else store.pending.firstOrNull()
         if (t == null || !load(t)) {
             stopIfNothingPending()
             finish()
             return
         }
 
-        if (!forced) store.entry(target.day)?.let { answers.putAll(it) } // pre-fill when editing
+        if (!forced) store.entry(target.day, slot)?.let { answers.putAll(it) } // pre-fill when editing
         savedInstanceState?.let { s ->
             stepIndex = s.getInt(STATE_STEP, 0).coerceIn(0, steps.size - 1)
             solved = s.getInt(STATE_SOLVED, 0)
@@ -190,6 +191,10 @@ class CheckinActivity : BaseActivity() {
 
     // ------------------------------------------------------------ flow
 
+    /** The time ("HH:mm") these answers are saved under; the first time if unknown. */
+    private val slot: String
+        get() = target.time.ifEmpty { checkin.times.first().toString() }
+
     /** Point the screen at [t]. Returns false if its check-in no longer exists. */
     private fun load(t: Pending): Boolean {
         val c = store.checkin(t.checkinId) ?: return false
@@ -276,6 +281,7 @@ class CheckinActivity : BaseActivity() {
         col.add(label(title, 26f, bold = true))
         val sub = buildString {
             append(Days.pretty(target.day))
+            if (checkin.times.size > 1 || !forced) append(" · ${Days.timeOf(slot)}")
             if (steps.size > 1) append("  ·  step ${stepIndex + 1} of ${steps.size}")
         }
         col.add(label(sub, 15f), dp(4))
@@ -476,7 +482,7 @@ class CheckinActivity : BaseActivity() {
 
         submit = button("Submit") {
             val clean = qs.associate { it.id to answers.getValue(it.id) }
-            store.saveEntry(target.day, clean)
+            store.saveEntry(target.day, slot, clean)
             val good = qs.count { it.isGood(clean.getValue(it.id)) }
             toast("Logged: $good of ${qs.size} on track")
             nextStep()
@@ -495,6 +501,7 @@ class CheckinActivity : BaseActivity() {
     companion object {
         private const val EXTRA_CHECKIN = "checkin"
         private const val EXTRA_DAY = "day"
+        private const val EXTRA_TIME = "time"
         private const val STATE_STEP = "step"
         private const val STATE_SOLVED = "solved"
         private const val STATE_FALLBACK = "fallback"
@@ -508,9 +515,10 @@ class CheckinActivity : BaseActivity() {
             Intent(context, CheckinActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         /** Opens a check-in to fill in / fix a specific day's answers. */
-        fun editIntent(context: Context, checkinId: String, day: String): Intent =
+        fun editIntent(context: Context, checkinId: String, day: String, time: String = ""): Intent =
             Intent(context, CheckinActivity::class.java)
                 .putExtra(EXTRA_CHECKIN, checkinId)
                 .putExtra(EXTRA_DAY, day)
+                .putExtra(EXTRA_TIME, time)
     }
 }

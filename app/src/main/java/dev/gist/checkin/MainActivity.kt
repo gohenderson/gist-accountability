@@ -82,7 +82,7 @@ class MainActivity : BaseActivity() {
     }
 
     /** Per check-in: name, time + steps, a 7-day stat, and History / Edit buttons. */
-    private fun checkinRow(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
+    private fun checkinRow(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Answers>>) {
         val titleRow = row()
         titleRow.addView(label(c.name, 19f, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         titleRow.addView(Switch(this).apply {

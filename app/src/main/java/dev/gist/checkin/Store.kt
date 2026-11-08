@@ -53,13 +53,21 @@ data class Checkin(
     }
 }
 
-/** A check-in that has rung and is waiting for answers. */
-data class Pending(val checkinId: String, val day: String)
+/**
+ * A check-in that has rung and is waiting for answers: which day the answers count for,
+ * and which of the check-in's times ("HH:mm") rang. An empty [time] means its first time.
+ */
+data class Pending(val checkinId: String, val day: String, val time: String = "")
+
+/** One time's answers: question id → answer. */
+typealias Answers = Map<String, Boolean>
 
 /**
  * All app state, kept in one private SharedPreferences file on the phone.
- * Entries are stored as JSON: { "2026-11-07": { "<questionId>": true/false, ... }, ... }
- * Question ids are unique across check-ins, so several check-ins can log into the same day.
+ * Answers are stored per day and per time the check-in rang:
+ *   { "2026-11-07": { "07:30": { "<questionId>": true/false, … }, "21:30": { … } }, … }
+ * Question ids are unique across check-ins, so several check-ins can share a day and time.
+ * (Before multiple times, a day held answers directly; that's converted on first read.)
  */
 class Store(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gist", Context.MODE_PRIVATE)
@@ -92,12 +100,12 @@ class Store(context: Context) {
             val arr = JSONArray(raw)
             return (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Pending(o.getString("c"), o.getString("d"))
+                Pending(o.getString("c"), o.getString("d"), o.optString("t", ""))
             }
         }
         set(v) {
             val arr = JSONArray()
-            v.forEach { arr.put(JSONObject().put("c", it.checkinId).put("d", it.day)) }
+            v.forEach { arr.put(JSONObject().put("c", it.checkinId).put("d", it.day).put("t", it.time)) }
             prefs.edit().putString(K_PENDING, arr.toString()).commit()
         }
 
@@ -120,23 +128,41 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ entries
 
-    fun entry(day: String): Map<String, Boolean>? = entriesJson().optJSONObject(day)?.toBoolMap()
+    /** A day's answers by time ("HH:mm" → answers). Empty if nothing was logged. */
+    fun slots(day: String): Map<String, Answers> =
+        entriesJson().optJSONObject(day)?.toSlots() ?: emptyMap()
 
-    /** All logged days, oldest first. */
-    fun allEntries(): Map<String, Map<String, Boolean>> {
+    /** The answers logged at one time on one day. */
+    fun entry(day: String, time: String): Answers? = slots(day)[time]
+
+    /** Every answer logged on [day], all times merged (later times win). Handy for tests. */
+    fun entry(day: String): Answers? {
+        val s = slots(day)
+        if (s.isEmpty()) return null
+        return s.toSortedMap().values.fold(emptyMap()) { acc, a -> acc + a }
+    }
+
+    /** All logged days, oldest first: day → time → answers. */
+    fun allEntries(): Map<String, Map<String, Answers>> {
         val all = entriesJson()
-        val out = sortedMapOf<String, Map<String, Boolean>>()
-        all.keys().forEach { day -> all.optJSONObject(day)?.let { out[day] = it.toBoolMap() } }
+        val out = sortedMapOf<String, Map<String, Answers>>()
+        all.keys().forEach { day -> all.optJSONObject(day)?.let { out[day] = it.toSlots() } }
         return out
     }
 
-    /** Merges [answers] into the day (other check-ins' answers for that day are kept). */
-    fun saveEntry(day: String, answers: Map<String, Boolean>) {
+    /** Saves one time's [answers] (other times and other check-ins' answers are kept). */
+    fun saveEntry(day: String, time: String, answers: Answers) {
         val all = entriesJson()
-        val o = all.optJSONObject(day) ?: JSONObject()
-        answers.forEach { (id, value) -> o.put(id, value) }
-        all.put(day, o)
+        val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
+        val slot = d.optJSONObject(time) ?: JSONObject().also { d.put(time, it) }
+        answers.forEach { (id, value) -> slot.put(id, value) }
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+    }
+
+    private fun JSONObject.toSlots(): Map<String, Answers> {
+        val out = mutableMapOf<String, Answers>()
+        keys().forEach { time -> optJSONObject(time)?.let { out[time] = it.toBoolMap() } }
+        return out
     }
 
     // ------------------------------------------------------------ internals
@@ -150,9 +176,40 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ backup support
 
-    /** All answers as stored (day → question → answer). */
-    fun entriesJson(): JSONObject =
-        prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: JSONObject()
+    /** All answers as stored (day → time → question → answer). */
+    fun entriesJson(): JSONObject {
+        val all = prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: return JSONObject()
+        if (migratePerDayAnswers(all)) prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+        return all
+    }
+
+    /**
+     * Answers saved before multiple times (day → question → answer) move under the owning
+     * check-in's first time. Returns true if anything changed.
+     */
+    private fun migratePerDayAnswers(all: JSONObject): Boolean {
+        val days = all.keys().asSequence().toList()
+        val legacy = days.filter { day ->
+            val d = all.optJSONObject(day)
+            d != null && d.keys().asSequence().any { d.opt(it) is Boolean }
+        }
+        if (legacy.isEmpty()) return false
+        val ownerTime = checkins
+            .flatMap { c -> c.questions.map { q -> q.id to c.times.first().toString() } }
+            .toMap()
+        for (day in legacy) {
+            val d = all.getJSONObject(day)
+            val qids = d.keys().asSequence().filter { d.opt(it) is Boolean }.toList()
+            for (qid in qids) {
+                val value = d.getBoolean(qid)
+                d.remove(qid)
+                val time = ownerTime[qid] ?: "12:00"
+                val slot = d.optJSONObject(time) ?: JSONObject().also { d.put(time, it) }
+                if (!slot.has(qid)) slot.put(qid, value)
+            }
+        }
+        return true
+    }
 
     private fun JSONObject.toBoolMap(): Map<String, Boolean> {
         val m = mutableMapOf<String, Boolean>()
@@ -160,12 +217,12 @@ class Store(context: Context) {
         return m
     }
 
-    /** Converts settings from the first (single-alarm) version, if present. */
     /** Replaces all answers with [json] (same shape as [entriesJson]). */
     fun replaceEntries(json: JSONObject) {
         prefs.edit().putString(K_ENTRIES, json.toString()).commit()
     }
 
+    /** Converts settings from the first (single-alarm) version, if present. */
     private fun legacyOrDefault(): List<Checkin> {
         val rawQuestions = prefs.getString(K_LEGACY_QUESTIONS, null) ?: return DEFAULT_CHECKINS
         val arr = JSONArray(rawQuestions)

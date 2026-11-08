@@ -137,16 +137,19 @@ class SettingsActivity : BaseActivity() {
         val cols = store.checkins.flatMap { c -> c.questions.map { q -> c to q } }
         fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
         val sb = StringBuilder()
-        sb.append("date")
+        sb.append("date,time")
         cols.forEach { (c, q) -> sb.append(',').append(esc("${c.name}: ${q.text}")) }
         sb.append('\n')
-        store.allEntries().forEach { (day, e) ->
-            sb.append(day)
-            cols.forEach { (_, q) ->
-                sb.append(',')
-                e[q.id]?.let { sb.append(if (it) "yes" else "no") }
+        // One row per day and time a check-in was answered.
+        store.allEntries().forEach { (day, slots) ->
+            slots.toSortedMap().forEach { (time, answers) ->
+                sb.append(day).append(',').append(time)
+                cols.forEach { (_, q) ->
+                    sb.append(',')
+                    answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
+                }
+                sb.append('\n')
             }
-            sb.append('\n')
         }
         return sb.toString()
     }
