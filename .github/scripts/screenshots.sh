@@ -72,8 +72,17 @@ seed() {
   echo "Seeded demo data (pending: $pending)"
 }
 
+# Freshly booted CI emulators sometimes show a system dialog ("… isn't responding") or the
+# lock screen in front of everything; clear those before opening a screen.
+clear_dialogs() {
+  adb shell input keyevent KEYCODE_WAKEUP || true
+  adb shell wm dismiss-keyguard || true
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null || true
+}
+
 launch() {
   local activity=$1; shift
+  clear_dialogs
   adb shell am start -W -n "$PKG/$activity" "$@"
   sleep 3
 }
@@ -81,9 +90,15 @@ launch() {
 shot() {
   local name=$1
   # Make sure Gist (not a crash dialog or another app) is what's on screen.
-  local focus
-  focus="$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r' || true)"
-  echo "Focus: $focus"
+  local focus=""
+  for attempt in 1 2 3 4; do
+    focus="$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r' || true)"
+    echo "Focus: $focus"
+    [[ "$focus" == *"$PKG"* ]] && break
+    echo "Not in front yet (attempt $attempt); clearing dialogs and waiting."
+    clear_dialogs
+    sleep 3
+  done
   if [[ "$focus" != *"$PKG"* ]]; then
     echo "::error title=Wrong screen::$name: expected $PKG in focus, got: $focus"
     return 1
