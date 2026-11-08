@@ -65,12 +65,13 @@ class AlarmPauseTest {
 
     @Test
     fun eachTapRestartsTheCountdown() {
+        AlarmService.pauseMs = 6_000 // roomier than 3 s: CI emulators can be slow to respond
         openAlarmScreen().use {
             onView(withText("Start check-in")).perform(click())
-            SystemClock.sleep(2_000) // ~1 s left
+            SystemClock.sleep(2_500) // well into the countdown, with time to spare
             onView(tagged("q:p1:no")).perform(scrollTo(), click())
             val left = AlarmService.pausedUntil - SystemClock.elapsedRealtime()
-            assertTrue("countdown should be back near 3 s after a tap, was $left ms", left > 2_000)
+            assertTrue("countdown should be back near 6 s after a tap, was $left ms", left > 4_500)
             assertTrue(AlarmService.isPaused)
         }
     }
