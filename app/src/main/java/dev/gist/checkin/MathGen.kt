@@ -17,7 +17,7 @@ object MathGen {
     fun levelName(level: Int): String = LEVELS[(level - 1).coerceIn(0, LEVELS.size - 1)].name
 
     fun make(level: Int, rnd: Random = Random.Default): Problem {
-        fun r(range: IntRange) = rnd.nextInt(range).toLong()
+        fun r(range: IntRange) = rnd.nextInt(range.first, range.last + 1).toLong()
         return when (level) {
             1 -> {
                 val a = r(10..99); val b = r(10..99)
