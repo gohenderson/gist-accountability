@@ -56,6 +56,8 @@ object Notif {
     }
 
     fun showWaiting(context: Context) {
+        // Pointless (and in the way) while the alarm screen itself is open.
+        if (CheckinActivity.visible) return
         ensureChannels(context)
         val pi = surveyIntent(context)
         val n = Notification.Builder(context, CH_WAITING)

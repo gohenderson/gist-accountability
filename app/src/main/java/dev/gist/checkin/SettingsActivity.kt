@@ -30,7 +30,7 @@ class SettingsActivity : BaseActivity() {
         look.add(sectionTitle("Appearance"))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val options = listOf(
-            Store.THEME_SYSTEM to "Same as phone",
+            Store.THEME_SYSTEM to "System",
             Store.THEME_LIGHT to "Light",
             Store.THEME_DARK to "Dark",
         )

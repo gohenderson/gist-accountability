@@ -119,6 +119,7 @@ class CheckinActivity : BaseActivity() {
         super.onResume()
         if (!::checkin.isInitialized) return
         // You're looking at the check-in, so the "still waiting" reminder would only cover it.
+        visible = true
         if (forced) Notif.clearWaiting(this)
         showStep()
         if (forced) ticks.post(ticker)
@@ -179,8 +180,9 @@ class CheckinActivity : BaseActivity() {
 
     override fun onStop() {
         super.onStop()
+        visible = false
         // Left without finishing, and the alarm is no longer ringing: bring the reminder back.
-        if (forced && !isFinishing && store.pending.isNotEmpty() && !AlarmService.running) {
+        if (forced && !isFinishing && !isChangingConfigurations && store.pending.isNotEmpty() && !AlarmService.running) {
             Notif.showWaiting(this)
         }
     }
@@ -556,6 +558,11 @@ class CheckinActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     companion object {
+        /** True while an alarm/check-in screen is in front (the waiting reminder is then suppressed). */
+        @Volatile
+        var visible = false
+            private set
+
         private const val EXTRA_CHECKIN = "checkin"
         private const val EXTRA_DAY = "day"
         private const val EXTRA_TIME = "time"
