@@ -155,3 +155,48 @@ class EndToEndAlarmTest {
         assertEquals(mapOf("e2e" to false), TestEnv.store.entry(Days.forAlarmNow(false)))
     }
 }
+
+/** After an update, a switched-off full-screen permission is reported right away. */
+@RunWith(AndroidJUnit4::class)
+class PermissionAfterUpdateTest {
+    private val pkg get() = TestEnv.ctx.packageName
+    private val nm get() = TestEnv.ctx.getSystemService(android.app.NotificationManager::class.java)
+
+    @After
+    fun tearDown() {
+        TestEnv.shell("appops set $pkg USE_FULL_SCREEN_INTENT allow")
+        TestEnv.reset(emptyList())
+    }
+
+    private fun appUpdated() = BootReceiver().onReceive(
+        TestEnv.ctx, android.content.Intent(android.content.Intent.ACTION_MY_PACKAGE_REPLACED)
+    )
+
+    @Test
+    fun aLostFullScreenPermissionPostsAFixItNotification() {
+        if (android.os.Build.VERSION.SDK_INT < 34) return
+        TestEnv.reset(emptyList())
+        TestEnv.shell("pm grant $pkg android.permission.POST_NOTIFICATIONS")
+        TestEnv.shell("appops set $pkg USE_FULL_SCREEN_INTENT deny")
+        TestEnv.eventually { assertFalse(nm.canUseFullScreenIntent()) }
+        appUpdated()
+        TestEnv.eventually { assertTrue(nm.activeNotifications.any { it.id == Notif.ID_PERMISSION }) }
+    }
+
+    @Test
+    fun noNotificationWhenThePermissionIsStillOn() {
+        if (android.os.Build.VERSION.SDK_INT < 34) return
+        TestEnv.reset(emptyList())
+        TestEnv.shell("appops set $pkg USE_FULL_SCREEN_INTENT allow")
+        appUpdated()
+        assertFalse(nm.activeNotifications.any { it.id == Notif.ID_PERMISSION })
+    }
+
+    @Test
+    fun broadcastsFromOtherAppsAreIgnored() {
+        TestEnv.reset(emptyList())
+        TestEnv.shell("appops set $pkg USE_FULL_SCREEN_INTENT deny")
+        BootReceiver().onReceive(TestEnv.ctx, android.content.Intent("com.example.SPOOFED"))
+        assertFalse(nm.activeNotifications.any { it.id == Notif.ID_PERMISSION })
+    }
+}

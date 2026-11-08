@@ -10,6 +10,8 @@ import android.os.Build
 object Notif {
     private const val CH_ALARM = "checkin_alarm"
     private const val CH_WAITING = "checkin_waiting"
+    private const val CH_SETUP = "setup"
+    const val ID_PERMISSION = 3
     const val ID_ALARM = 1
     private const val ID_WAITING = 2
 
@@ -71,6 +73,37 @@ object Notif {
             .setFullScreenIntent(pi, true)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_WAITING, n)
+    }
+
+    /**
+     * Android 14+ can turn off "Full-screen notifications" for apps installed outside Google
+     * Play when they're updated. Without it, alarms can't take over the lock screen, so say so
+     * right away and link straight to the switch.
+     */
+    fun showFullScreenPermissionLost(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CH_SETUP, "Setup problems", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "When a permission alarms need gets turned off"
+            }
+        )
+        val fix = android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+            android.net.Uri.parse("package:${context.packageName}")
+        )
+        val pi = PendingIntent.getActivity(context, 11, fix, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = Notification.Builder(context, CH_SETUP)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Turn full-screen alarms back on")
+            .setContentText("Android switched it off (this can happen after an update). Tap to fix.")
+            .setStyle(Notification.BigTextStyle().bigText(
+                "Android switched off Gist's full-screen notification permission, which can happen after " +
+                    "an update. Until it's back on, alarms can't appear over the lock screen. Tap to turn it on."
+            ))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(ID_PERMISSION, n)
     }
 
     fun clearWaiting(context: Context) {

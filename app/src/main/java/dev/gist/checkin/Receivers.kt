@@ -1,8 +1,10 @@
 package dev.gist.checkin
 
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 
 /** Fired by AlarmManager at a check-in's time. */
 class AlarmReceiver : BroadcastReceiver() {
@@ -41,6 +43,11 @@ class BootReceiver : BroadcastReceiver() {
         // events it's registered for, never on arbitrary intents from other apps.
         if (intent.action !in SYSTEM_ACTIONS) return
         AlarmScheduler.scheduleAll(context)
+        if (Build.VERSION.SDK_INT >= 34 &&
+            !context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+        ) {
+            Notif.showFullScreenPermissionLost(context)
+        }
         if (Store(context).pending.isNotEmpty()) Notif.showWaiting(context)
     }
 }
