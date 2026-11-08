@@ -40,7 +40,7 @@ class EditCheckinTest {
         ActivityScenario.launch(CheckinEditActivity.intent(TestEnv.ctx, id))
 
     private fun questionsPage(id: String): ActivityScenario<StepEditActivity> =
-        ActivityScenario.launch(StepEditActivity.intent(TestEnv.ctx, id, Steps.QUESTIONS))
+        ActivityScenario.launch(StepEditActivity.intent(TestEnv.ctx, id, "q"))
 
     @After
     fun tearDown() = TestEnv.reset(emptyList())

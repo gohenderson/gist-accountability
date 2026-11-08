@@ -35,6 +35,12 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- Optional running triggers: the step counter ("physical activity"), watched by a
+         foreground service of the "health" type while a check-in needs it. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+
     <!-- Note: no INTERNET permission. Nothing ever leaves the phone. -->
 
     <application
@@ -101,6 +107,11 @@
         <receiver
             android:name=".ProximityReceiver"
             android:exported="false" />
+
+        <service
+            android:name=".MovementService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
 
         <receiver
             android:name=".BootReceiver"

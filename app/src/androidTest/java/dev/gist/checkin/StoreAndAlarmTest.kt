@@ -40,8 +40,13 @@ class StoreTest {
         TestEnv.reset(emptyList())
         val c = Checkin(
             id = "x", name = "Starting the Day", times = listOf(AlarmTime(6, 45), AlarmTime(18, 0)), enabled = false,
-            aboutYesterday = true, questions = listOf(Question("a", "A?", yesIsGood = true)),
-            mathCount = 3, mathLevel = 4, scanCode = "ABC-123", scanLabel = "Sink",
+            aboutYesterday = true,
+            steps = listOf(
+                StepConfig("m1", Steps.MATH, mathCount = 3, mathLevel = 4),
+                StepConfig("s1", Steps.SCAN, scanCode = "ABC-123", scanLabel = "Sink"),
+                StepConfig("q1", Steps.QUESTIONS, questions = listOf(Question("a", "A?", yesIsGood = true))),
+                StepConfig("m2", Steps.MATH, mathCount = 10, mathLevel = 4), // the same kind again
+            ),
             repeat = Repeat.monthly(setOf(1, Repeat.LAST_DAY)),
         )
         TestEnv.store.checkins = listOf(c)
@@ -57,9 +62,18 @@ class StoreTest {
     }
 
     @Test
-    fun missingScanCodeStaysNull() {
-        TestEnv.reset(listOf(TestEnv.checkin("x")))
-        assertNull(Store(TestEnv.ctx).checkin("x")!!.scanCode)
+    fun aCheckinSavedBeforeStepsCouldRepeatKeepsItsSteps() {
+        // The older layout: one math / scan / questions setup on the check-in plus an order of kinds.
+        val legacy = """[{"id":"old","name":"Old","times":["07:00"],"mathCount":4,"mathLevel":2,
+            "scanCode":"CODE","scanLabel":"Sink","questions":[{"id":"a","text":"A?","yesIsGood":true}],
+            "steps":["questions","math"]}]"""
+        TestEnv.reset(emptyList())
+        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().putString("checkins", legacy).commit()
+        val c = Store(TestEnv.ctx).checkin("old")!!
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), c.steps.map { it.kind })
+        assertEquals(4, c.steps[1].mathCount)
+        assertEquals("CODE", c.steps[2].scanCode)
+        assertEquals(listOf("a"), c.questions.map { it.id })
     }
 
     @Test

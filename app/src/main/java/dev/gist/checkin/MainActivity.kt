@@ -46,7 +46,7 @@ class MainActivity : BaseActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        if (requestCode == REQ_LOCATION) AlarmScheduler.scheduleAll(this) // start watching places
+        if (requestCode == REQ_LOCATION || requestCode == REQ_ACTIVITY) AlarmScheduler.scheduleAll(this) // start watching
         render()
     }
 
@@ -144,14 +144,18 @@ class MainActivity : BaseActivity() {
                 r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
                 box.add(r)
                 card.add(box, dp(10))
-            } else if (c.trigger.isPlace) {
+            } else if (c.trigger.isEvent) {
                 val box = column().apply {
                     background = rounded(colorOf(R.color.surface_variant), 14)
                     setPadding(dp(14), dp(10), dp(10), dp(10))
                 }
-                box.add(label("📍 Rings ${CheckinText.whenText(c)}", 15f).apply { tag = "next:${c.id}" })
-                if (!LocationTriggers.hasBackground(this)) {
+                val icon = if (c.trigger.isPlace) "📍" else "🏃"
+                box.add(label("$icon Rings ${CheckinText.whenText(c)}", 15f).apply { tag = "next:${c.id}" })
+                if (c.trigger.isPlace && !LocationTriggers.hasBackground(this)) {
                     box.add(label("Needs location \"all the time\" (see Finish setup)", 13f, color = colorWarn), dp(2))
+                }
+                if (c.trigger.isMovement && !MovementWatch.canWatch(this)) {
+                    box.add(label(MovementWatch.problem(this), 13f, color = colorWarn), dp(2))
                 }
                 card.add(box, dp(10))
             }
@@ -212,6 +216,11 @@ class MainActivity : BaseActivity() {
                 }
             }
         }
+        if (MovementWatch.anyUse(this) && !MovementWatch.hasPermission(this)) {
+            items += "Allow physical activity (to notice when you run)" to {
+                requestPermissions(arrayOf(Manifest.permission.ACTIVITY_RECOGNITION), REQ_ACTIVITY)
+            }
+        }
         if (!Settings.canDrawOverlays(this)) {
             items += "Allow display over other apps (brings a ringing alarm back if you leave it)" to {
                 openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
@@ -257,5 +266,6 @@ class MainActivity : BaseActivity() {
     companion object {
         private const val REQ_NOTIF = 1
         private const val REQ_LOCATION = 2
+        private const val REQ_ACTIVITY = 3
     }
 }

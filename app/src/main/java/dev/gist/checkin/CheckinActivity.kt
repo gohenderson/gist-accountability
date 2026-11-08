@@ -51,8 +51,8 @@ import android.util.TypedValue
 class CheckinActivity : BaseActivity() {
     private sealed class Step {
         data class Math(val count: Int, val level: Int) : Step()
-        object Scan : Step()
-        object Survey : Step()
+        data class Scan(val code: String, val label: String) : Step()
+        data class Survey(val questions: List<Question>) : Step()
         object Dismiss : Step()
     }
 
@@ -66,7 +66,7 @@ class CheckinActivity : BaseActivity() {
     private var stepIndex = 0
     private var solved = 0                     // math problems solved in the current step
     private var problem: MathGen.Problem? = null
-    private var scanFallback = false           // "can't scan" was chosen
+    private val fallbacks = mutableSetOf<Int>() // scan steps swapped for math ("can't scan")
     private val answers = mutableMapOf<String, Boolean>()
     private var scanner: ScannerView? = null
     private val ui = Handler(Looper.getMainLooper())
@@ -108,7 +108,7 @@ class CheckinActivity : BaseActivity() {
         savedInstanceState?.let { s ->
             stepIndex = s.getInt(STATE_STEP, 0).coerceIn(0, steps.size - 1)
             solved = s.getInt(STATE_SOLVED, 0)
-            if (s.getBoolean(STATE_FALLBACK, false)) useScanFallback()
+            s.getIntArray(STATE_FALLBACK)?.forEach { useScanFallback(it) }
             answers.clear()
             s.getStringArrayList(STATE_YES)?.forEach { answers[it] = true }
             s.getStringArrayList(STATE_NO)?.forEach { answers[it] = false }
@@ -117,7 +117,7 @@ class CheckinActivity : BaseActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
-            ) { if (!forced) finish() }
+            ) { if (!forced) finish() else if (target.practice) endTest() }
         }
         // The UI is built in onResume (so the camera restarts properly too).
     }
@@ -198,14 +198,36 @@ class CheckinActivity : BaseActivity() {
 
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (!forced) super.onBackPressed() // no escaping the alarm
+        when {
+            !forced -> super.onBackPressed()
+            target.practice -> endTest() // a test can be left at any point
+            else -> {} // no escaping the alarm
+        }
     }
+
+    /** Stop a test ring part-way: nothing was logged, so just stop. */
+    private fun endTest() {
+        if (!target.practice) return
+        ticks.removeCallbacksAndMessages(null)
+        store.removePending(target)
+        val next = store.pending.firstOrNull()
+        if (next != null && load(next)) {
+            answers.clear()
+            showStep()
+            ticks.post(ticker)
+            return
+        }
+        stopIfNothingPending()
+        finish()
+    }
+
+    private fun endTestButton(): View = outlineButton("End test") { endTest() }.apply { tag = "end-test" }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_STEP, stepIndex)
         outState.putInt(STATE_SOLVED, solved)
-        outState.putBoolean(STATE_FALLBACK, scanFallback)
+        outState.putIntArray(STATE_FALLBACK, fallbacks.toIntArray())
         outState.putStringArrayList(STATE_YES, ArrayList(answers.filterValues { it }.keys))
         outState.putStringArrayList(STATE_NO, ArrayList(answers.filterValues { !it }.keys))
     }
@@ -228,7 +250,7 @@ class CheckinActivity : BaseActivity() {
         stepIndex = 0
         solved = 0
         problem = null
-        scanFallback = false
+        fallbacks.clear()
         if (forced) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -238,22 +260,22 @@ class CheckinActivity : BaseActivity() {
     }
 
     private fun buildSteps(c: Checkin): MutableList<Step> {
-        if (!forced && !early) return mutableListOf(Step.Survey) // editing history: questions only
-        val list: MutableList<Step> = Steps.active(c).map { kind ->
-            when (kind) {
-                Steps.MATH -> Step.Math(c.mathCount, c.mathLevel)
-                Steps.SCAN -> Step.Scan
-                else -> Step.Survey
+        if (!forced && !early) return mutableListOf(Step.Survey(c.questions)) // editing history: questions only
+        val list: MutableList<Step> = Steps.active(c).map { st ->
+            when (st.kind) {
+                Steps.MATH -> Step.Math(st.mathCount, st.mathLevel)
+                Steps.SCAN -> Step.Scan(st.scanCode!!, st.scanLabel)
+                else -> Step.Survey(st.questions)
             }
         }.toMutableList()
         if (list.isEmpty()) list += Step.Dismiss
         return list
     }
 
-    private fun useScanFallback() {
-        val i = steps.indexOf(Step.Scan)
-        if (i >= 0) steps[i] = Step.Math(FALLBACK_PROBLEMS, 4)
-        scanFallback = true
+    /** "Can't scan?": this scan step becomes very hard math. */
+    private fun useScanFallback(i: Int = stepIndex) {
+        if (i in steps.indices && steps[i] is Step.Scan) steps[i] = Step.Math(FALLBACK_PROBLEMS, 4)
+        fallbacks += i
     }
 
     private fun nextStep() {
@@ -329,6 +351,7 @@ class CheckinActivity : BaseActivity() {
             col.add(chip("Test ring · nothing is logged", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)).apply {
                 tag = "practice-chip"
             }, dp(12))
+            col.add(endTestButton(), dp(8))
         }
         if (early) {
             col.add(chip("Done now, this time's alarm won't ring", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)), dp(12))
@@ -336,8 +359,8 @@ class CheckinActivity : BaseActivity() {
 
         when (val step = steps[stepIndex]) {
             is Step.Math -> mathUi(col, step)
-            is Step.Scan -> scanUi(col)
-            is Step.Survey -> surveyUi(col)
+            is Step.Scan -> scanUi(col, step)
+            is Step.Survey -> surveyUi(col, step.questions)
             is Step.Dismiss -> col.add(primaryButton("Dismiss") { nextStep() }, dp(32))
         }
 
@@ -391,6 +414,7 @@ class CheckinActivity : BaseActivity() {
             },
             dp(56)
         )
+        if (target.practice) col.add(endTestButton(), dp(12))
         col.add(
             label("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
                 "if it runs out, the alarm rings again.", 13f, color = soft).apply { gravity = Gravity.CENTER },
@@ -592,8 +616,8 @@ class CheckinActivity : BaseActivity() {
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
     }
 
-    private fun scanUi(col: LinearLayout) {
-        val where = checkin.scanLabel.ifEmpty { "your registered code" }
+    private fun scanUi(col: LinearLayout, step: Step.Scan) {
+        val where = step.label.ifEmpty { "your registered code" }
         col.add(label("Go scan: $where", 22f, bold = true), dp(24))
         val status: TextView = muted("Point the camera at the code.", 15f)
         col.add(status, dp(4))
@@ -622,7 +646,7 @@ class CheckinActivity : BaseActivity() {
 
         sv.start(
             onCode = { code ->
-                if (code == checkin.scanCode) {
+                if (code == step.code) {
                     toast("Got it.")
                     nextStep()
                 } else {
@@ -637,8 +661,7 @@ class CheckinActivity : BaseActivity() {
         )
     }
 
-    private fun surveyUi(col: LinearLayout) {
-        val qs = checkin.questions
+    private fun surveyUi(col: LinearLayout, qs: List<Question>) {
         if (forced) col.add(muted("Be honest. This is just for you.", 14f), dp(10))
         lateinit var submit: Button
         fun refresh() {

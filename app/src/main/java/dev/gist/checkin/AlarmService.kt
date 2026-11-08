@@ -60,7 +60,7 @@ class AlarmService : Service() {
         if (CheckinActivity.visible) return
         if (!Settings.canDrawOverlays(this)) return
         if (!getSystemService(PowerManager::class.java).isInteractive) return // screen off: the lock screen shows it
-        if (Store(this).pending.isEmpty()) return
+        if (Store(this).pending.none { !it.practice }) return // a test ring can be left
         try {
             startActivity(CheckinActivity.alarmIntent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         } catch (e: Exception) {

@@ -119,8 +119,10 @@ class SettingsActivity : BaseActivity() {
      */
     fun showExportChoices(onChosen: (List<Backup.ExportChoice>) -> Unit) {
         val box = column().apply { setPadding(dp(20), dp(8), dp(20), dp(8)) }
+        box.add(muted("Each check-in is saved with its steps and background. Its history is up to you.", 13f))
         val rows = store.checkins.map { c ->
             val days = store.historyJson(c.id).length()
+            val card = dialogCard()
             val include = CheckBox(this).apply {
                 text = c.name
                 isChecked = true
@@ -128,14 +130,16 @@ class SettingsActivity : BaseActivity() {
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
             }
             val history = CheckBox(this).apply {
-                text = if (days == 0) "No history yet" else "Include history ($days day${if (days == 1) "" else "s"})"
+                text = if (days == 0) "No history yet" else "Include its history ($days day${if (days == 1) "" else "s"})"
                 isChecked = days > 0
                 isEnabled = days > 0
                 tag = "export-history:${c.id}"
             }
             include.setOnCheckedChangeListener { _, on -> history.isEnabled = on && days > 0 }
-            box.add(include, dp(8))
-            box.add(history.apply { setPadding(paddingLeft + dp(8), 0, 0, 0) }, dp(0))
+            card.add(include)
+            card.add(muted(CheckinText.oneLine(c), 13f), dp(0))
+            card.add(history, dp(4))
+            box.add(card, dp(12))
             Triple(c.id, include, history)
         }
         AlertDialog.Builder(this)

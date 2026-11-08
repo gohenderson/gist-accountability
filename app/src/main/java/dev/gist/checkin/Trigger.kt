@@ -45,10 +45,12 @@ data class Place(val name: String, val lat: Double, val lon: Double, val radiusM
  * What makes a check-in ring, and the conditions that must all hold at that moment:
  *  - [TIME]: at its times on the days its repeat rule allows (the classic alarm), and,
  *    optionally, only when you're [AT] or [AWAY] from [place] at that time;
- *  - [ARRIVE] / [LEAVE]: when you enter or leave [place], but only on the days the repeat
- *    rule allows, only between [windowStart] and [windowEnd] (if set), and at most once a
- *    day if [oncePerDay].
- * Location is checked on the phone (Android's own location service); nothing is sent anywhere.
+ *  - [ARRIVE] / [LEAVE]: when you enter or leave [place];
+ *  - [RUN_START] / [RUN_END]: when you start running, or finish a run of at least
+ *    [minRunMinutes] (from the phone's step sensor, see [RunDetector]);
+ * and, for those events, only on the days the repeat rule allows, only between
+ * [windowStart] and [windowEnd] (if set), and at most once a day if [oncePerDay].
+ * Location and steps are read on the phone; nothing is sent anywhere.
  */
 data class Trigger(
     val kind: String = TIME,
@@ -57,16 +59,22 @@ data class Trigger(
     val windowStart: AlarmTime? = null,    // ARRIVE / LEAVE only
     val windowEnd: AlarmTime? = null,
     val oncePerDay: Boolean = true,
+    val minRunMinutes: Int = 0,            // RUN_END only
 ) {
     val isPlace: Boolean get() = kind == ARRIVE || kind == LEAVE
+    val isMovement: Boolean get() = kind == RUN_START || kind == RUN_END
+
+    /** Rings on an event (place or movement) rather than at set times. */
+    val isEvent: Boolean get() = isPlace || isMovement
 
     /** Does this trigger need location at all? */
-    val usesLocation: Boolean get() = (isPlace || where != ANYWHERE) && place != null
+    val usesLocation: Boolean get() = (isPlace || (kind == TIME && where != ANYWHERE)) && place != null
 
     fun toJson(): JSONObject = JSONObject()
         .put("kind", kind)
         .put("where", where)
         .put("oncePerDay", oncePerDay)
+        .put("minRunMinutes", minRunMinutes)
         .apply {
             place?.let { put("place", it.toJson()) }
             windowStart?.let { put("windowStart", it.toString()) }
@@ -77,6 +85,9 @@ data class Trigger(
         const val TIME = "time"
         const val ARRIVE = "arrive"
         const val LEAVE = "leave"
+        const val RUN_START = "run-start"
+        const val RUN_END = "run-end"
+        val KINDS = setOf(TIME, ARRIVE, LEAVE, RUN_START, RUN_END)
         const val ANYWHERE = "anywhere"
         const val AT = "at"
         const val AWAY = "away"
@@ -85,7 +96,7 @@ data class Trigger(
 
         fun fromJson(o: JSONObject?): Trigger {
             if (o == null) return DEFAULT
-            val kind = o.optString("kind", TIME).takeIf { it in setOf(TIME, ARRIVE, LEAVE) } ?: TIME
+            val kind = o.optString("kind", TIME).takeIf { it in KINDS } ?: TIME
             return Trigger(
                 kind = kind,
                 place = Place.fromJson(o.optJSONObject("place")),
@@ -93,6 +104,7 @@ data class Trigger(
                 windowStart = AlarmTime.parse(o.optString("windowStart", "")),
                 windowEnd = AlarmTime.parse(o.optString("windowEnd", "")),
                 oncePerDay = o.optBoolean("oncePerDay", true),
+                minRunMinutes = o.optInt("minRunMinutes", 0).coerceIn(0, 600),
             )
         }
 
@@ -123,6 +135,27 @@ data class Trigger(
             val t = c.trigger
             if (!c.enabled || !t.isPlace || t.place == null) return false
             if ((t.kind == ARRIVE) != entering) return false
+            return conditionsHold(c, now, rangToday)
+        }
+
+        /**
+         * Should [c] ring for a run that just started ([finishedMinutes] = null) or just finished
+         * after [finishedMinutes] minutes?
+         */
+        fun runEventRings(c: Checkin, finishedMinutes: Int?, now: LocalDateTime, rangToday: Boolean): Boolean {
+            val t = c.trigger
+            if (!c.enabled) return false
+            when (t.kind) {
+                RUN_START -> if (finishedMinutes != null) return false
+                RUN_END -> if (finishedMinutes == null || finishedMinutes < t.minRunMinutes) return false
+                else -> return false
+            }
+            return conditionsHold(c, now, rangToday)
+        }
+
+        /** Days, time window and once a day: shared by all event triggers. */
+        fun conditionsHold(c: Checkin, now: LocalDateTime, rangToday: Boolean): Boolean {
+            val t = c.trigger
             if (!c.repeat.matches(now.toLocalDate())) return false
             if (!inWindow(t, now.toLocalTime())) return false
             if (t.oncePerDay && rangToday) return false
@@ -146,6 +179,8 @@ data class Trigger(
             return when (t.kind) {
                 ARRIVE -> "when you arrive at $name"
                 LEAVE -> "when you leave $name"
+                RUN_START -> "when you start running"
+                RUN_END -> if (t.minRunMinutes > 0) "when you finish a run of ${t.minRunMinutes}+ min" else "when you finish running"
                 else -> when (t.where) {
                     AT -> "only when at $name"
                     AWAY -> "only when away from $name"

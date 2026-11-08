@@ -1,20 +1,77 @@
 package dev.gist.checkin
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 /**
- * The steps that run when a check-in rings, in the order you choose (the edit page's
- * "When it rings" list, reordered by dragging). Each kind appears at most once and is set
- * up on its own page ([StepEditActivity]):
- *  - [MATH]: solve [Checkin.mathCount] problems at [Checkin.mathLevel];
- *  - [SCAN]: scan the registered [Checkin.scanCode];
- *  - [QUESTIONS]: answer [Checkin.questions] (the only answers that get logged).
- * A step that's in the list but not set up yet (no code registered, no questions) is
- * skipped when ringing.
+ * One step that runs when a check-in rings. A check-in has any number of them, of any kinds,
+ * in the order you choose (two math steps around a scan, ten very hard math steps…):
+ *  - [Steps.MATH]: solve [mathCount] problems at [mathLevel];
+ *  - [Steps.SCAN]: scan [scanCode] (at [scanLabel]);
+ *  - [Steps.QUESTIONS]: answer [questions]. Their answers are what gets logged.
+ * A step that isn't set up yet (a scan without a code, questions without any) is skipped.
  */
+data class StepConfig(
+    val id: String,
+    val kind: String,
+    val mathCount: Int = 3,
+    val mathLevel: Int = 2,       // 1..4, see MathGen.LEVELS
+    val scanCode: String? = null, // exact text of the registered QR code / barcode
+    val scanLabel: String = "",   // where it is, e.g. "Bathroom sink"
+    val questions: List<Question> = emptyList(),
+) {
+    val configured: Boolean get() = when (kind) {
+        Steps.MATH -> mathCount > 0
+        Steps.SCAN -> scanCode != null
+        Steps.QUESTIONS -> questions.isNotEmpty()
+        else -> false
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("kind", kind).apply {
+        when (kind) {
+            Steps.MATH -> put("mathCount", mathCount).put("mathLevel", mathLevel)
+            Steps.SCAN -> put("scanCode", scanCode ?: "").put("scanLabel", scanLabel)
+            Steps.QUESTIONS -> put("questions", JSONArray().apply {
+                questions.forEach { put(JSONObject().put("id", it.id).put("text", it.text).put("yesIsGood", it.yesIsGood)) }
+            })
+        }
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject): StepConfig? {
+            val kind = o.optString("kind").takeIf { it in Steps.ALL } ?: return null
+            val qs = o.optJSONArray("questions") ?: JSONArray()
+            return StepConfig(
+                id = o.optString("id", "").ifEmpty { Store.newId() },
+                kind = kind,
+                mathCount = o.optInt("mathCount", 3).coerceIn(0, 100),
+                mathLevel = o.optInt("mathLevel", 2).coerceIn(1, MathGen.LEVELS.size),
+                scanCode = o.optString("scanCode", "").ifEmpty { null },
+                scanLabel = o.optString("scanLabel", ""),
+                questions = (0 until qs.length()).mapNotNull { i ->
+                    qs.optJSONObject(i)?.let { q ->
+                        q.optString("text", "").takeIf { it.isNotBlank() }?.let {
+                            Question(q.optString("id", "").ifEmpty { Store.newId() }, it, q.optBoolean("yesIsGood", false))
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
 object Steps {
     const val MATH = "math"
     const val SCAN = "scan"
     const val QUESTIONS = "questions"
     val ALL = listOf(MATH, SCAN, QUESTIONS)
+    const val MAX_STEPS = 100
+    const val MAX_PROBLEMS = 100
+
+    fun math(count: Int = 3, level: Int = 2) = StepConfig(Store.newId(), MATH, mathCount = count, mathLevel = level)
+    fun scan(code: String?, label: String = "") = StepConfig(Store.newId(), SCAN, scanCode = code, scanLabel = label)
+    fun questions(vararg qs: Question) = StepConfig(Store.newId(), QUESTIONS, questions = qs.toList())
+    fun questions(qs: List<Question>) = StepConfig(Store.newId(), QUESTIONS, questions = qs)
 
     fun title(kind: String): String = when (kind) {
         MATH -> "Math problems"
@@ -28,54 +85,40 @@ object Steps {
         else -> "Yes/no questions. These answers are logged and shown in History."
     }
 
-    /** Is [kind] set up enough to run? */
-    fun configured(c: Checkin, kind: String): Boolean = when (kind) {
-        MATH -> c.mathCount > 0
-        SCAN -> c.scanCode != null
-        QUESTIONS -> c.questions.isNotEmpty()
-        else -> false
-    }
-
-    /**
-     * The check-in's steps in order: the saved order, then any step that's set up but not
-     * in it (e.g. a check-in made in code with just mathCount), in the default order.
-     */
-    fun order(c: Checkin): List<String> =
-        (c.steps.filter { it in ALL } + ALL.filter { configured(c, it) }).distinct()
-
     /** What actually runs when it rings, in order. */
-    fun active(c: Checkin): List<String> = order(c).filter { configured(c, it) }
-
-    /** Kinds that can still be added. */
-    fun available(c: Checkin): List<String> = ALL - order(c).toSet()
+    fun active(c: Checkin): List<StepConfig> = c.steps.filter { it.configured }
 
     /** e.g. "3 × Medium", "Bathroom sink", "5 questions"; or what's missing. */
-    fun summary(c: Checkin, kind: String): String = when (kind) {
-        MATH -> if (c.mathCount > 0) "${c.mathCount} × ${MathGen.levelName(c.mathLevel)}" else "Not set up"
-        SCAN -> if (c.scanCode != null) c.scanLabel.ifEmpty { "Registered code" } else "Not set up: register a code"
-        else -> if (c.questions.isEmpty()) "Not set up: add a question" else
-            "${c.questions.size} question${if (c.questions.size == 1) "" else "s"}"
+    fun summary(s: StepConfig): String = when (s.kind) {
+        MATH -> if (s.mathCount > 0) "${s.mathCount} × ${MathGen.levelName(s.mathLevel)}" else "Not set up"
+        SCAN -> if (s.scanCode != null) s.scanLabel.ifEmpty { "Registered code" } else "Not set up: register a code"
+        else -> if (s.questions.isEmpty()) "Not set up: add a question" else
+            "${s.questions.size} question${if (s.questions.size == 1) "" else "s"}"
     }
 
-    /** Adds [kind] at the end, with sensible defaults (math: 3 medium problems). */
-    fun add(c: Checkin, kind: String): Checkin {
-        val withKind = c.copy(steps = order(c) + kind)
-        return if (kind == MATH && c.mathCount == 0) withKind.copy(mathCount = 3, mathLevel = 2) else withKind
+    /** Adds a [kind] step at the end, with defaults (math: 3 medium problems). */
+    fun add(c: Checkin, kind: String): Checkin =
+        if (c.steps.size >= MAX_STEPS) c else c.copy(steps = c.steps + StepConfig(Store.newId(), kind))
+
+    /** Removes the step with [stepId] (a scan's code, or its questions, go with it; logged answers stay). */
+    fun remove(c: Checkin, stepId: String): Checkin = c.copy(steps = c.steps.filter { it.id != stepId })
+
+    /** A copy of the step right after it. */
+    fun duplicate(c: Checkin, stepId: String): Checkin {
+        val i = c.steps.indexOfFirst { it.id == stepId }
+        if (i < 0 || c.steps.size >= MAX_STEPS) return c
+        val src = c.steps[i]
+        // Questions get new ids: each question is logged separately.
+        val copy = src.copy(id = Store.newId(), questions = src.questions.map { it.copy(id = Store.newId()) })
+        return c.copy(steps = c.steps.toMutableList().apply { add(i + 1, copy) })
     }
 
-    /** Removes [kind] and its setup (the code, or the questions; logged answers stay). */
-    fun remove(c: Checkin, kind: String): Checkin {
-        val rest = order(c) - kind
-        return when (kind) {
-            MATH -> c.copy(steps = rest, mathCount = 0)
-            SCAN -> c.copy(steps = rest, scanCode = null, scanLabel = "")
-            else -> c.copy(steps = rest, questions = emptyList())
-        }
-    }
+    fun update(c: Checkin, stepId: String, f: (StepConfig) -> StepConfig): Checkin =
+        c.copy(steps = c.steps.map { if (it.id == stepId) f(it) else it })
 
-    /** Moves the step at [from] to [to] (indices into [order]). */
+    /** Moves the step at [from] to [to]. */
     fun move(c: Checkin, from: Int, to: Int): Checkin {
-        val list = order(c).toMutableList()
+        val list = c.steps.toMutableList()
         if (from !in list.indices || to !in list.indices) return c
         list.add(to, list.removeAt(from))
         return c.copy(steps = list)

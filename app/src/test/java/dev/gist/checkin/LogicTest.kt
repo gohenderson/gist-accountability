@@ -145,7 +145,7 @@ class MultipleTimesTest {
 class StatsTest {
     private val soda = Question("soda", "Soda?")                    // on track = No
     private val veg = Question("veg", "Vegetables?", yesIsGood = true)
-    private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), questions = listOf(soda, veg))
+    private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), steps = listOf(StepConfig("q", Steps.QUESTIONS, questions = listOf(soda, veg))))
 
     private fun answered(vararg a: Pair<String, Boolean>) = SlotResult(SlotResult.ANSWERED, mapOf(*a))
     private val missed = SlotResult(SlotResult.RANG)
@@ -232,8 +232,11 @@ class CheckinTextTest {
     fun stepsAreListedInTheOrderTheyRun() {
         val c = Checkin(
             id = "c", name = "Wake", times = listOf(AlarmTime(7, 0)),
-            questions = listOf(Question("q", "Q?")),
-            mathCount = 3, scanCode = "X", scanLabel = "Sink",
+            steps = listOf(
+                StepConfig("m", Steps.MATH, mathCount = 3),
+                StepConfig("s", Steps.SCAN, scanCode = "X", scanLabel = "Sink"),
+                StepConfig("q", Steps.QUESTIONS, questions = listOf(Question("q", "Q?"))),
+            ),
         )
         assertEquals("solve 3 math → scan Sink → answer 1 question", CheckinText.steps(c))
     }
@@ -350,47 +353,55 @@ class BackgroundTest {
 class StepsTest {
     private val q = Question("q", "Q?")
     private val base = Checkin(id = "c", name = "C")
+    private fun kinds(c: Checkin) = c.steps.map { it.kind }
 
     @Test
-    fun defaultOrderIsMathScanQuestions() {
-        val c = base.copy(mathCount = 2, scanCode = "X", questions = listOf(q))
-        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
-        assertEquals("solve 2 math → scan code → answer 1 question", CheckinText.steps(c))
-    }
-
-    @Test
-    fun savedOrderWinsAndUnsetStepsDontRun() {
-        val c = base.copy(mathCount = 2, questions = listOf(q), steps = listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH))
-        assertEquals(listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH), Steps.order(c))
-        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH), Steps.active(c)) // no code registered
+    fun stepsRunInTheirOrderAndUnsetOnesAreSkipped() {
+        val c = base.copy(steps = listOf(
+            StepConfig("q", Steps.QUESTIONS, questions = listOf(q)),
+            StepConfig("s", Steps.SCAN), // no code yet
+            StepConfig("m", Steps.MATH, mathCount = 2),
+        ))
+        assertEquals(listOf("q", "m"), Steps.active(c).map { it.id })
         assertEquals("answer 1 question → solve 2 math", CheckinText.steps(c))
-        assertEquals("Not set up: register a code", Steps.summary(c, Steps.SCAN))
+        assertEquals("Not set up: register a code", Steps.summary(c.steps[1]))
+        assertEquals(listOf(q), c.questions)
     }
 
     @Test
-    fun moveAddAndRemove() {
-        var c = base.copy(mathCount = 1, scanCode = "X", questions = listOf(q))
-        c = Steps.move(c, 2, 0)
-        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), Steps.order(c))
-        c = Steps.move(c, 0, 2)
-        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
-        c = Steps.remove(c, Steps.SCAN)
-        assertEquals(null, c.scanCode)
-        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS), Steps.order(c))
-        assertEquals(listOf(Steps.SCAN), Steps.available(c))
-        c = Steps.add(c, Steps.SCAN)
-        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS, Steps.SCAN), Steps.order(c))
+    fun anyKindCanRepeatAsOftenAsYouLike() {
+        var c = base
+        repeat(100) { c = Steps.add(c, Steps.MATH) }
+        assertEquals(100, c.steps.size)
+        assertEquals("capped at ${Steps.MAX_STEPS}", 100, Steps.add(c, Steps.SCAN).steps.size)
+        assertEquals(100, c.steps.map { it.id }.toSet().size)
+        assertTrue(c.steps.all { it.mathCount == 3 })
+        assertEquals("solve 3 math → solve 3 math", CheckinText.steps(base.copy(steps = c.steps.take(2))))
+    }
 
-        val math = Steps.add(base, Steps.MATH)
-        assertEquals(3, math.mathCount)
-        assertEquals(listOf(Steps.MATH), Steps.active(math))
-        assertEquals(emptyList<String>(), Steps.order(Steps.remove(math, Steps.MATH)))
+    @Test
+    fun moveDuplicateAndRemove() {
+        var c = base.copy(steps = listOf(
+            StepConfig("m", Steps.MATH, mathCount = 1),
+            StepConfig("s", Steps.SCAN, scanCode = "X"),
+            StepConfig("q", Steps.QUESTIONS, questions = listOf(q)),
+        ))
+        c = Steps.move(c, 2, 0)
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), kinds(c))
+        c = Steps.duplicate(c, "m")
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.MATH, Steps.SCAN), kinds(c))
+        c = Steps.duplicate(c, "q")
+        assertEquals("duplicated questions get their own ids", 2, c.questions.map { it.id }.toSet().size)
+        c = Steps.remove(c, "s")
+        assertEquals(listOf(Steps.QUESTIONS, Steps.QUESTIONS, Steps.MATH, Steps.MATH), kinds(c))
+        c = Steps.update(c, "m") { it.copy(mathCount = 50) }
+        assertEquals(50, c.steps.first { it.id == "m" }.mathCount)
     }
 
     @Test
     fun noStepsMeansDismiss() {
         assertEquals("tap Dismiss", CheckinText.steps(base))
-        assertEquals(Steps.ALL, Steps.available(base))
+        assertTrue(Steps.active(base).isEmpty())
     }
 }
 
@@ -483,5 +494,84 @@ class TriggerTest {
         assertEquals("when you leave Work", Trigger.describe(Trigger(Trigger.LEAVE, Place("Work", 1.0, 2.0))))
         assertEquals("only when away from Home", Trigger.describe(Trigger(where = Trigger.AWAY, place = home)))
         assertTrue("no set times for place triggers", AlarmScheduler.occurrences(c).isEmpty())
+    }
+}
+
+class RunDetectorTest {
+    /** Feeds [spm] steps a minute for [seconds], one sample a second, from [t0] with [total] steps. */
+    private fun RunDetector.feed(t0: Long, total: Long, seconds: Int, spm: Int, events: MutableList<RunDetector.Event>): Pair<Long, Long> {
+        var t = t0
+        var steps = total
+        repeat(seconds) {
+            t += 1000
+            steps += spm / 60
+            steps(t, steps)?.let { events += it }
+        }
+        return t to steps
+    }
+
+    private fun RunDetector.idle(t0: Long, seconds: Int, events: MutableList<RunDetector.Event>): Long {
+        var t = t0
+        repeat(seconds / 15) { t += 15_000; tick(t)?.let { events += it } }
+        return t
+    }
+
+    @Test
+    fun aFiveMinuteRunStartsAndFinishes() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        val (t, _) = d.feed(0, 1000, 300, 165, ev)
+        val started = ev.filterIsInstance<RunDetector.Event.Started>().single()
+        assertTrue("started after about a minute and a half: ${started.at}", started.at in 0..60_000)
+        assertTrue(d.running)
+        d.idle(t, 180, ev)
+        val done = ev.filterIsInstance<RunDetector.Event.Finished>().single()
+        assertFalse(d.running)
+        assertTrue("about 5 minutes: ${done.minutes}", done.minutes in 4..5)
+    }
+
+    @Test
+    fun walkingIsNotRunning() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        d.feed(0, 0, 600, 115, ev)
+        assertTrue(ev.isEmpty())
+    }
+
+    @Test
+    fun aShortDashDoesntCount() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        val (t, s) = d.feed(0, 0, 40, 170, ev)
+        d.feed(t, s, 300, 100, ev)
+        assertTrue(ev.isEmpty())
+    }
+
+    @Test
+    fun aShortStopDoesntEndTheRun() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        var (t, s) = d.feed(0, 0, 180, 165, ev)
+        t = d.idle(t, 45, ev) // waiting at a light
+        d.feed(t, s, 180, 165, ev)
+        assertEquals(1, ev.size) // just the start
+        assertTrue(d.running)
+    }
+
+    @Test
+    fun runTriggersFollowTheirConditions() {
+        val now = LocalDateTime.of(2026, 11, 9, 7, 0)
+        val start = Checkin(id = "a", name = "A", trigger = Trigger(Trigger.RUN_START))
+        assertTrue(Trigger.runEventRings(start, null, now, false))
+        assertFalse(Trigger.runEventRings(start, 20, now, false))
+        assertFalse("once a day", Trigger.runEventRings(start, null, now, true))
+        val end = Checkin(id = "b", name = "B", trigger = Trigger(Trigger.RUN_END, minRunMinutes = 10))
+        assertFalse(Trigger.runEventRings(end, null, now, false))
+        assertFalse("too short", Trigger.runEventRings(end, 9, now, false))
+        assertTrue(Trigger.runEventRings(end, 10, now, false))
+        val weekends = end.copy(repeat = Repeat.weekly(Repeat.WEEKENDS))
+        assertFalse("Monday", Trigger.runEventRings(weekends, 30, now, false))
+        assertEquals("when you finish a run of 10+ min", Trigger.describe(end.trigger))
+        assertTrue("no set times", AlarmScheduler.occurrences(end).isEmpty())
     }
 }

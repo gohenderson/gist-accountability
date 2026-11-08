@@ -8,11 +8,11 @@ import java.time.ZoneId
 object CheckinText {
     /** e.g. "solve 3 math → scan Bathroom sink → answer 2 questions" */
     fun steps(c: Checkin): String {
-        val parts = Steps.active(c).map { kind ->
-            when (kind) {
-                Steps.MATH -> "solve ${c.mathCount} math"
-                Steps.SCAN -> "scan ${c.scanLabel.ifEmpty { "code" }}"
-                else -> "answer ${c.questions.size} question${if (c.questions.size == 1) "" else "s"}"
+        val parts = Steps.active(c).map { st ->
+            when (st.kind) {
+                Steps.MATH -> "solve ${st.mathCount} math"
+                Steps.SCAN -> "scan ${st.scanLabel.ifEmpty { "code" }}"
+                else -> "answer ${st.questions.size} question${if (st.questions.size == 1) "" else "s"}"
             }
         }
         return if (parts.isEmpty()) "tap Dismiss" else parts.joinToString(" → ")
@@ -20,7 +20,7 @@ object CheckinText {
 
     /** e.g. "tomorrow at 7:00 AM" */
     fun next(c: Checkin): String {
-        if (c.trigger.isPlace) return whenText(c)
+        if (c.trigger.isEvent) return whenText(c)
         val millis = AlarmScheduler.nextTriggerMillis(c) ?: return "not scheduled"
         return at(millis)
     }
@@ -45,7 +45,7 @@ object CheckinText {
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
     fun oneLine(c: Checkin): String = when {
         !c.enabled -> "Off · ${steps(c)}"
-        c.trigger.isPlace -> "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
+        c.trigger.isEvent -> "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
         c.trigger.where != Trigger.ANYWHERE && c.trigger.place != null ->
             "${times(c)}${repeatSuffix(c)}, ${Trigger.describe(c.trigger)} · ${steps(c)}"
         else -> "${times(c)}${repeatSuffix(c)} · ${steps(c)}"
@@ -57,7 +57,7 @@ object CheckinText {
      */
     fun whenText(c: Checkin): String {
         val t = c.trigger
-        if (!t.isPlace) return times(c) + repeatSuffix(c)
+        if (!t.isEvent) return times(c) + repeatSuffix(c)
         val parts = mutableListOf(Trigger.describe(t))
         if (c.repeat.kind != Repeat.DAILY) parts += c.repeat.describe()
         Trigger.windowText(t) { Days.time(it.hour, it.minute) }.takeIf { it.isNotEmpty() }?.let { parts += it }

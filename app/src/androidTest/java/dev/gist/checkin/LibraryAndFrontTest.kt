@@ -78,7 +78,7 @@ class LibraryTest {
         }
         val c = TestEnv.store.checkins.last()
         assertTrue(c.questions.isEmpty())
-        assertEquals(0, c.mathCount)
+        assertTrue(c.steps.isEmpty())
     }
 }
 
