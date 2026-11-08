@@ -1,9 +1,10 @@
 package dev.gist.checkin
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -20,6 +21,8 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.RadioButton
@@ -36,7 +39,7 @@ import android.window.OnBackInvokedDispatcher
  * straight on to the next one.
  * When opened from history, it's a normal screen for filling in or fixing a past day's answers.
  */
-class CheckinActivity : Activity() {
+class CheckinActivity : BaseActivity() {
     private sealed class Step {
         data class Math(val count: Int, val level: Int) : Step()
         object Scan : Step()
@@ -285,11 +288,16 @@ class CheckinActivity : Activity() {
 
     /** The alarm is sounding: one big button pauses it and shows the steps. */
     private fun showRinging() {
+        val photo = if (checkin.hasBackground) Backgrounds.load(this, checkin.id) else null
+        val textColor = if (photo != null) Color.WHITE else null
+        fun text(t: String, size: Float, bold: Boolean = false) =
+            label(t, size, bold).apply { textColor?.let { setTextColor(it) } }
+
         val col = column()
-        col.add(label(checkin.name, 30f, bold = true), dp(24))
-        col.add(label("Alarm ringing", 18f), dp(8))
+        col.add(text(checkin.name, 30f, bold = true), dp(24))
+        col.add(text("Alarm ringing", 18f), dp(8))
         if (steps.size > 1 || stepIndex > 0) {
-            col.add(label("Step ${stepIndex + 1} of ${steps.size} · ${CheckinText.steps(checkin)}", 15f), dp(4))
+            col.add(text("Step ${stepIndex + 1} of ${steps.size} · ${CheckinText.steps(checkin)}", 15f), dp(4))
         }
         col.add(
             button("Start check-in") {
@@ -302,17 +310,17 @@ class CheckinActivity : Activity() {
             dp(48)
         )
         col.add(
-            label("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
+            text("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
                 "if it runs out, the alarm rings again and your progress is kept.", 14f).apply {
-                setTextColor(COLOR_MUTED)
+                if (photo == null) setTextColor(COLOR_MUTED)
             },
             dp(16)
         )
-        setScreen(col, withBar = false)
+        setScreen(col, withBar = false, background = photo)
     }
 
     /** Scrolling content, with the countdown bar fixed above it while the alarm is paused. */
-    private fun setScreen(content: View, withBar: Boolean) {
+    private fun setScreen(content: View, withBar: Boolean, background: Bitmap? = null) {
         val sv = ScrollView(this).apply {
             clipToPadding = false
             setPadding(dp(20), dp(20), dp(20), dp(20))
@@ -322,7 +330,21 @@ class CheckinActivity : Activity() {
         if (withBar) root.addView(pauseBar())
         root.addView(sv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         applySystemBarInsets(root, 0)
-        setContentView(root)
+        if (background == null) {
+            setContentView(root)
+        } else {
+            // Photo behind everything, darkened so white text stays readable.
+            val frame = FrameLayout(this)
+            frame.addView(ImageView(this).apply {
+                setImageBitmap(background)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                tag = "ringing-background"
+            }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            frame.addView(View(this).apply { setBackgroundColor(0x99000000.toInt()) },
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            frame.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            setContentView(frame)
+        }
         updateBar()
     }
 

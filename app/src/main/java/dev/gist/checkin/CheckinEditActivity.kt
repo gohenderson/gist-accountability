@@ -1,11 +1,14 @@
 package dev.gist.checkin
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -14,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.RadioButton
@@ -23,7 +27,7 @@ import android.widget.Switch
 import android.widget.Toast
 
 /** Everything about one check-in: name, schedule, steps (math, scan, questions), test, delete. */
-class CheckinEditActivity : Activity() {
+class CheckinEditActivity : BaseActivity() {
     private lateinit var store: Store
     private lateinit var checkinId: String
     private var scroll: ScrollView? = null
@@ -94,6 +98,28 @@ class CheckinEditActivity : Activity() {
             setOnCheckedChangeListener { _, on -> change { it.copy(aboutYesterday = on) } }
         }
         col.add(yesterday, dp(8))
+
+        // Sound & background
+        section(col, "While it rings")
+        col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
+        col.add(
+            button(if (c.hasBackground) "Background photo: change or remove" else "Background photo: none") {
+                editBackground(c)
+            },
+            dp(4)
+        )
+        if (c.hasBackground) {
+            Backgrounds.load(this, checkinId)?.let { bmp ->
+                val preview = ImageView(this).apply {
+                    setImageBitmap(bmp)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    tag = "background-preview"
+                }
+                col.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(160)).apply {
+                    topMargin = dp(6)
+                })
+            }
+        }
 
         // Steps
         section(col, "When it rings")
@@ -179,6 +205,7 @@ class CheckinEditActivity : Activity() {
             .setMessage("Its alarm, steps and questions are removed. Answers it already logged stay on the phone but won't show in history or the CSV.")
             .setPositiveButton("Delete") { _, _ ->
                 AlarmScheduler.cancel(this, checkinId)
+                Backgrounds.delete(this, checkinId)
                 store.checkins = store.checkins.filter { it.id != checkinId }
                 store.prunePending()
                 finish()
@@ -242,9 +269,101 @@ class CheckinEditActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_REGISTER || resultCode != RESULT_OK) return
-        val code = data?.getStringExtra(ScanActivity.EXTRA_CODE) ?: return
-        finishRegister(code)
+        if (resultCode != RESULT_OK || data == null) return
+        when (requestCode) {
+            REQ_REGISTER -> data.getStringExtra(ScanActivity.EXTRA_CODE)?.let { finishRegister(it) }
+            REQ_SOUND -> soundPicked(pickedRingtone(data))
+            REQ_IMAGE -> data.data?.let { imagePicked(it) }
+        }
+    }
+
+    // ---------------------------------------------------------------- sound
+
+    private fun soundName(c: Checkin): String = when (c.soundUri) {
+        null -> "Default alarm sound"
+        Checkin.SILENT -> "Silent (vibrate only)"
+        else -> c.soundTitle.ifEmpty { "Custom sound" }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pickSound(c: Checkin) {
+        val existing: Uri? = when (c.soundUri) {
+            null -> Settings.System.DEFAULT_ALARM_ALERT_URI
+            Checkin.SILENT -> null
+            else -> Uri.parse(c.soundUri)
+        }
+        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Alarm sound for ${c.name}")
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, Settings.System.DEFAULT_ALARM_ALERT_URI)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
+        startActivityForResult(intent, REQ_SOUND)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pickedRingtone(data: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) {
+            data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        } else {
+            data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        }
+
+    private fun soundPicked(uri: Uri?) {
+        when (uri) {
+            null -> change { it.copy(soundUri = Checkin.SILENT, soundTitle = "") }
+            Settings.System.DEFAULT_ALARM_ALERT_URI -> change { it.copy(soundUri = null, soundTitle = "") }
+            else -> {
+                val title = try {
+                    RingtoneManager.getRingtone(this, uri)?.getTitle(this)
+                } catch (e: Exception) {
+                    null
+                } ?: "Custom sound"
+                change { it.copy(soundUri = uri.toString(), soundTitle = title) }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- background photo
+
+    private fun editBackground(c: Checkin) {
+        if (!c.hasBackground) {
+            pickBackground()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Background photo")
+            .setMessage("Shown behind the alarm screen while ${c.name} is ringing.")
+            .setPositiveButton("Change photo") { _, _ -> pickBackground() }
+            .setNeutralButton("Remove") { _, _ ->
+                Backgrounds.delete(this, checkinId)
+                change { it.copy(hasBackground = false) }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pickBackground() {
+        startActivityForResult(
+            Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),
+            REQ_IMAGE
+        )
+    }
+
+    private fun imagePicked(uri: Uri) {
+        toast("Preparing photo…")
+        val app = applicationContext
+        val id = checkinId
+        Thread {
+            try {
+                Backgrounds.saveFromUri(app, id, uri)
+                runOnUiThread { change { it.copy(hasBackground = true) } }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Couldn't use that photo: ${e.message}") }
+            }
+        }.start()
     }
 
     private fun finishRegister(code: String) {
@@ -326,6 +445,8 @@ class CheckinEditActivity : Activity() {
     companion object {
         private const val EXTRA_ID = "checkinId"
         private const val REQ_REGISTER = 4
+        private const val REQ_SOUND = 5
+        private const val REQ_IMAGE = 6
 
         fun intent(context: Context, checkinId: String): Intent =
             Intent(context, CheckinEditActivity::class.java).putExtra(EXTRA_ID, checkinId)

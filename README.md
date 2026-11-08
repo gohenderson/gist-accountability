@@ -115,6 +115,12 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     off/on cancels and reschedules the real alarm; delete
   - History: correct stats, and fixing a day from the grid updates them
   - saving and loading, including data from the first version
+  - backup: export → import on a "fresh phone" restores check-ins, answers and photos;
+    bad files are rejected without changing anything
+  - Light and Dark override the phone's setting
+  - a real alarm plays the check-in's chosen sound; Silent plays nothing; a missing sound
+    falls back to a default; the background photo shows behind the ringing screen and can
+    be removed
   - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
     over, the alarm rings until the question is answered, and the answer is saved
 
@@ -146,6 +152,19 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Ringing:** At the chosen time it plays your phone's default alarm sound on the alarm
   stream and vibrates. While it rings, the alarm volume can't go below 80%; if you turn
   it down, it goes straight back up. The original volume is restored afterwards.
+- **Sound and photo per check-in:** On a check-in's page, under **While it rings**, pick
+  its alarm sound from the phone's sounds (or "Silent" to only vibrate), and optionally a
+  background photo for the ringing screen. The photo is copied into the app (resized), so
+  deleting the original doesn't break it.
+- **Settings** (button at the bottom of the start page):
+  - **Appearance:** same as phone, Light, or Dark.
+  - **Backup:** *Export backup…* saves one `.json` file with all check-ins, their
+    answers and background photos. On a new phone, install Gist and use *Import
+    backup…*. It replaces everything on that phone (after a confirmation) and sets the
+    alarms. A bad or unrelated file is rejected without changing anything. Alarm sounds
+    are saved by reference, so if the new phone lacks a sound, that check-in uses the
+    default alarm sound.
+  - **Export answers (CSV)…**, for spreadsheets.
 - **Pause while you work:** While it rings, the alarm screen shows one big **Start
   check-in** button. Tapping it silences the sound and vibration for 30 seconds and shows
   the steps, with a countdown bar fixed at the top of the screen. Every tap or keystroke
@@ -176,7 +195,7 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     questions, a 10-second test, and delete. Changes save as you make them.
   - **History** opens its last 30 days: logged / on-track counts, how often each question
     went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.
-  Export all answers as CSV from the bottom of the start page.
+  Backup, CSV export and dark mode are under **Settings** at the bottom of the start page.
 - **"About yesterday":** A check-in with this setting (Morning by default) logs its answers
   to the previous day, so last night's late snack lands on the right date. Separately,
   any alarm set before 4 AM also counts as the previous day.

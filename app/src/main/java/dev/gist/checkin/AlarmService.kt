@@ -7,6 +7,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -60,7 +61,9 @@ class AlarmService : Service() {
         )
         if (!ringing) {
             ringing = true
-            startRinging()
+            val checkin = intent?.getStringExtra(EXTRA_CHECKIN)?.let { Store(this).checkin(it) }
+                ?: Store(this).pending.firstOrNull()?.let { Store(this).checkin(it.checkinId) }
+            startRinging(checkin?.soundUri)
             handler.postDelayed(giveUp, MAX_RING_MS)
         }
         // Works when the screen is on and unlocked on some devices; otherwise the
@@ -73,7 +76,8 @@ class AlarmService : Service() {
     }
 
     @Suppress("DEPRECATION")
-    private fun startRinging() {
+    /** [soundUri]: the check-in's choice (null = default alarm sound, Checkin.SILENT = vibrate only). */
+    private fun startRinging(soundUri: String?) {
         val am = getSystemService(AudioManager::class.java)
         audio = am
         val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
@@ -87,13 +91,16 @@ class AlarmService : Service() {
             .build()
         this.attrs = attrs
 
-        // Use the phone's default alarm sound; fall back to ringtone, then notification sound.
-        for (type in intArrayOf(
-            RingtoneManager.TYPE_ALARM,
-            RingtoneManager.TYPE_RINGTONE,
-            RingtoneManager.TYPE_NOTIFICATION
-        )) {
-            val uri = RingtoneManager.getDefaultUri(type) ?: continue
+        // The check-in's sound first (it may not exist, e.g. after restoring a backup on a new
+        // phone), then the phone's default alarm, ringtone and notification sounds.
+        val candidates = mutableListOf<Uri>()
+        if (soundUri != null && soundUri != Checkin.SILENT) candidates += Uri.parse(soundUri)
+        for (type in intArrayOf(RingtoneManager.TYPE_ALARM, RingtoneManager.TYPE_RINGTONE, RingtoneManager.TYPE_NOTIFICATION)) {
+            RingtoneManager.getDefaultUri(type)?.let { candidates += it }
+        }
+        if (soundUri == Checkin.SILENT) candidates.clear()
+        currentSound = if (soundUri == Checkin.SILENT) Checkin.SILENT else null
+        for (uri in candidates) {
             val mp = MediaPlayer()
             try {
                 mp.setAudioAttributes(attrs)
@@ -103,6 +110,7 @@ class AlarmService : Service() {
                 mp.prepare()
                 mp.start()
                 player = mp
+                currentSound = uri.toString()
                 break
             } catch (e: Exception) {
                 mp.release()
@@ -165,6 +173,7 @@ class AlarmService : Service() {
 
     override fun onDestroy() {
         running = false
+        currentSound = null
         isPaused = false
         pausedUntil = 0L
         if (instance === this) instance = null
@@ -202,6 +211,13 @@ class AlarmService : Service() {
         /** When the pause ends, in SystemClock.elapsedRealtime() time; 0 when not paused. */
         @Volatile
         var pausedUntil = 0L
+            private set
+
+        const val EXTRA_CHECKIN = "checkinId"
+
+        /** What's playing: a sound URI, Checkin.SILENT, or null. For tests and diagnostics. */
+        @Volatile
+        var currentSound: String? = null
             private set
 
         /** How long the alarm stays quiet after the last tap. Tests shorten it. */

@@ -1,6 +1,5 @@
 package dev.gist.checkin
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -30,7 +29,7 @@ object Stats {
 }
 
 /** One check-in's last 30 days: summary, per-question counts, and a tappable day grid. */
-class HistoryActivity : Activity() {
+class HistoryActivity : BaseActivity() {
     private lateinit var store: Store
     private lateinit var checkinId: String
 

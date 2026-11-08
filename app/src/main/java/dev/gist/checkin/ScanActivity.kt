@@ -1,7 +1,6 @@
 package dev.gist.checkin
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -10,7 +9,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /** Registers a QR code / barcode: scans once and returns its text as [EXTRA_CODE]. */
-class ScanActivity : Activity() {
+class ScanActivity : BaseActivity() {
     private lateinit var scanner: ScannerView
     private lateinit var status: TextView
 

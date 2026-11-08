@@ -63,8 +63,8 @@ adb shell am broadcast -a com.android.systemui.demo -e command notifications -e 
 echo "::endgroup::"
 
 seed() {
-  local pending=$1
-  python3 "$SCRIPTS/seed_prefs.py" --pending "$pending" > "$LOGS/gist-$pending.xml"
+  local pending=$1 theme=${2:-system}
+  python3 "$SCRIPTS/seed_prefs.py" --pending "$pending" --theme "$theme" > "$LOGS/gist-$pending.xml"
   adb shell am force-stop "$PKG"
   adb push "$LOGS/gist-$pending.xml" /data/local/tmp/gist.xml > /dev/null
   adb shell chmod 644 /data/local/tmp/gist.xml
@@ -129,6 +129,18 @@ seed evening
 launch .CheckinActivity
 settle
 shot 05-alarm-questions
+echo "::endgroup::"
+
+echo "::group::Settings"
+seed none
+launch .SettingsActivity
+shot 06-settings
+echo "::endgroup::"
+
+echo "::group::Dark mode"
+seed none dark
+launch .MainActivity
+shot 07-start-dark
 echo "::endgroup::"
 
 adb shell am force-stop "$PKG" || true

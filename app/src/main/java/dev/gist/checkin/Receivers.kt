@@ -12,7 +12,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val c = store.checkin(id) ?: return // deleted since it was scheduled
         store.addPending(Pending(c.id, Days.forAlarmNow(c.aboutYesterday)))
         try {
-            context.startForegroundService(Intent(context, AlarmService::class.java))
+            context.startForegroundService(
+                Intent(context, AlarmService::class.java).putExtra(AlarmService.EXTRA_CHECKIN, c.id)
+            )
         } catch (e: Exception) {
             // Background start refused (only possible if exact alarms were denied).
             // Fall back to a plain full-screen notification.

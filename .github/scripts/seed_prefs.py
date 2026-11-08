@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes demo data for screenshots as an Android SharedPreferences XML file (gist.xml).
 
-Usage: seed_prefs.py [--pending none|start|evening] > gist.xml
+Usage: seed_prefs.py [--pending none|start|evening] [--theme system|light|dark] > gist.xml
 
 The JSON layout matches Store.kt. Answers are random but reproducible (fixed seed),
 with a couple of days left unanswered so the history grid shows gaps.
@@ -70,6 +70,7 @@ def entries(today):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pending", choices=["none", "start", "evening"], default="none")
+    ap.add_argument("--theme", choices=["system", "light", "dark"], default="system")
     args = ap.parse_args()
 
     today = datetime.date.today()
@@ -83,6 +84,8 @@ def main():
     print("<map>")
     for name, value in values.items():
         print(f'    <string name="{name}">{escape(value)}</string>')
+    theme = {"system": 0, "light": 1, "dark": 2}[args.theme]
+    print(f'    <int name="theme" value="{theme}" />')
     print("</map>")
 
 

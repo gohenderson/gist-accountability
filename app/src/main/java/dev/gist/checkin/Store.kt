@@ -28,7 +28,14 @@ data class Checkin(
     val mathLevel: Int = 3,        // 1..4, see MathGen.LEVELS
     val scanCode: String? = null,  // exact text of the registered QR code / barcode
     val scanLabel: String = "",    // where it is, e.g. "Bathroom sink"
-)
+    val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
+    val soundTitle: String = "",   // shown in the app (and kept in backups)
+    val hasBackground: Boolean = false, // photo shown while ringing; see Backgrounds
+) {
+    companion object {
+        const val SILENT = "silent"
+    }
+}
 
 /** A check-in that has rung and is waiting for answers. */
 data class Pending(val checkinId: String, val day: String)
@@ -118,7 +125,17 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ internals
 
-    private fun entriesJson(): JSONObject =
+    // ------------------------------------------------------------ settings
+
+    /** THEME_SYSTEM, THEME_LIGHT or THEME_DARK. */
+    var theme: Int
+        get() = prefs.getInt(K_THEME, THEME_SYSTEM)
+        set(v) { prefs.edit().putInt(K_THEME, v).commit() }
+
+    // ------------------------------------------------------------ backup support
+
+    /** All answers as stored (day → question → answer). */
+    fun entriesJson(): JSONObject =
         prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: JSONObject()
 
     private fun JSONObject.toBoolMap(): Map<String, Boolean> {
@@ -128,6 +145,11 @@ class Store(context: Context) {
     }
 
     /** Converts settings from the first (single-alarm) version, if present. */
+    /** Replaces all answers with [json] (same shape as [entriesJson]). */
+    fun replaceEntries(json: JSONObject) {
+        prefs.edit().putString(K_ENTRIES, json.toString()).commit()
+    }
+
     private fun legacyOrDefault(): List<Checkin> {
         val rawQuestions = prefs.getString(K_LEGACY_QUESTIONS, null) ?: return DEFAULT_CHECKINS
         val arr = JSONArray(rawQuestions)
@@ -148,7 +170,7 @@ class Store(context: Context) {
     private fun questionToJson(q: Question): JSONObject =
         JSONObject().put("id", q.id).put("text", q.text).put("yesIsGood", q.yesIsGood)
 
-    private fun checkinFromJson(o: JSONObject): Checkin {
+    fun checkinFromJson(o: JSONObject): Checkin {
         val qs = o.optJSONArray("questions") ?: JSONArray()
         return Checkin(
             id = o.getString("id"),
@@ -162,10 +184,13 @@ class Store(context: Context) {
             mathLevel = o.optInt("mathLevel", 3),
             scanCode = o.optString("scanCode", "").ifEmpty { null },
             scanLabel = o.optString("scanLabel", ""),
+            soundUri = o.optString("soundUri", "").ifEmpty { null },
+            soundTitle = o.optString("soundTitle", ""),
+            hasBackground = o.optBoolean("hasBackground", false),
         )
     }
 
-    private fun checkinToJson(c: Checkin): JSONObject {
+    fun checkinToJson(c: Checkin): JSONObject {
         val qs = JSONArray()
         c.questions.forEach { qs.put(questionToJson(it)) }
         return JSONObject()
@@ -180,12 +205,20 @@ class Store(context: Context) {
             .put("mathLevel", c.mathLevel)
             .put("scanCode", c.scanCode ?: "")
             .put("scanLabel", c.scanLabel)
+            .put("soundUri", c.soundUri ?: "")
+            .put("soundTitle", c.soundTitle)
+            .put("hasBackground", c.hasBackground)
     }
 
     companion object {
         private const val K_CHECKINS = "checkins"
         private const val K_PENDING = "pendingList"
         private const val K_ENTRIES = "entries"
+        private const val K_THEME = "theme"
+
+        const val THEME_SYSTEM = 0
+        const val THEME_LIGHT = 1
+        const val THEME_DARK = 2
         private const val K_LEGACY_QUESTIONS = "questions"
         private const val K_LEGACY_HOUR = "hour"
         private const val K_LEGACY_MINUTE = "minute"

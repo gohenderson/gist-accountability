@@ -1,7 +1,6 @@
 package dev.gist.checkin
 
 import android.Manifest
-import android.app.Activity
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -17,7 +16,7 @@ import android.widget.ScrollView
 import android.widget.Toast
 
 /** Check-in settings, question editors, and history. */
-class MainActivity : Activity() {
+class MainActivity : BaseActivity() {
     private lateinit var store: Store
     private var scroll: ScrollView? = null
 
@@ -67,9 +66,9 @@ class MainActivity : Activity() {
             col.add(label("No check-ins yet.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(8))
         }
 
-        if (checkins.any { it.questions.isNotEmpty() }) {
-            col.add(button("Export all answers (CSV)") { exportCsv() }, dp(36))
-        }
+        col.add(button("Settings · backup · dark mode") {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }, dp(36))
 
         val sv = ScrollView(this).apply {
             clipToPadding = false
@@ -146,44 +145,6 @@ class MainActivity : Activity() {
         startActivity(CheckinEditActivity.intent(this, c.id))
     }
 
-    private fun exportCsv() {
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
-            .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("text/csv")
-            .putExtra(Intent.EXTRA_TITLE, "gist-log-${Days.today()}.csv")
-        startActivityForResult(intent, REQ_EXPORT)
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_EXPORT || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        try {
-            contentResolver.openOutputStream(uri)?.use { it.write(buildCsv().toByteArray()) }
-            toast("Exported")
-        } catch (e: Exception) {
-            toast("Export failed: ${e.message}")
-        }
-    }
-
-    private fun buildCsv(): String {
-        val cols = store.checkins.flatMap { c -> c.questions.map { q -> c to q } }
-        fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
-        val sb = StringBuilder()
-        sb.append("date")
-        cols.forEach { (c, q) -> sb.append(',').append(esc("${c.name}: ${q.text}")) }
-        sb.append('\n')
-        store.allEntries().forEach { (day, e) ->
-            sb.append(day)
-            cols.forEach { (_, q) ->
-                sb.append(',')
-                e[q.id]?.let { sb.append(if (it) "yes" else "no") }
-            }
-            sb.append('\n')
-        }
-        return sb.toString()
-    }
-
     // ---------------------------------------------------------------- helpers
 
     private fun hasNotificationPermission(): Boolean =
@@ -204,6 +165,5 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_NOTIF = 1
-        private const val REQ_EXPORT = 2
     }
 }
