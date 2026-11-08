@@ -502,9 +502,9 @@ class RunDetectorTest {
     private fun RunDetector.feed(t0: Long, total: Long, seconds: Int, spm: Int, events: MutableList<RunDetector.Event>): Pair<Long, Long> {
         var t = t0
         var steps = total
-        repeat(seconds) {
+        for (i in 1..seconds) {
             t += 1000
-            steps += spm / 60
+            steps = total + i.toLong() * spm / 60 // whole steps so far
             steps(t, steps)?.let { events += it }
         }
         return t to steps
