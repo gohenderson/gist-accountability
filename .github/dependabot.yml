@@ -1,0 +1,20 @@
+# Dependabot opens a pull request when a library or GitHub Action has a newer version or a
+# security fix. Each PR runs the full Build workflow (all tests) before you merge it.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      android-test:
+        patterns: ["androidx.test*"]
+      kotlin-and-agp:
+        patterns: ["org.jetbrains.kotlin*", "com.android.*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
