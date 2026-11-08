@@ -265,7 +265,7 @@ class CheckinActivity : BaseActivity() {
 
     private fun complete() {
         ticks.removeCallbacksAndMessages(null) // no more countdown redraws while finishing
-        if (checkin.questions.isEmpty() && (forced || early)) {
+        if (checkin.questions.isEmpty() && (forced || early) && !target.practice) {
             store.markDone(target.day, checkin.id, slot, early)
         }
         if (early) {
@@ -325,6 +325,11 @@ class CheckinActivity : BaseActivity() {
         }
         col.add(muted(sub, 15f), dp(2))
         if (steps.size > 1) col.add(stepDots(), dp(12))
+        if (target.practice) {
+            col.add(chip("Test ring · nothing is logged", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)).apply {
+                tag = "practice-chip"
+            }, dp(12))
+        }
         if (early) {
             col.add(chip("Done now, this time's alarm won't ring", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)), dp(12))
         }
@@ -661,9 +666,13 @@ class CheckinActivity : BaseActivity() {
 
         submit = primaryButton("Submit") {
             val clean = qs.associate { it.id to answers.getValue(it.id) }
-            store.saveAnswers(target.day, checkin.id, slot, clean, early)
             val good = qs.count { it.isGood(clean.getValue(it.id)) }
-            toast("Logged: $good of ${qs.size} on track")
+            if (target.practice) {
+                toast("Test: $good of ${qs.size} on track (not logged)")
+            } else {
+                store.saveAnswers(target.day, checkin.id, slot, clean, early)
+                toast("Logged: $good of ${qs.size} on track")
+            }
             nextStep()
         }
         col.add(submit, dp(24))

@@ -59,8 +59,10 @@ data class Checkin(
 /**
  * A check-in that has rung and is waiting for answers: which day the answers count for,
  * and which of the check-in's times ("HH:mm") rang. An empty [time] means its first time.
+ * [practice]: a test ring from the edit page. It runs the steps like a real one but logs
+ * nothing, so it never counts as (or closes) a real ring.
  */
-data class Pending(val checkinId: String, val day: String, val time: String = "")
+data class Pending(val checkinId: String, val day: String, val time: String = "", val practice: Boolean = false)
 
 /** One time's answers: question id → answer. */
 typealias Answers = Map<String, Boolean>
@@ -119,12 +121,12 @@ class Store(context: Context) {
             val arr = JSONArray(raw)
             return (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Pending(o.getString("c"), o.getString("d"), o.optString("t", ""))
+                Pending(o.getString("c"), o.getString("d"), o.optString("t", ""), o.optBoolean("p", false))
             }
         }
         set(v) {
             val arr = JSONArray()
-            v.forEach { arr.put(JSONObject().put("c", it.checkinId).put("d", it.day).put("t", it.time)) }
+            v.forEach { arr.put(JSONObject().put("c", it.checkinId).put("d", it.day).put("t", it.time).put("p", it.practice)) }
             prefs.edit().putString(K_PENDING, arr.toString()).commit()
         }
 

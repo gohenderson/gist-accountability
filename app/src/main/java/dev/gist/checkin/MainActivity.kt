@@ -72,6 +72,9 @@ class MainActivity : BaseActivity() {
         col.add(outlineButton("Settings · backup · dark mode") {
             startActivity(Intent(this, SettingsActivity::class.java))
         }, dp(28))
+        col.add(textButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply {
+            tag = "about"
+        }, dp(4))
 
         val sv = screen(col)
         setContentView(sv)

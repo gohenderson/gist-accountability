@@ -393,3 +393,13 @@ class StepsTest {
         assertEquals(Steps.ALL, Steps.available(base))
     }
 }
+
+class LinksTest {
+    @Test
+    fun donateButtonPointsAtTheReadmesDonateSection() {
+        val readme = java.io.File("../README.md").takeIf { it.exists() } ?: java.io.File("README.md")
+        assertTrue("README.md should be found", readme.exists())
+        assertTrue("README needs a '## Donate' heading", readme.readLines().any { it.trim() == "## Donate" })
+        assertEquals(Links.REPO + "#donate", Links.DONATE)
+    }
+}

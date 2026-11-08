@@ -21,8 +21,9 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmScheduler.schedule(context, c)
             return
         }
-        store.markRang(day, c.id, time)
-        store.addPending(Pending(c.id, day, time))
+        // A test ring logs nothing: no "missed" mark, and its answers aren't saved.
+        if (!test) store.markRang(day, c.id, time)
+        store.addPending(Pending(c.id, day, time, practice = test))
         try {
             context.startForegroundService(
                 Intent(context, AlarmService::class.java).putExtra(AlarmService.EXTRA_CHECKIN, c.id)
@@ -32,7 +33,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // Fall back to a plain full-screen notification.
             Notif.showWaiting(context)
         }
-        AlarmScheduler.schedule(context, c) // queue tomorrow's ring
+        AlarmScheduler.schedule(context, c) // queue the next ring
     }
 }
 

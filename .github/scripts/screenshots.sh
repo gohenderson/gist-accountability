@@ -158,6 +158,11 @@ launch .StepEditActivity --es checkinId start --es kind math
 shot 09-step-math
 echo "::endgroup::"
 
+echo "::group::About"
+launch .AboutActivity
+shot 10-about
+echo "::endgroup::"
+
 echo "::group::Library"
 seed none
 launch .LibraryActivity

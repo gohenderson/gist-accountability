@@ -101,11 +101,15 @@ object AlarmScheduler {
         am.cancel(broadcast(context, checkinId, test = true))
     }
 
-    fun scheduleTest(context: Context, checkinId: String, delayMs: Long = 10_000L) {
+    /**
+     * Rings [checkinId] in [delayMs]. With [practice] (the edit page's Test button) nothing is
+     * logged and the next real ring is untouched; tests pass false for a ring that behaves
+     * exactly like a real one, saved under whichever of its times is closest to now.
+     */
+    fun scheduleTest(context: Context, checkinId: String, delayMs: Long = 10_000L, practice: Boolean = true) {
         val am = context.getSystemService(AlarmManager::class.java)
-        // A test ring is saved under whichever of its times is closest to now.
         val time = Store(context).checkin(checkinId)?.let { nearestTime(it).toString() }
-        set(context, am, System.currentTimeMillis() + delayMs, broadcast(context, checkinId, test = true, time = time))
+        set(context, am, System.currentTimeMillis() + delayMs, broadcast(context, checkinId, test = practice, time = time))
     }
 
     /** The next ring of [c] that hasn't been done early or skipped, for the UI. */
