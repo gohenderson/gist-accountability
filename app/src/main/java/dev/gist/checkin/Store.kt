@@ -11,7 +11,8 @@ data class Question(val id: String, val text: String, val yesIsGood: Boolean = f
 }
 
 /**
- * One alarm with its own time and questions.
+ * One alarm with its own time and steps. When it rings, the steps run in this order:
+ * [mathCount] math problems → scan [scanCode] → answer [questions]. Each step is optional.
  * [aboutYesterday]: answers are logged for the previous day (e.g. a morning check-in
  * asking about last night).
  */
@@ -23,6 +24,10 @@ data class Checkin(
     val enabled: Boolean = true,
     val aboutYesterday: Boolean = false,
     val questions: List<Question> = emptyList(),
+    val mathCount: Int = 0,
+    val mathLevel: Int = 3,        // 1..4, see MathGen.LEVELS
+    val scanCode: String? = null,  // exact text of the registered QR code / barcode
+    val scanLabel: String = "",    // where it is, e.g. "Bathroom sink"
 )
 
 /** A check-in that has rung and is waiting for answers. */
@@ -153,6 +158,10 @@ class Store(context: Context) {
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
             questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) },
+            mathCount = o.optInt("mathCount", 0),
+            mathLevel = o.optInt("mathLevel", 3),
+            scanCode = o.optString("scanCode", "").ifEmpty { null },
+            scanLabel = o.optString("scanLabel", ""),
         )
     }
 
@@ -167,6 +176,10 @@ class Store(context: Context) {
             .put("enabled", c.enabled)
             .put("aboutYesterday", c.aboutYesterday)
             .put("questions", qs)
+            .put("mathCount", c.mathCount)
+            .put("mathLevel", c.mathLevel)
+            .put("scanCode", c.scanCode ?: "")
+            .put("scanLabel", c.scanLabel)
     }
 
     companion object {

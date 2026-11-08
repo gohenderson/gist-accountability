@@ -19,6 +19,10 @@
     <!-- Lets the app ask to be excluded from battery optimization. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Scan a QR code / barcode to stop the alarm. Optional feature. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <!-- Note: no INTERNET permission. Nothing ever leaves the phone. -->
 
     <application
@@ -37,11 +41,17 @@
         </activity>
 
         <activity
-            android:name=".SurveyActivity"
+            android:name=".CheckinActivity"
             android:exported="false"
             android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
+
+        <activity
+            android:name=".ScanActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <service
             android:name=".AlarmService"

@@ -18,7 +18,7 @@ import android.os.VibratorManager
 import kotlin.math.ceil
 
 /**
- * Rings (sound + vibration) until SurveyActivity stops it after the questions are answered.
+ * Rings (sound + vibration) until CheckinActivity stops it after the questions are answered.
  * Keeps the alarm volume from being turned down below [VOLUME_FLOOR] while ringing.
  */
 class AlarmService : Service() {
@@ -55,7 +55,7 @@ class AlarmService : Service() {
         // Works when the screen is on and unlocked on some devices; otherwise the
         // notification's full-screen intent opens the survey.
         try {
-            startActivity(SurveyActivity.alarmIntent(this))
+            startActivity(CheckinActivity.alarmIntent(this))
         } catch (e: Exception) {
         }
         return START_NOT_STICKY

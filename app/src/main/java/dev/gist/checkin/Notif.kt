@@ -33,7 +33,7 @@ object Notif {
 
     private fun surveyIntent(context: Context): PendingIntent =
         PendingIntent.getActivity(
-            context, 10, SurveyActivity.alarmIntent(context),
+            context, 10, CheckinActivity.alarmIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 

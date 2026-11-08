@@ -35,4 +35,8 @@ kotlin {
     }
 }
 
-// Intentionally no dependencies: the app uses only the Android platform APIs.
+dependencies {
+    // The only dependency: ZXing's pure-Java barcode decoder (Apache-2.0,
+    // https://github.com/zxing/zxing). No network access, no Google Play services.
+    implementation("com.google.zxing:core:3.5.3")
+}

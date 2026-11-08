@@ -22,6 +22,9 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.NumberPicker
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TableLayout
@@ -36,10 +39,12 @@ import java.time.ZoneId
 class MainActivity : Activity() {
     private lateinit var store: Store
     private var scroll: ScrollView? = null
+    private var registeringFor: String? = null // check-in waiting for a scanned code
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
+        registeringFor = savedInstanceState?.getString(STATE_REGISTERING)
         Notif.ensureChannels(this)
         AlarmScheduler.scheduleAll(this)
         if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
@@ -51,8 +56,13 @@ class MainActivity : Activity() {
         super.onResume()
         // An unanswered alarm always takes priority.
         store.prunePending()
-        if (store.pending.isNotEmpty()) startActivity(SurveyActivity.alarmIntent(this))
+        if (store.pending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_REGISTERING, registeringFor)
     }
 
     override fun onRequestPermissionsResult(
@@ -117,8 +127,14 @@ class MainActivity : Activity() {
         }
         col.add(label(status, 14f), dp(2))
 
+        col.add(label("When it rings: ${stepsSummary(c)}", 14f), dp(2))
+
         val buttons = row()
         buttons.addView(button(Days.time(c.hour, c.minute)) { pickTime(c) })
+        val mathText = if (c.mathCount > 0) "Math: ${c.mathCount}× ${MathGen.levelName(c.mathLevel)}" else "Math: off"
+        buttons.addView(button(mathText) { editMath(c) })
+        val scanText = if (c.scanCode != null) "Scan: ${c.scanLabel.ifEmpty { "on" }}" else "Scan: off"
+        buttons.addView(button(scanText) { editScan(c) })
         buttons.addView(button("Settings") { editCheckin(c) })
         buttons.addView(button("Test") {
             AlarmScheduler.scheduleTest(this, c.id)
@@ -127,7 +143,7 @@ class MainActivity : Activity() {
         col.add(HorizontalScrollView(this).apply { addView(buttons) }, dp(4))
 
         c.questions.forEachIndexed { i, q -> col.add(questionRow(c, i, q), dp(6)) }
-        if (c.questions.isEmpty()) col.add(label("No questions yet.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(6))
+        if (c.questions.isEmpty()) col.add(label("No questions (no survey step).", 14f).apply { setTextColor(COLOR_MUTED) }, dp(6))
         col.add(button("+ Add question") { editQuestion(c, null) }, dp(6))
     }
 
@@ -221,7 +237,7 @@ class MainActivity : Activity() {
                 )
             }
             tr.isClickable = true
-            tr.setOnClickListener { startActivity(SurveyActivity.editIntent(this, c.id, day)) }
+            tr.setOnClickListener { startActivity(CheckinActivity.editIntent(this, c.id, day)) }
             table.addView(tr)
         }
 
@@ -300,6 +316,89 @@ class MainActivity : Activity() {
                 render()
             }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun stepsSummary(c: Checkin): String {
+        val parts = mutableListOf<String>()
+        if (c.mathCount > 0) parts += "solve ${c.mathCount} math"
+        if (c.scanCode != null) parts += "scan ${c.scanLabel.ifEmpty { "code" }}"
+        if (c.questions.isNotEmpty()) parts += "answer ${c.questions.size} questions"
+        return if (parts.isEmpty()) "tap Dismiss" else parts.joinToString(" → ")
+    }
+
+    private fun editMath(c: Checkin) {
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        box.add(label("Problems to solve (0 = off)", 15f))
+        val picker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 10
+            value = c.mathCount.coerceIn(0, 10)
+            wrapSelectorWheel = false
+        }
+        box.add(picker, dp(4))
+        box.add(label("Difficulty", 15f), dp(12))
+        val group = RadioGroup(this)
+        val ids = MathGen.LEVELS.mapIndexed { i, lvl ->
+            val rb = RadioButton(this).apply {
+                id = View.generateViewId()
+                text = "${lvl.name}   e.g. ${lvl.example}"
+                isChecked = i + 1 == c.mathLevel
+            }
+            group.addView(rb)
+            rb.id
+        }
+        box.add(group, dp(4))
+
+        AlertDialog.Builder(this)
+            .setTitle("Math for ${c.name}")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Save") { _, _ ->
+                val i = ids.indexOf(group.checkedRadioButtonId)
+                val level = if (i >= 0) i + 1 else c.mathLevel
+                change(c.id) { it.copy(mathCount = picker.value, mathLevel = level) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun editScan(c: Checkin) {
+        if (c.scanCode == null) {
+            startRegister(c)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Scan: ${c.scanLabel.ifEmpty { "registered code" }}")
+            .setMessage("To stop this alarm you have to scan the code with this content:\n\n${c.scanCode}")
+            .setPositiveButton("Re-register") { _, _ -> startRegister(c) }
+            .setNeutralButton("Remove") { _, _ -> change(c.id) { it.copy(scanCode = null, scanLabel = "") } }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun startRegister(c: Checkin) {
+        registeringFor = c.id
+        startActivityForResult(Intent(this, ScanActivity::class.java), REQ_REGISTER)
+    }
+
+    private fun finishRegister(id: String, code: String) {
+        val c = store.checkin(id) ?: return
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        val where = EditText(this).apply {
+            hint = "Where is it? e.g. Bathroom sink"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(c.scanLabel)
+        }
+        box.add(label("Code saved. Name the spot so the alarm can tell you where to go.", 14f))
+        box.add(where, dp(8))
+        AlertDialog.Builder(this)
+            .setTitle("Code registered")
+            .setView(box)
+            .setCancelable(false)
+            .setPositiveButton("Save") { _, _ ->
+                val spot = where.text.toString().trim()
+                change(id) { it.copy(scanCode = code, scanLabel = spot) }
+            }
             .show()
     }
 
@@ -383,6 +482,13 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_REGISTER) {
+            val id = registeringFor
+            registeringFor = null
+            val code = data?.getStringExtra(ScanActivity.EXTRA_CODE)
+            if (resultCode == RESULT_OK && id != null && code != null) finishRegister(id, code)
+            return
+        }
         if (requestCode != REQ_EXPORT || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -432,5 +538,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_NOTIF = 1
         private const val REQ_EXPORT = 2
+        private const val REQ_REGISTER = 4
+        private const val STATE_REGISTERING = "registeringFor"
     }
 }
