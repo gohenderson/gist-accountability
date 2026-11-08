@@ -80,6 +80,14 @@ launch() {
 
 shot() {
   local name=$1
+  # Make sure Gist (not a crash dialog or another app) is what's on screen.
+  local focus
+  focus="$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r' || true)"
+  echo "Focus: $focus"
+  if [[ "$focus" != *"$PKG"* ]]; then
+    echo "::error title=Wrong screen::$name: expected $PKG in focus, got: $focus"
+    return 1
+  fi
   adb exec-out screencap -p > "$OUT/$name.png"
   local size
   size=$(stat -c %s "$OUT/$name.png")
@@ -120,6 +128,12 @@ shot 05-alarm-questions
 echo "::endgroup::"
 
 adb shell am force-stop "$PKG" || true
+sleep 1
+if grep -q "FATAL EXCEPTION" "$LOGS/logcat.txt"; then
+  echo "::error title=App crashed during screenshots::See logcat excerpt below and the screenshots-logs artifact."
+  grep -A 30 "FATAL EXCEPTION" "$LOGS/logcat.txt" | head -n 60
+  exit 1
+fi
 ls -la "$OUT"
 {
   echo "### 📸 Screenshots"
