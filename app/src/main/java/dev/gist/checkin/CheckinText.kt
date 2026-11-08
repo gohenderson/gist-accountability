@@ -19,13 +19,17 @@ object CheckinText {
 
     /** e.g. "tomorrow at 7:00 AM" */
     fun next(c: Checkin): String {
-        val at = Instant.ofEpochMilli(AlarmScheduler.nextTriggerMillis(c.hour, c.minute))
+        val at = Instant.ofEpochMilli(AlarmScheduler.nextTriggerMillis(c))
             .atZone(ZoneId.systemDefault())
         val whichDay = if (at.toLocalDate() == LocalDate.now()) "today" else "tomorrow"
-        return "$whichDay at ${Days.time(c.hour, c.minute)}"
+        return "$whichDay at ${Days.time(at.hour, at.minute)}"
+    }
+
+    /** e.g. "7:00 AM, 12:30 PM, 9:30 PM" */
+    fun times(c: Checkin): String = c.times.joinToString(", ") { Days.time(it.hour, it.minute) }
     }
 
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
     fun oneLine(c: Checkin): String =
-        if (c.enabled) "${Days.time(c.hour, c.minute)} · ${steps(c)}" else "Off · ${steps(c)}"
+        if (c.enabled) "${times(c)} · ${steps(c)}" else "Off · ${steps(c)}"
 }

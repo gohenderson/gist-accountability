@@ -10,8 +10,25 @@ data class Question(val id: String, val text: String, val yesIsGood: Boolean = f
     fun isGood(answer: Boolean): Boolean = answer == yesIsGood
 }
 
+/** A time of day an alarm rings. */
+data class AlarmTime(val hour: Int, val minute: Int) : Comparable<AlarmTime> {
+    override fun compareTo(other: AlarmTime): Int = (hour * 60 + minute) - (other.hour * 60 + other.minute)
+
+    /** Stored as "HH:mm", e.g. "07:00". */
+    override fun toString(): String = String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute)
+
+    companion object {
+        fun parse(s: String): AlarmTime? {
+            val parts = s.split(":")
+            val h = parts.getOrNull(0)?.toIntOrNull() ?: return null
+            val m = parts.getOrNull(1)?.toIntOrNull() ?: return null
+            return if (h in 0..23 && m in 0..59) AlarmTime(h, m) else null
+        }
+    }
+}
+
 /**
- * One alarm with its own time and steps. When it rings, the steps run in this order:
+ * One alarm with its own times and steps. It rings at each of [times], every day. When it rings, the steps run in this order:
  * [mathCount] math problems → scan [scanCode] → answer [questions]. Each step is optional.
  * [aboutYesterday]: answers are logged for the previous day (e.g. a morning check-in
  * asking about last night).
@@ -19,8 +36,7 @@ data class Question(val id: String, val text: String, val yesIsGood: Boolean = f
 data class Checkin(
     val id: String,
     val name: String,
-    val hour: Int,
-    val minute: Int,
+    val times: List<AlarmTime> = listOf(AlarmTime(12, 0)),
     val enabled: Boolean = true,
     val aboutYesterday: Boolean = false,
     val questions: List<Question> = emptyList(),
@@ -156,8 +172,7 @@ class Store(context: Context) {
         val migrated = Checkin(
             id = "evening",
             name = "Evening",
-            hour = prefs.getInt(K_LEGACY_HOUR, 21),
-            minute = prefs.getInt(K_LEGACY_MINUTE, 30),
+            times = listOf(AlarmTime(prefs.getInt(K_LEGACY_HOUR, 21), prefs.getInt(K_LEGACY_MINUTE, 30))),
             enabled = prefs.getBoolean(K_LEGACY_ENABLED, true),
             questions = (0 until arr.length()).map { questionFromJson(arr.getJSONObject(it)) },
         )
@@ -175,8 +190,7 @@ class Store(context: Context) {
         return Checkin(
             id = o.getString("id"),
             name = o.optString("name", "Check-in"),
-            hour = o.optInt("hour", 21),
-            minute = o.optInt("minute", 30),
+            times = timesFromJson(o),
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
             questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) },
@@ -190,14 +204,24 @@ class Store(context: Context) {
         )
     }
 
+    /** "times": ["07:00", "21:30"]; data saved before multiple times has "hour"/"minute". */
+    private fun timesFromJson(o: JSONObject): List<AlarmTime> {
+        val arr = o.optJSONArray("times")
+        val times = if (arr != null) {
+            (0 until arr.length()).mapNotNull { AlarmTime.parse(arr.optString(it)) }
+        } else {
+            listOf(AlarmTime(o.optInt("hour", 21), o.optInt("minute", 30)))
+        }
+        return times.distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) }
+    }
+
     fun checkinToJson(c: Checkin): JSONObject {
         val qs = JSONArray()
         c.questions.forEach { qs.put(questionToJson(it)) }
         return JSONObject()
             .put("id", c.id)
             .put("name", c.name)
-            .put("hour", c.hour)
-            .put("minute", c.minute)
+            .put("times", JSONArray().apply { c.times.forEach { put(it.toString()) } })
             .put("enabled", c.enabled)
             .put("aboutYesterday", c.aboutYesterday)
             .put("questions", qs)
@@ -230,8 +254,7 @@ class Store(context: Context) {
             Checkin(
                 id = "morning",
                 name = "Morning",
-                hour = 7,
-                minute = 0,
+                times = listOf(AlarmTime(7, 0)),
                 aboutYesterday = true,
                 questions = listOf(
                     Question("latefood", "Did you eat anything after 9 PM last night?"),
@@ -241,8 +264,7 @@ class Store(context: Context) {
             Checkin(
                 id = "evening",
                 name = "Evening",
-                hour = 21,
-                minute = 30,
+                times = listOf(AlarmTime(21, 30)),
                 questions = listOf(
                     Question("sweetdrink", "Did you drink any sweetened beverages today?"),
                     Question("fastfood", "Did you eat fast food today?"),

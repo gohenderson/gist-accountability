@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.Toast
 
 /** Check-in settings, question editors, and history. */
@@ -82,7 +83,19 @@ class MainActivity : BaseActivity() {
 
     /** Per check-in: name, time + steps, a 7-day stat, and History / Edit buttons. */
     private fun checkinRow(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
-        col.add(label(c.name, 19f, bold = true), dp(20))
+        val titleRow = row()
+        titleRow.addView(label(c.name, 19f, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(Switch(this).apply {
+            isChecked = c.enabled
+            tag = "toggle:${c.id}"
+            contentDescription = "${c.name} alarm on"
+            setOnCheckedChangeListener { _, on ->
+                store.updateCheckin(c.id) { it.copy(enabled = on) }
+                store.checkin(c.id)?.let { AlarmScheduler.schedule(this@MainActivity, it) }
+                render()
+            }
+        })
+        col.add(titleRow, dp(20))
         col.add(label(CheckinText.oneLine(c), 14f).apply {
             if (!c.enabled) setTextColor(COLOR_MUTED)
         }, dp(2))
@@ -137,8 +150,7 @@ class MainActivity : BaseActivity() {
         val c = Checkin(
             id = Store.newId(),
             name = "Check-in ${store.checkins.size + 1}",
-            hour = 12,
-            minute = 0,
+            times = listOf(AlarmTime(12, 0)),
         )
         store.checkins = store.checkins + c
         AlarmScheduler.schedule(this, c)

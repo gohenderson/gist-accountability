@@ -106,10 +106,46 @@ class NextTriggerTest {
     }
 }
 
+class MultipleTimesTest {
+    private val ny = ZoneId.of("America/New_York")
+    private fun at(d: Int, h: Int, mi: Int) = ZonedDateTime.of(2026, 11, d, h, mi, 0, 0, ny)
+    private val c = Checkin(
+        id = "teeth", name = "Brush teeth",
+        times = listOf(AlarmTime(7, 30), AlarmTime(13, 0), AlarmTime(22, 15)),
+    )
+
+    @Test
+    fun nextIsTheSoonestTimeStillAheadToday() {
+        assertEquals(at(8, 7, 30).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(c, at(8, 6, 0)))
+        assertEquals(at(8, 13, 0).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(c, at(8, 7, 30)))
+        assertEquals(at(8, 22, 15).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(c, at(8, 13, 0)))
+    }
+
+    @Test
+    fun afterTheLastTimeItWrapsToTomorrowsFirst() {
+        assertEquals(at(9, 7, 30).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(c, at(8, 22, 15)))
+    }
+
+    @Test
+    fun timesParseAndPrintAsHoursAndMinutes() {
+        assertEquals(AlarmTime(7, 5), AlarmTime.parse("07:05"))
+        assertEquals("07:05", AlarmTime(7, 5).toString())
+        assertEquals(null, AlarmTime.parse("25:00"))
+        assertEquals(null, AlarmTime.parse("nonsense"))
+        assertEquals(listOf(AlarmTime(7, 0), AlarmTime(21, 30)), listOf(AlarmTime(21, 30), AlarmTime(7, 0)).sorted())
+    }
+
+    @Test
+    fun startPageListsAllTimes() {
+        assertTrue(CheckinText.oneLine(c).startsWith("7:30"))
+        assertEquals(3, CheckinText.times(c).split(", ").size)
+    }
+}
+
 class StatsTest {
     private val soda = Question("soda", "Soda?")                    // on track = No
     private val veg = Question("veg", "Vegetables?", yesIsGood = true)
-    private val c = Checkin(id = "c", name = "Evening", hour = 21, minute = 30, questions = listOf(soda, veg))
+    private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), questions = listOf(soda, veg))
 
     @Test
     fun onTrackRespectsWhichAnswerIsGood() {
@@ -138,7 +174,7 @@ class CheckinTextTest {
     @Test
     fun stepsAreListedInTheOrderTheyRun() {
         val c = Checkin(
-            id = "c", name = "Wake", hour = 7, minute = 0,
+            id = "c", name = "Wake", times = listOf(AlarmTime(7, 0)),
             questions = listOf(Question("q", "Q?")),
             mathCount = 3, scanCode = "X", scanLabel = "Sink",
         )
@@ -147,6 +183,6 @@ class CheckinTextTest {
 
     @Test
     fun noStepsMeansJustDismiss() {
-        assertEquals("tap Dismiss", CheckinText.steps(Checkin(id = "c", name = "Plain", hour = 7, minute = 0)))
+        assertEquals("tap Dismiss", CheckinText.steps(Checkin(id = "c", name = "Plain")))
     }
 }

@@ -38,7 +38,7 @@ class StoreTest {
     fun checkinsRoundTripWithEveryField() {
         TestEnv.reset(emptyList())
         val c = Checkin(
-            id = "x", name = "Starting the Day", hour = 6, minute = 45, enabled = false,
+            id = "x", name = "Starting the Day", times = listOf(AlarmTime(6, 45), AlarmTime(18, 0)), enabled = false,
             aboutYesterday = true, questions = listOf(Question("a", "A?", yesIsGood = true)),
             mathCount = 3, mathLevel = 4, scanCode = "ABC-123", scanLabel = "Sink",
         )
@@ -77,6 +77,15 @@ class StoreTest {
     }
 
     @Test
+    fun checkinsSavedWithASingleTimeLoadAsAOneTimeList() {
+        clearPrefs()
+        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
+            .putString("checkins", """[{"id":"old","name":"Morning","hour":7,"minute":15,"enabled":true,"questions":[]}]""")
+            .commit()
+        assertEquals(listOf(AlarmTime(7, 15)), Store(TestEnv.ctx).checkin("old")!!.times)
+    }
+
+    @Test
     fun settingsFromTheFirstVersionAreMigrated() {
         clearPrefs()
         TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
@@ -89,8 +98,7 @@ class StoreTest {
         assertEquals(1, cs.size)
         with(cs[0]) {
             assertEquals("Evening", name)
-            assertEquals(20, hour)
-            assertEquals(15, minute)
+            assertEquals(listOf(AlarmTime(20, 15)), times)
             assertFalse(enabled)
             assertEquals(listOf("Old question?"), questions.map { it.text })
         }

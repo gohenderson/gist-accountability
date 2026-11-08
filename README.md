@@ -99,11 +99,14 @@ your browser or file manager when Android asks.
 Two kinds, both run by GitHub Actions on every push to `main` and every pull request.
 **Release** runs all of them first and won't publish if any fail.
 
-- **Unit tests** (`app/src/test`, plain JVM, seconds): math problems always have the right
+- **Unit tests** (`app/src/test`, plain JVM, seconds): with several times, the next alarm
+  is the soonest one ahead and wraps to tomorrow's first; math problems always have the right
   answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
   years); next-alarm time, including daylight-saving changes; stats; step descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
+  - multiple times: removing one re-arms for the rest, and the last time can't be removed;
+    the start page switch turns a check-in's alarm off and on
   - pausing: Start check-in silences a real ringing alarm and shows the countdown bar;
     each tap restarts the countdown; when it runs out the alarm rings again and progress
     is kept
@@ -152,6 +155,11 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Ringing:** At the chosen time it plays your phone's default alarm sound on the alarm
   stream and vibrates. While it rings, the alarm volume can't go below 80%; if you turn
   it down, it goes straight back up. The original volume is restored afterwards.
+- **Several times a day:** A check-in can ring at more than one time (e.g. brushing
+  teeth at 7:30 AM and 10:15 PM). On its page, under **Schedule**, use **+ Add time**,
+  tap a time to change it, or ✕ to remove it. Answers are logged per day, so if a
+  check-in with questions rings twice in one day, the later answers replace the
+  earlier ones.
 - **Sound and photo per check-in:** On a check-in's page, under **While it rings**, pick
   its alarm sound from the phone's sounds (or "Silent" to only vibrate), and optionally a
   background photo for the ringing screen. The photo is copied into the app (resized), so
@@ -190,8 +198,9 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
   **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
   them, and add as many more as you like with **+ Add check-in**. The start page lists
-  each check-in with its time, steps and last-7-days stat, plus two buttons:
-  - **Edit** opens its own page: name, on/off, time, "previous day" option, math, scan,
+  each check-in with its times, steps and last-7-days stat, an on/off switch at the far
+  right of its name, and two buttons:
+  - **Edit** opens its own page: name, on/off, times, "previous day" option, math, scan,
     questions, a 10-second test, and delete. Changes save as you make them.
   - **History** opens its last 30 days: logged / on-track counts, how often each question
     went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.

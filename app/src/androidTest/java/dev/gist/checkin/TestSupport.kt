@@ -55,7 +55,7 @@ object TestEnv {
         scanCode: String? = null,
         aboutYesterday: Boolean = false,
     ) = Checkin(
-        id = id, name = name, hour = 12, minute = 0, enabled = true,
+        id = id, name = name, times = listOf(AlarmTime(12, 0)), enabled = true,
         aboutYesterday = aboutYesterday, questions = questions,
         mathCount = mathCount, mathLevel = mathLevel,
         scanCode = scanCode, scanLabel = if (scanCode != null) "Test spot" else "",

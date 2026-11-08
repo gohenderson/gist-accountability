@@ -19,7 +19,7 @@ def q(qid, text, yes_is_good=False):
 
 CHECKINS = [
     {
-        "id": "start", "name": "Starting the Day", "hour": 7, "minute": 0,
+        "id": "start", "name": "Starting the Day", "times": ["07:00"],
         "enabled": True, "aboutYesterday": True,
         "mathCount": 3, "mathLevel": 3,
         "scanCode": "GIST-DEMO-SINK", "scanLabel": "Bathroom sink",
@@ -29,7 +29,7 @@ CHECKINS = [
         ],
     },
     {
-        "id": "evening", "name": "Evening", "hour": 21, "minute": 30,
+        "id": "evening", "name": "Evening", "times": ["21:30"],
         "enabled": True, "aboutYesterday": False,
         "mathCount": 0, "mathLevel": 3, "scanCode": "", "scanLabel": "",
         "questions": [
@@ -41,7 +41,7 @@ CHECKINS = [
         ],
     },
     {
-        "id": "teeth", "name": "Brush Teeth", "hour": 22, "minute": 15,
+        "id": "teeth", "name": "Brush Teeth", "times": ["07:30", "22:15"],
         "enabled": True, "aboutYesterday": False,
         "mathCount": 0, "mathLevel": 3,
         "scanCode": "GIST-DEMO-BRUSH", "scanLabel": "Toothbrush holder",

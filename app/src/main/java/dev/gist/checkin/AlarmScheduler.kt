@@ -16,6 +16,10 @@ object AlarmScheduler {
         return t.toInstant().toEpochMilli()
     }
 
+    /** The soonest of the check-in's times, strictly after [now]. */
+    fun nextTriggerMillis(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Long =
+        c.times.minOf { nextTriggerMillis(it.hour, it.minute, now) }
+
     /** (Re)schedule every check-in from current settings. Safe to call any time. */
     fun scheduleAll(context: Context) {
         Store(context).checkins.forEach { schedule(context, it) }
@@ -24,11 +28,13 @@ object AlarmScheduler {
     fun schedule(context: Context, c: Checkin) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pi = broadcast(context, c.id, test = false)
-        if (!c.enabled) {
+        if (!c.enabled || c.times.isEmpty()) {
             am.cancel(pi)
             return
         }
-        set(context, am, nextTriggerMillis(c.hour, c.minute), pi)
+        // One alarm per check-in, set for its next time; after it rings, AlarmReceiver
+        // calls this again, which picks the time after that.
+        set(context, am, nextTriggerMillis(c), pi)
     }
 
     /** Call when a check-in is deleted. */

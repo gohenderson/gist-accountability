@@ -90,8 +90,23 @@ class CheckinEditActivity : BaseActivity() {
             setOnCheckedChangeListener { _, on -> change { it.copy(enabled = on) } }
         }
         col.add(sw, dp(4))
-        col.add(button("Time: ${Days.time(c.hour, c.minute)}") { pickTime(c) }, dp(4))
-        col.add(label(if (c.enabled) "Next: ${CheckinText.next(c)}" else "Alarm is off", 14f), dp(2))
+        col.add(label("Rings every day at:", 15f), dp(8))
+        c.times.forEachIndexed { i, t ->
+            val r = row()
+            r.addView(
+                button(Days.time(t.hour, t.minute)) { pickTime(c, i) }.apply { tag = "time:$i" },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            )
+            if (c.times.size > 1) {
+                r.addView(button("✕") { removeTime(i) }.apply {
+                    tag = "remove-time:$i"
+                    contentDescription = "Remove ${Days.time(t.hour, t.minute)}"
+                })
+            }
+            col.add(r, dp(4))
+        }
+        col.add(button("+ Add time") { pickTime(c, null) }, dp(4))
+        col.add(label(if (c.enabled) "Next: ${CheckinText.next(c)}" else "Alarm is off", 14f), dp(4))
         val yesterday = CheckBox(this).apply {
             text = "Answers count for the previous day (e.g. a morning check-in about last night)"
             isChecked = c.aboutYesterday
@@ -189,14 +204,29 @@ class CheckinEditActivity : BaseActivity() {
         render()
     }
 
-    private fun pickTime(c: Checkin) {
+    /** Change the time at [index], or add a new one when [index] is null. */
+    private fun pickTime(c: Checkin, index: Int?) {
+        val start = index?.let { c.times[it] } ?: AlarmTime((c.times.last().hour + 1) % 24, 0)
         TimePickerDialog(
             this,
-            { _, h, m -> change { it.copy(hour = h, minute = m, enabled = true) } },
-            c.hour,
-            c.minute,
+            { _, h, m ->
+                change { cur ->
+                    val list = cur.times.toMutableList()
+                    if (index != null && index < list.size) list[index] = AlarmTime(h, m) else list += AlarmTime(h, m)
+                    cur.copy(times = list.distinct().sorted(), enabled = true)
+                }
+            },
+            start.hour,
+            start.minute,
             DateFormat.is24HourFormat(this)
         ).show()
+    }
+
+    private fun removeTime(index: Int) {
+        change { cur ->
+            if (cur.times.size <= 1 || index !in cur.times.indices) cur
+            else cur.copy(times = cur.times.filterIndexed { i, _ -> i != index })
+        }
     }
 
     private fun confirmDelete(c: Checkin) {

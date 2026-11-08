@@ -7,6 +7,7 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -95,6 +96,27 @@ class EditCheckinTest {
     }
 
     @Test
+    fun removingATimeReschedulesForTheRemainingOnes() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Teeth").copy(times = listOf(AlarmTime(7, 0), AlarmTime(22, 0)))))
+        open("c").use {
+            onView(tagged("remove-time:0")).perform(scrollTo(), click())
+        }
+        val c = TestEnv.store.checkin("c")!!
+        assertEquals(listOf(AlarmTime(22, 0)), c.times)
+        val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
+        assertEquals(AlarmScheduler.nextTriggerMillis(22, 0) / 1000, am.nextAlarmClock!!.triggerTime / 1000)
+    }
+
+    @Test
+    fun theLastTimeCantBeRemoved() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Single")))
+        open("c").use {
+            onView(tagged("time:0")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("remove-time:0")).check(doesNotExist())
+        }
+    }
+
+    @Test
     fun deleteCheckinAfterConfirming() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Doomed"), TestEnv.checkin("d", "Survivor")))
         open("c").use {
@@ -102,6 +124,34 @@ class EditCheckinTest {
             onView(withText("Delete")).inRoot(isDialog()).perform(click())
         }
         assertEquals(listOf("d"), TestEnv.store.checkins.map { it.id })
+    }
+}
+
+/** The start page's on/off switch. */
+@RunWith(AndroidJUnit4::class)
+class StartPageTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
+    @After
+    fun tearDown() = TestEnv.reset(emptyList())
+
+    @Test
+    fun switchOnTheNameRowTurnsTheAlarmOffAndOn() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Noon")))
+        AlarmScheduler.schedule(TestEnv.ctx, TestEnv.store.checkin("c")!!)
+        val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
+
+        ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
+            onView(tagged("toggle:c")).perform(click())
+            assertFalse(TestEnv.store.checkin("c")!!.enabled)
+            assertNull("alarm should be cancelled", am.nextAlarmClock)
+            onView(withText(containsString("Off ·"))).check(matches(isDisplayed()))
+
+            onView(tagged("toggle:c")).perform(click())
+            assertTrue(TestEnv.store.checkin("c")!!.enabled)
+            assertNotNull("alarm should be set again", am.nextAlarmClock)
+        }
     }
 }
 
