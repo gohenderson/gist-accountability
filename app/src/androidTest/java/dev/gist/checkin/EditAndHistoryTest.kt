@@ -172,10 +172,15 @@ class StartPageTest {
     @Test
     fun cardsAreOnlyAsTallAsTheirContentSoSeveralFitOnScreen() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "First check-in"), TestEnv.checkin("b", "Second check-in")))
-        ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
-            // No scrolling: both should be on screen right away.
-            onView(withText("First check-in")).check(matches(isCompletelyDisplayed()))
-            onView(withText("Second check-in")).check(matches(isCompletelyDisplayed()))
+        TestEnv.allowOverlay(true) // one less "Finish setup" item, as on a set-up phone
+        try {
+            ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
+                // No scrolling: both should be on screen right away.
+                onView(withText("First check-in")).check(matches(isCompletelyDisplayed()))
+                onView(withText("Second check-in")).check(matches(isCompletelyDisplayed()))
+            }
+        } finally {
+            TestEnv.allowOverlay(false)
         }
     }
 

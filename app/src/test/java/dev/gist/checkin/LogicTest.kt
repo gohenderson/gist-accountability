@@ -299,3 +299,50 @@ class RepeatTest {
         assertEquals("every day", Repeat.weekly((1..7).toSet()).describe())
     }
 }
+
+class LibraryTest {
+    @Test
+    fun templatesAreWellFormed() {
+        val keys = Library.TEMPLATES.map { it.key }
+        assertEquals("unique keys", keys.size, keys.toSet().size)
+        for (t in Library.TEMPLATES) {
+            val c = t.checkin
+            assertTrue("${t.key} has a name", c.name.isNotBlank())
+            assertTrue("${t.key} has times", c.times.isNotEmpty())
+            assertEquals("${t.key} times sorted", c.times.sorted(), c.times)
+            val ids = c.questions.map { it.id }
+            assertEquals("${t.key} question ids unique", ids.size, ids.toSet().size)
+            assertTrue("${t.key} has a blurb", t.blurb.isNotBlank())
+        }
+    }
+
+    @Test
+    fun instantiateGivesANewIdAndAFreeName() {
+        val water = Library.template("water")!!
+        val first = Library.instantiate(water, emptyList(), "id1")
+        assertEquals("id1", first.id)
+        assertEquals("Water", first.name)
+        assertEquals(water.checkin.times, first.times)
+        val second = Library.instantiate(water, listOf(first), "id2")
+        assertEquals("Water 2", second.name)
+        assertEquals("Water 3", Library.instantiate(water, listOf(first, second), "id3").name)
+    }
+
+    @Test
+    fun blankIsNumbered() {
+        assertEquals("Check-in 1", Library.blank(emptyList(), "x").name)
+        assertTrue(Library.blank(emptyList(), "x").questions.isEmpty())
+    }
+}
+
+class BackgroundTest {
+    @Test
+    fun descriptions() {
+        assertEquals("none", Background().describe(0))
+        assertEquals("photo", Background(Background.PHOTO).describe(1))
+        assertEquals("slideshow · 4 photos · every 10 s", Background(Background.SLIDESHOW).describe(4))
+        assertEquals("slideshow · 1 photo · every 5 s", Background(Background.SLIDESHOW, intervalSec = 5).describe(1))
+        assertEquals("video", Background(Background.VIDEO).describe(0))
+        assertFalse(Background(caption = "hi").hasMedia)
+    }
+}

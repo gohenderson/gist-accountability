@@ -59,7 +59,7 @@ class SettingsActivity : BaseActivity() {
         val backup = card()
         backup.add(sectionTitle("Backup"))
         backup.add(
-            label("One file with all your check-ins, their results and background photos. " +
+            label("One YAML file with all your check-ins, their results and backgrounds (photos and videos). " +
                 "Keep it somewhere safe (Drive, email to yourself) to move to a new phone.", 15f),
             dp(6)
         )
@@ -86,8 +86,8 @@ class SettingsActivity : BaseActivity() {
         startActivityForResult(
             Intent(Intent.ACTION_CREATE_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/json")
-                .putExtra(Intent.EXTRA_TITLE, "gist-backup-${LocalDate.now()}.json"),
+                .setType("application/yaml")
+                .putExtra(Intent.EXTRA_TITLE, "gist-backup-${LocalDate.now()}.yaml"),
             REQ_EXPORT_BACKUP
         )
     }
@@ -98,7 +98,10 @@ class SettingsActivity : BaseActivity() {
             Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("*/*")
-                .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain", "application/octet-stream")),
+                .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                    "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml",
+                    "application/json", "text/plain", "application/octet-stream",
+                )),
             REQ_IMPORT_BACKUP
         )
     }

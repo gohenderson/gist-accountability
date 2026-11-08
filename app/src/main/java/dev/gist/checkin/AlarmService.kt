@@ -17,6 +17,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
 import kotlin.math.ceil
 
 /**
@@ -43,6 +44,29 @@ class AlarmService : Service() {
 
     private val giveUp = Runnable { stopSelf() }
 
+    /**
+     * Leaving the alarm screen (Home, the app switcher, another app) doesn't get you out of
+     * it: while the alarm is active, the check-in comes straight back to the front. Android
+     * only allows that for apps with "Display over other apps" (the start page asks for it).
+     */
+    private val frontGuard = object : Runnable {
+        override fun run() {
+            bringBack()
+            handler.postDelayed(this, FRONT_CHECK_MS)
+        }
+    }
+
+    private fun bringBack() {
+        if (CheckinActivity.visible) return
+        if (!Settings.canDrawOverlays(this)) return
+        if (!getSystemService(PowerManager::class.java).isInteractive) return // screen off: the lock screen shows it
+        if (Store(this).pending.isEmpty()) return
+        try {
+            startActivity(CheckinActivity.alarmIntent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        } catch (e: Exception) {
+        }
+    }
+
     private val resumeRinging = Runnable { resume() }
 
     override fun onCreate() {
@@ -65,6 +89,7 @@ class AlarmService : Service() {
                 ?: Store(this).pending.firstOrNull()?.let { Store(this).checkin(it.checkinId) }
             startRinging(checkin?.soundUri)
             handler.postDelayed(giveUp, MAX_RING_MS)
+            handler.postDelayed(frontGuard, FRONT_CHECK_MS)
         }
         // Works when the screen is on and unlocked on some devices; otherwise the
         // notification's full-screen intent opens the survey.
@@ -231,6 +256,7 @@ class AlarmService : Service() {
 
         /** Stop making noise after an hour; the check-in stays pending. */
         private const val MAX_RING_MS = 60 * 60 * 1000L
+        private const val FRONT_CHECK_MS = 1_000L
         private const val VOLUME_FLOOR = 0.8
     }
 }

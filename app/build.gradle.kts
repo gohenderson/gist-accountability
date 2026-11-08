@@ -69,9 +69,13 @@ kotlin {
 }
 
 dependencies {
-    // The only dependency: ZXing's pure-Java barcode decoder (Apache-2.0,
-    // https://github.com/zxing/zxing). No network access, no Google Play services.
+    // Two small pure-Java libraries, no network access, no Google Play services:
+    // ZXing's barcode decoder (Apache-2.0, https://github.com/zxing/zxing) for scanning,
     implementation("com.google.zxing:core:3.5.4")
+    // and SnakeYAML Engine (Apache-2.0, https://bitbucket.org/snakeyaml/snakeyaml-engine),
+    // a YAML 1.2 parser/emitter for backup files. It stays on 2.x: 3.x targets Java 11,
+    // whose library methods older Android versions (this app supports 10+) don't have.
+    implementation("org.snakeyaml:snakeyaml-engine:2.8")
 
     // Test-only libraries: used to build and run the tests, never included in the app APK.
     testImplementation("junit:junit:4.13.2")

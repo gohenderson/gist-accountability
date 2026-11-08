@@ -118,24 +118,46 @@ class CheckinEditActivity : BaseActivity() {
         // Sound & background
         col = section(page, "While it rings")
         col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
+        val photoCount = Backgrounds.photos(this, checkinId).size
         col.add(
-            button(if (c.hasBackground) "Background photo: change or remove" else "Background photo: none") {
-                editBackground(c)
-            },
+            button("Background: ${c.background.describe(photoCount)}") { pickBackgroundKind(c) }.apply { tag = "background-kind" },
             dp(4)
         )
-        if (c.hasBackground) {
-            Backgrounds.load(this, checkinId)?.let { bmp ->
+        if (c.background.kind == Background.SLIDESHOW) {
+            col.add(button("Change photo every ${c.background.intervalSec} s") { pickInterval(c) }.apply {
+                tag = "slideshow-interval"
+            }, dp(4))
+        }
+        if (c.background.hasMedia) {
+            Backgrounds.preview(this, checkinId, c.background)?.let { bmp ->
                 val preview = ImageView(this).apply {
                     setImageBitmap(bmp)
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     tag = "background-preview"
+                    contentDescription = "Background preview"
                 }
                 col.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(160)).apply {
                     topMargin = dp(6)
                 })
             }
+            if (c.background.kind == Background.VIDEO) col.add(muted("Plays muted and loops while it rings.", 13f), dp(2))
         }
+        // Caption: saved as you type, like the name.
+        val caption = EditText(this).apply {
+            setText(c.background.caption)
+            hint = "Caption (optional), e.g. Future you says thanks"
+            tag = "background-caption"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    val text = s?.toString()?.trim().orEmpty()
+                    store.updateCheckin(checkinId) { it.copy(background = it.background.copy(caption = text)) }
+                }
+            })
+        }
+        col.add(caption, dp(8))
 
         // Steps
         col = section(page, "When it rings")
@@ -364,7 +386,7 @@ class CheckinEditActivity : BaseActivity() {
         when (requestCode) {
             REQ_REGISTER -> data.getStringExtra(ScanActivity.EXTRA_CODE)?.let { finishRegister(it) }
             REQ_SOUND -> soundPicked(pickedRingtone(data))
-            REQ_IMAGE -> data.data?.let { imagePicked(it) }
+            REQ_IMAGE, REQ_IMAGES, REQ_VIDEO -> mediaPicked(requestCode, data)
         }
     }
 
@@ -416,43 +438,72 @@ class CheckinEditActivity : BaseActivity() {
         }
     }
 
-    // ---------------------------------------------------------------- background photo
+    // ---------------------------------------------------------------- background
 
-    private fun editBackground(c: Checkin) {
-        if (!c.hasBackground) {
-            pickBackground()
-            return
-        }
+    private fun pickBackgroundKind(c: Checkin) {
+        val options = arrayOf("None", "One photo…", "Slideshow of photos…", "Video…")
         AlertDialog.Builder(this)
-            .setTitle("Background photo")
-            .setMessage("Shown behind the alarm screen while ${c.name} is ringing.")
-            .setPositiveButton("Change photo") { _, _ -> pickBackground() }
-            .setNeutralButton("Remove") { _, _ ->
-                Backgrounds.delete(this, checkinId)
-                change { it.copy(hasBackground = false) }
+            .setTitle("Background while ringing")
+            .setItems(options) { _, i ->
+                when (i) {
+                    0 -> setBackgroundKind(Background.NONE)
+                    1 -> pickMedia("image/*", multiple = false, REQ_IMAGE)
+                    2 -> pickMedia("image/*", multiple = true, REQ_IMAGES)
+                    3 -> pickMedia("video/*", multiple = false, REQ_VIDEO)
+                }
             }
-            .setNegativeButton("Close", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    @Suppress("DEPRECATION")
-    private fun pickBackground() {
-        startActivityForResult(
-            Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),
-            REQ_IMAGE
-        )
+    private fun pickInterval(c: Checkin) {
+        val values = Background.INTERVALS
+        AlertDialog.Builder(this)
+            .setTitle("Change photo every")
+            .setSingleChoiceItems(values.map { "$it seconds" }.toTypedArray(), values.indexOf(c.background.intervalSec)) { d, i ->
+                change { it.copy(background = it.background.copy(intervalSec = values[i])) }
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
-    private fun imagePicked(uri: Uri) {
-        toast("Preparing photo…")
+    /** Switches the background type (keeping the caption) and drops media it no longer uses. */
+    private fun setBackgroundKind(kind: String) {
+        Backgrounds.keepOnly(this, checkinId, Background(kind))
+        change { it.copy(background = it.background.copy(kind = kind)) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pickMedia(type: String, multiple: Boolean, request: Int) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(type)
+        if (multiple) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        startActivityForResult(intent, request)
+    }
+
+    private fun mediaPicked(request: Int, data: Intent) {
+        val uris = buildList {
+            val clip = data.clipData
+            if (clip != null) for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri)
+            else data.data?.let { add(it) }
+        }.filter { it.scheme == "content" }
+        if (uris.isEmpty()) return
+        toast(if (request == REQ_VIDEO) "Preparing video…" else "Preparing photo${if (uris.size > 1) "s" else ""}…")
+        if (request == REQ_IMAGES && uris.size > Backgrounds.MAX_PHOTOS) {
+            toast("Using the first ${Backgrounds.MAX_PHOTOS} photos.")
+        }
         val app = applicationContext
         val id = checkinId
         Thread {
             try {
-                Backgrounds.saveFromUri(app, id, uri)
-                runOnUiThread { change { it.copy(hasBackground = true) } }
+                val kind = when (request) {
+                    REQ_VIDEO -> { Backgrounds.setVideoFromUri(app, id, uris.first()); Background.VIDEO }
+                    REQ_IMAGES -> { Backgrounds.setPhotosFromUris(app, id, uris); Background.SLIDESHOW }
+                    else -> { Backgrounds.setPhotosFromUris(app, id, uris.take(1)); Background.PHOTO }
+                }
+                runOnUiThread { setBackgroundKind(kind) }
             } catch (e: Exception) {
-                runOnUiThread { toast("Couldn't use that photo: ${e.message}") }
+                runOnUiThread { toast("Couldn't use that: ${e.message}") }
             }
         }.start()
     }
@@ -538,6 +589,8 @@ class CheckinEditActivity : BaseActivity() {
         private const val REQ_REGISTER = 4
         private const val REQ_SOUND = 5
         private const val REQ_IMAGE = 6
+        private const val REQ_IMAGES = 7
+        private const val REQ_VIDEO = 8
 
         fun intent(context: Context, checkinId: String): Intent =
             Intent(context, CheckinEditActivity::class.java).putExtra(EXTRA_ID, checkinId)
