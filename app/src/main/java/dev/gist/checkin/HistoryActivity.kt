@@ -132,21 +132,19 @@ class HistoryActivity : BaseActivity() {
 
     /** Opens a day's answers for editing; asks which time first if there's more than one. */
     private fun fixDay(c: Checkin, day: String, slots: Map<String, SlotResult>) {
-        val times = (c.times.map { it.toString() } + slots.keys)
+        // Place check-ins have no set times: their results are saved under when they rang.
+        val base = if (c.trigger.isEvent && slots.isNotEmpty()) emptyList() else c.times.map { it.toString() }
+        val times = (base + slots.keys)
             .distinct()
             .sortedBy { AlarmTime.parse(it) ?: AlarmTime(0, 0) }
         if (times.size == 1) {
             startActivity(CheckinActivity.editIntent(this, c.id, day, times[0]))
             return
         }
-        val labels = times.map { t -> "${Days.timeOf(t)}  ·  ${Stats.describe(c, slots[t])}" }
-        AlertDialog.Builder(this)
-            .setTitle("${Days.pretty(day)}: which time?")
-            .setItems(labels.toTypedArray()) { _, i ->
-                startActivity(CheckinActivity.editIntent(this, c.id, day, times[i]))
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        val options = times.map { t -> DialogOption(Days.timeOf(t), Stats.describe(c, slots[t])) }
+        pickDialog("${Days.pretty(day)}: which time?", options) { i ->
+            startActivity(CheckinActivity.editIntent(this, c.id, day, times[i]))
+        }
     }
 
     private fun cell(text: String, fg: Int?, bg: Int?, bold: Boolean = false, gravity: Int = Gravity.CENTER): TextView =

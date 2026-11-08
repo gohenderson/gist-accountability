@@ -50,10 +50,11 @@ class BackupTest {
 
     @Test
     fun roundTripToANewPhoneWithPhotosVideoAndHistory() {
-        val slideshow = TestEnv.checkin("wake", "Starting the Day", listOf(q), mathCount = 3).copy(
+        val slideshow0 = TestEnv.checkin("wake", "Starting the Day", listOf(q), mathCount = 3)
+        val slideshow = slideshow0.copy(
             soundUri = Checkin.SILENT,
             repeat = Repeat.weekly(Repeat.WEEKDAYS),
-            steps = listOf(Steps.QUESTIONS, Steps.MATH),
+            steps = slideshow0.steps.reversed(),
             background = Background(Background.SLIDESHOW, intervalSec = 5, caption = "Up and at 'em"),
         )
         val withVideo = TestEnv.checkin("vid", "Video").copy(background = Background(Background.VIDEO, caption = "Go"))
@@ -74,7 +75,7 @@ class BackupTest {
         Backup.import(TestEnv.ctx, contents, all(contents))
 
         val s = TestEnv.store
-        assertEquals(listOf(slideshow.copy(steps = listOf(Steps.QUESTIONS, Steps.MATH)), withVideo), s.checkins)
+        assertEquals(listOf(slideshow, withVideo), s.checkins)
         assertEquals(mapOf("soda" to true), s.entry("2026-11-06"))
         assertEquals(2, Backgrounds.photos(TestEnv.ctx, "wake").size)
         assertTrue("video restored", Backgrounds.videoFile(TestEnv.ctx, "vid").readBytes().contentEquals(videoBytes))
@@ -98,7 +99,9 @@ class BackupTest {
     private fun conflict(): Backup.Contents {
         TestEnv.reset(listOf(TestEnv.checkin("wake", "Wake", listOf(q)).copy(times = listOf(AlarmTime(6, 0)))))
         TestEnv.store.saveAnswers("2026-11-06", "wake", "06:00", mapOf("soda" to true))
-        val fileVersion = TestEnv.store.checkin("wake")!!.copy(times = listOf(AlarmTime(7, 30)), mathCount = 2)
+        val fileVersion = TestEnv.store.checkin("wake")!!.let {
+            it.copy(times = listOf(AlarmTime(7, 30)), steps = listOf(Steps.math(2)) + it.steps)
+        }
         TestEnv.store.checkins = listOf(fileVersion)
         TestEnv.store.deleteHistory("wake")
         TestEnv.store.saveAnswers("2026-11-07", "wake", "07:30", mapOf("soda" to false))
@@ -117,7 +120,7 @@ class BackupTest {
         Backup.import(TestEnv.ctx, contents, all(contents, Backup.Mode.UPDATE, history = true))
         val c = TestEnv.store.checkins.single()
         assertEquals(listOf(AlarmTime(7, 30)), c.times)
-        assertEquals(2, c.mathCount)
+        assertEquals(2, c.steps.first().mathCount)
         assertEquals(listOf("2026-11-06", "2026-11-07"), days("wake"))
     }
 
@@ -172,10 +175,13 @@ class BackupTest {
                 name: Walk
                 times: ["08:15", "18:00"]
                 repeat: {kind: weekly, days: [6, 7]}
-                steps: [questions]
                 enabled: True
-                questions:
-                  - {id: walked, text: Did you walk?, yesIsGood: true}
+                steps:
+                  - kind: questions
+                    questions:
+                      - {id: walked, text: Did you walk?, yesIsGood: true}
+                  - {kind: math, mathCount: 5, mathLevel: 4}
+                  - {kind: math, mathCount: 5, mathLevel: 4}
         """.trimIndent()
         val contents = Backup.parse(TestEnv.ctx, yaml)
         Backup.import(TestEnv.ctx, contents, all(contents))
@@ -183,6 +189,7 @@ class BackupTest {
         assertEquals(listOf(AlarmTime(8, 15), AlarmTime(18, 0)), c.times)
         assertEquals(Repeat.weekly(Repeat.WEEKENDS), c.repeat)
         assertEquals("Did you walk?", c.questions.single().text)
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.MATH), c.steps.map { it.kind })
     }
 
     @Test
@@ -302,7 +309,7 @@ class SoundAndBackgroundTest {
     @Test
     fun silentMeansNoSound() {
         ring(TestEnv.checkin("s", "Silent test").copy(soundUri = Checkin.SILENT))
-        assertEquals(Checkin.SILENT, AlarmService.currentSound)
+        TestEnv.eventually { assertEquals(Checkin.SILENT, AlarmService.currentSound) }
         assertTrue("still an active alarm (vibrating)", AlarmService.running)
     }
 

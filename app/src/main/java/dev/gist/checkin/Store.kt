@@ -29,8 +29,8 @@ data class AlarmTime(val hour: Int, val minute: Int) : Comparable<AlarmTime> {
 
 /**
  * One alarm with its own times and steps. It rings at each of [times] on the days [repeat]
- * allows. When it rings, its [steps] run in the chosen order (see [Steps]): [mathCount] math
- * problems, scanning [scanCode], answering [questions]. Each step is optional.
+ * allows (or on its place / movement [trigger]). When it rings, its [steps] run in order:
+ * any number of math, scan and question steps (see [StepConfig]). With none, it's just Dismiss.
  * [aboutYesterday]: answers are logged for the previous day (e.g. a morning check-in
  * asking about last night).
  */
@@ -41,16 +41,15 @@ data class Checkin(
     val repeat: Repeat = Repeat.EVERY_DAY,
     val enabled: Boolean = true,
     val aboutYesterday: Boolean = false,
-    val questions: List<Question> = emptyList(),
-    val mathCount: Int = 0,
-    val mathLevel: Int = 3,        // 1..4, see MathGen.LEVELS
-    val scanCode: String? = null,  // exact text of the registered QR code / barcode
-    val scanLabel: String = "",    // where it is, e.g. "Bathroom sink"
+    val steps: List<StepConfig> = emptyList(),
     val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
-    val steps: List<String> = emptyList(), // order of Steps kinds; see Steps.order
+    val trigger: Trigger = Trigger.DEFAULT, // what makes it ring (times, or arriving/leaving a place)
 ) {
+    /** Every question in its question steps, in order: these are what gets logged. */
+    val questions: List<Question> get() = steps.filter { it.kind == Steps.QUESTIONS }.flatMap { it.questions }
+
     companion object {
         const val SILENT = "silent"
     }
@@ -284,11 +283,36 @@ class Store(context: Context) {
     private fun questionFromJson(o: JSONObject) =
         Question(o.getString("id"), o.getString("text"), o.optBoolean("yesIsGood", false))
 
-    private fun questionToJson(q: Question): JSONObject =
-        JSONObject().put("id", q.id).put("text", q.text).put("yesIsGood", q.yesIsGood)
+    /**
+     * The step list. Check-ins saved before steps could repeat kept one math / scan /
+     * questions setup on the check-in itself plus an order of kinds; those become steps.
+     */
+    private fun stepsFromJson(o: JSONObject): List<StepConfig> {
+        val arr = o.optJSONArray("steps") ?: JSONArray()
+        val objects = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+        if (objects.isNotEmpty() || (arr.length() == 0 && !o.has("mathCount") && !o.has("questions") && !o.has("scanCode"))) {
+            return objects.mapNotNull { StepConfig.fromJson(it) }
+        }
+        val qs = o.optJSONArray("questions") ?: JSONArray()
+        val questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) }
+        val mathCount = o.optInt("mathCount", 0)
+        val scanCode = o.optString("scanCode", "").ifEmpty { null }
+        val listed = (0 until arr.length()).map { arr.optString(it) }.filter { it in Steps.ALL }
+        val configured = buildList {
+            if (mathCount > 0) add(Steps.MATH)
+            if (scanCode != null) add(Steps.SCAN)
+            if (questions.isNotEmpty()) add(Steps.QUESTIONS)
+        }
+        return (listed + configured).distinct().map { kind ->
+            when (kind) {
+                Steps.MATH -> StepConfig(Store.newId(), kind, mathCount = mathCount.coerceAtLeast(1), mathLevel = o.optInt("mathLevel", 3))
+                Steps.SCAN -> StepConfig(Store.newId(), kind, scanCode = scanCode, scanLabel = o.optString("scanLabel", ""))
+                else -> StepConfig(Store.newId(), kind, questions = questions)
+            }
+        }
+    }
 
     fun checkinFromJson(o: JSONObject): Checkin {
-        val qs = o.optJSONArray("questions") ?: JSONArray()
         val ts = o.getJSONArray("times")
         return Checkin(
             id = o.getString("id"),
@@ -298,22 +322,15 @@ class Store(context: Context) {
             repeat = Repeat.fromJson(o.optJSONObject("repeat")),
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
-            questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) },
-            mathCount = o.optInt("mathCount", 0),
-            mathLevel = o.optInt("mathLevel", 3),
-            scanCode = o.optString("scanCode", "").ifEmpty { null },
-            scanLabel = o.optString("scanLabel", ""),
+            steps = stepsFromJson(o),
             soundUri = o.optString("soundUri", "").ifEmpty { null },
             soundTitle = o.optString("soundTitle", ""),
             background = Background.fromJson(o.optJSONObject("background")),
-            steps = o.optJSONArray("steps")?.let { a -> (0 until a.length()).map { a.optString(it) } }
-                ?.filter { it in Steps.ALL }?.distinct().orEmpty(),
+            trigger = Trigger.fromJson(o.optJSONObject("trigger")),
         )
     }
 
     fun checkinToJson(c: Checkin): JSONObject {
-        val qs = JSONArray()
-        c.questions.forEach { qs.put(questionToJson(it)) }
         return JSONObject()
             .put("id", c.id)
             .put("name", c.name)
@@ -321,15 +338,11 @@ class Store(context: Context) {
             .put("repeat", c.repeat.toJson())
             .put("enabled", c.enabled)
             .put("aboutYesterday", c.aboutYesterday)
-            .put("questions", qs)
-            .put("mathCount", c.mathCount)
-            .put("mathLevel", c.mathLevel)
-            .put("scanCode", c.scanCode ?: "")
-            .put("scanLabel", c.scanLabel)
             .put("soundUri", c.soundUri ?: "")
             .put("soundTitle", c.soundTitle)
             .put("background", c.background.toJson())
-            .put("steps", JSONArray(c.steps))
+            .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
+            .put("trigger", c.trigger.toJson())
     }
 
     companion object {
@@ -350,22 +363,22 @@ class Store(context: Context) {
                 name = "Morning",
                 times = listOf(AlarmTime(7, 0)),
                 aboutYesterday = true,
-                questions = listOf(
+                steps = listOf(StepConfig("morning-q", Steps.QUESTIONS, questions = listOf(
                     Question("latefood", "Did you eat anything after 9 PM last night?"),
                     Question("alcohol", "Did you drink alcohol last night?"),
-                ),
+                ))),
             ),
             Checkin(
                 id = "evening",
                 name = "Evening",
                 times = listOf(AlarmTime(21, 30)),
-                questions = listOf(
+                steps = listOf(StepConfig("evening-q", Steps.QUESTIONS, questions = listOf(
                     Question("sweetdrink", "Did you drink any sweetened beverages today?"),
                     Question("fastfood", "Did you eat fast food today?"),
                     Question("sweets", "Did you eat anything sweet today?"),
                     Question("veg", "Did you eat vegetables or fruit today?", yesIsGood = true),
                     Question("homecooked", "Did you eat a home-cooked meal today?", yesIsGood = true),
-                ),
+                ))),
             ),
         )
     }

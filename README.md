@@ -12,7 +12,8 @@ diet without counting calories.
   for backup files. Everything else (camera, UI, storage, video) uses Android's built-in
   APIs. There's no AndroidX and no Google Play services. SnakeYAML Engine stays on 2.x
   on purpose: 3.x needs Java 11 library methods that Android 10–12 don't have.
-- **No internet permission.** Nothing ever leaves your phone. Answers live in the app's
+- **No internet permission.** Nothing ever leaves your phone (that includes your location,
+  if you use place triggers). Answers live in the app's
   private storage, and the only way out is the **Export CSV** button.
 - About 4,900 lines of Kotlin in 28 files, with no generated code.
 
@@ -129,7 +130,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
 - **Unit tests** (`app/src/test`, plain JVM, seconds): with several times, the next alarm
   is the soonest one ahead and wraps to tomorrow's first; math problems always have the right
   answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
-  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions; the check-in library templates are well formed and copies get free names; background descriptions.
+  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions; place-trigger conditions (time windows across midnight, days, once
+  a day, at/away, unknown location), distances, and parsing coordinates; the check-in library templates are well formed and copies get free names; background descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
   - multiple times: each time's results are saved separately; History shows ✗ for a day if
@@ -147,9 +149,16 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     two waiting check-ins run back to back; with no camera, the scan step offers the math
     fallback; a check-in with no steps only needs Dismiss
   - steps: they're listed in their order; dragging Questions above Math reorders them; a
-    custom order (questions, then math) is what the alarm runs; a step that isn't set up
-    (scan without a code) says so and is skipped; adding Math opens its page and the
-    difficulty saves; the scan spot name saves; removing a step keeps the others' order
+    custom order (questions, then math) is what the alarm runs; the same kind can run
+    several times (math → questions → math); a step that isn't set up (scan without a
+    code) says so and is skipped; adding Math opens its page and the difficulty saves;
+    Math can be added again and again and + Add step never disappears; Duplicate copies a
+    step; up to 100 problems per step; the scan spot name saves; removing a step keeps the
+    others' order; check-ins saved before steps could repeat keep their steps
+  - running triggers: a run starting rings a start trigger; a finish rings only after a
+    long enough run; the step watcher runs only while needed (or says the phone has no step
+    sensor); choosing "finish running" and a minimum on the edit page saves them
+  - a test ring can be stopped part-way with End test, logging nothing
   - edit page: rename saves as you type; add and reorder questions; turning the alarm
     off/on cancels and reschedules the real alarm; Weekdays and Monthly-on-the-1st
     rules save and move the real alarm to the right day; delete
@@ -173,6 +182,10 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     after Start check-in
   - a test ring from the edit page is marked as a test, logs nothing, and leaves the next
     real ring alone
+  - place triggers: arriving rings (once a day); leaving or outside the time window doesn't;
+    "only when at" skips when elsewhere and rings when there; "only when away" rings when
+    elsewhere; the place is watched while on and not when off; choosing "arrive" and typing
+    coordinates on the edit page saves the place and starts watching it
   - About opens from the start page and shows the version, Donate and the source link
   - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
     over, the alarm rings until the question is answered, and the answer is saved
@@ -227,7 +240,35 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   page shows the rule next to the times (e.g. "7:00 AM, Mon–Fri") and the real next ring
   ("Mon 7:00 AM", "Dec 1 9:00 AM"). The **Alarm on** switch still turns the whole check-in
   off and on.
-- **Do it now / Skip:** Each check-in card on the start page shows its next ring.
+- **Running triggers (optional):** **Rings** can also be **When I start running** or **When
+  I finish running** (optionally only after a run of at least 5–60 minutes), with the same
+  Days / Time / once-a-day conditions as place triggers. Gist notices runs from the phone's
+  **step counter**: about 140+ steps a minute for a minute starts a run; about 1½ minutes
+  below that (stopped, or walking) ends it, so a red light doesn't. It works with the phone
+  in a pocket, armband or on a treadmill, and needs no GPS. It needs Android's "physical
+  activity" permission (the edit page and "Finish setup" ask) and a phone with a step
+  sensor (most have one). While a check-in uses it, a quiet "Watching for runs"
+  notification shows (Android requires one); during a run the CPU stays awake so the end
+  is noticed on time, otherwise the sensor's own low-power batching is used. Steps never
+  leave the phone.
+- **Place triggers (optional):** under **Schedule**, **Rings** can be:
+  - **At set times** (the classic alarm), optionally with **Where: only when I'm at** or
+    **away from** a place. At ring time Gist checks where the phone is; if the condition
+    doesn't hold, that time is marked skipped (–) instead of ringing. If the location
+    can't be found, it rings anyway.
+  - **When I arrive at a place** or **When I leave a place**, combined with conditions
+    that must *all* hold: **Days** (any repeat rule, e.g. Mon–Fri), **Time** (any time,
+    or only between two times, which can cross midnight), and **At most once a day**.
+    E.g. "when I arrive at the gym, Mon/Wed/Fri, 6–9 AM, once a day". Results are saved
+    under the time it rang.
+  Pick a place by **Use my current location**, **Enter coordinates** (long-press a spot in
+  any maps app and copy them), or one you've already used, and choose how close counts
+  (100 m to 1 km). Gist uses Android's own location service: no Google Play services,
+  no internet, and your location never leaves the phone. Android needs location allowed
+  **all the time** to notice an arrival while Gist is closed; the edit page and the
+  start page's "Finish setup" card ask for it. Accuracy is typically 50–200 m and an
+  arrival can take a few minutes to register, so a 200 m circle is a good start.
+ Each check-in card on the start page shows its next ring.
   - **Do it now** runs the same steps right away (math, scan, questions). That ring then
     stays quiet. A scan must really be scanned: the "Can't scan?" fallback isn't offered
     early.
@@ -282,11 +323,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Safety valve:** After 60 minutes the sound stops so it can't drain your battery.
   The check-in stays pending as a sticky notification until you answer.
 - **Steps:** On a check-in's page, **When it rings** lists its steps in the order they
-  run. **+ Add step** picks a type; **drag a step by its ≡ handle** above or below the
-  others to change the order; **tap a step** to open its own page, where you set it up or
-  remove it. A step that isn't set up yet (a scan without a code, questions without any)
+  run. **+ Add step** picks a type, as many times as you like and any kind again (up to 100
+  steps, e.g. ten very hard math steps of 100 problems each); **drag a step by its ≡
+  handle** above or below the others to change the order; **tap a step** to open its own
+  page, where you set it up, **Duplicate** it, or remove it. A step that isn't set up yet (a scan without a code, questions without any)
   is shown in orange and skipped when the alarm rings. The types:
-  - **Math problems:** 1–10 problems at one of four levels: Easy `47 + 38`, Medium
+  - **Math problems:** 1–100 problems at one of four levels: Easy `47 + 38`, Medium
     `47 × 6 + 23`, Hard `47 × 38 + 512`, Very hard `347 × 38 + 47 × 26`. A wrong answer
     gives you a new problem.
   - **Scan a code:** **Register a code** (any QR code or product barcode) and name the
@@ -294,7 +336,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     you can't scan (you're traveling, the camera fails), a **"Can't scan?"** button
     appears after 2 minutes. It swaps the scan for 5 very hard problems.
   - **Questions:** the yes/no survey: add, edit, reorder and delete questions. These are
-    the only answers that get logged.
+    the only answers that get logged. With several question steps, History shows all of
+    their questions.
   A check-in with no steps at all just shows a Dismiss button.
 - **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
   **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
@@ -302,7 +345,7 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   **library**: ready-made check-ins grouped by Food (diet gist, last night, water),
   Wake-up (weekday math alarm, gentler weekend one), Health (medication, brush teeth,
   bedtime), Fitness (workout Mon/Wed/Fri, stand & stretch on work days, daily steps,
-  Sunday weigh-in), Mind (journal, reading) and Money (monthly money check on the 1st,
+  Sunday weigh-in, after a run), Mind (journal, reading) and Money (monthly money check on the 1st,
   bills on the 15th and last day). Tap **Add** to copy one into your list and open it to
   adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
@@ -310,7 +353,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
     sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
     The **test ring** is a practice run: it rings and runs every step, but nothing is
-    logged and the next real alarm still rings as scheduled.
+    logged and the next real alarm still rings as scheduled. **End test** (or Back) stops it
+    at any point, and leaving it with Home doesn't pull you back.
   - **History** opens its last 30 days: logged / on-track counts, how often each question
     went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.
   Backup, CSV export and dark mode are under **Settings** at the bottom of the start page.
@@ -340,7 +384,9 @@ app/src/main/java/dev/gist/checkin/
   Backup.kt / Yaml.kt  backup file export/import (YAML via SnakeYAML Engine)
   CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
   CheckinActivity.kt the alarm screen: runs the steps in their order, then stops the alarm
-  Steps.kt           step types, their order, and what each one needs
+  Steps.kt           steps (any number, any kind, in order) and what each one needs
+  RunDetector.kt     notices runs starting and finishing from step-counter readings
+  MovementWatch.kt   the step watcher service and ringing on run start / finish
   StepEditActivity.kt one step's own page (math level, scan code, questions)
   ReorderList.kt     the drag-to-reorder list on the edit page
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
@@ -349,6 +395,8 @@ app/src/main/java/dev/gist/checkin/
   AlarmService.kt    plays sound/vibration, guards volume, brings the alarm back to the front, 60-min safety stop
   AboutActivity.kt   About page: version, privacy, source code, Donate
   Links.kt           the web pages the app opens (repository, donate, issues)
+  Trigger.kt         what makes a check-in ring (times / arriving / leaving) and its conditions
+  LocationTriggers.kt  place watching (Android proximity alerts) and "where am I?" checks
   AlarmScheduler.kt  schedules each check-in's alarm with AlarmManager.setAlarmClock
   Receivers.kt       alarm fired → start ringing; reboot/time change → reschedule
   Notif.kt           notification channels + full-screen alarm notification
@@ -365,8 +413,9 @@ change all of it in the app.
 Gist is free, has no ads, and never will. If it's helped you stick to a habit and you'd
 like to say thanks, a donation keeps it maintained:
 
-<!-- Owner: replace the line below with your donation link, e.g. GitHub Sponsors,
-     Ko-fi or PayPal. The app's About → Donate button opens this section. -->
-- **Donation link coming soon.**
+<!-- The app's About → Donate button opens this section. -->
+<a href="https://www.paypal.com/donate/?hosted_button_id=YEHLZ2VY8DH74"><img src="https://img.shields.io/badge/Donate-PayPal-0070ba?logo=paypal&logoColor=white" alt="Donate with PayPal"></a>
+
+[**Donate with PayPal**](https://www.paypal.com/donate/?hosted_button_id=YEHLZ2VY8DH74), any amount.
 
 Not into donating? A ⭐ on the repository, a bug report, or telling a friend helps too.

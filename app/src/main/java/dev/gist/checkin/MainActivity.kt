@@ -46,6 +46,7 @@ class MainActivity : BaseActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        if (requestCode == REQ_LOCATION || requestCode == REQ_ACTIVITY) AlarmScheduler.scheduleAll(this) // start watching
         render()
     }
 
@@ -143,6 +144,20 @@ class MainActivity : BaseActivity() {
                 r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
                 box.add(r)
                 card.add(box, dp(10))
+            } else if (c.trigger.isEvent) {
+                val box = column().apply {
+                    background = rounded(colorOf(R.color.surface_variant), 14)
+                    setPadding(dp(14), dp(10), dp(10), dp(10))
+                }
+                val icon = if (c.trigger.isPlace) "📍" else "🏃"
+                box.add(label("$icon Rings ${CheckinText.whenText(c)}", 15f).apply { tag = "next:${c.id}" })
+                if (c.trigger.isPlace && !LocationTriggers.hasBackground(this)) {
+                    box.add(label("Needs location \"all the time\" (see Finish setup)", 13f, color = colorWarn), dp(2))
+                }
+                if (c.trigger.isMovement && !MovementWatch.canWatch(this)) {
+                    box.add(label(MovementWatch.problem(this), 13f, color = colorWarn), dp(2))
+                }
+                card.add(box, dp(10))
             }
         }
 
@@ -192,6 +207,20 @@ class MainActivity : BaseActivity() {
                 openSettings(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
             }
         }
+        if (LocationTriggers.anyUseLocation(this) && !LocationTriggers.hasBackground(this)) {
+            items += "Allow location all the time (for place-based check-ins)" to {
+                if (!LocationTriggers.hasLocation(this)) {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+                } else {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_LOCATION)
+                }
+            }
+        }
+        if (MovementWatch.anyUse(this) && !MovementWatch.hasPermission(this)) {
+            items += "Allow physical activity (to notice when you run)" to {
+                requestPermissions(arrayOf(Manifest.permission.ACTIVITY_RECOGNITION), REQ_ACTIVITY)
+            }
+        }
         if (!Settings.canDrawOverlays(this)) {
             items += "Allow display over other apps (brings a ringing alarm back if you leave it)" to {
                 openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
@@ -236,5 +265,7 @@ class MainActivity : BaseActivity() {
 
     companion object {
         private const val REQ_NOTIF = 1
+        private const val REQ_LOCATION = 2
+        private const val REQ_ACTIVITY = 3
     }
 }

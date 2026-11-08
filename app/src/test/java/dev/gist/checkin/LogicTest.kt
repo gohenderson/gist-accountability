@@ -145,7 +145,7 @@ class MultipleTimesTest {
 class StatsTest {
     private val soda = Question("soda", "Soda?")                    // on track = No
     private val veg = Question("veg", "Vegetables?", yesIsGood = true)
-    private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), questions = listOf(soda, veg))
+    private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), steps = listOf(StepConfig("q", Steps.QUESTIONS, questions = listOf(soda, veg))))
 
     private fun answered(vararg a: Pair<String, Boolean>) = SlotResult(SlotResult.ANSWERED, mapOf(*a))
     private val missed = SlotResult(SlotResult.RANG)
@@ -232,8 +232,11 @@ class CheckinTextTest {
     fun stepsAreListedInTheOrderTheyRun() {
         val c = Checkin(
             id = "c", name = "Wake", times = listOf(AlarmTime(7, 0)),
-            questions = listOf(Question("q", "Q?")),
-            mathCount = 3, scanCode = "X", scanLabel = "Sink",
+            steps = listOf(
+                StepConfig("m", Steps.MATH, mathCount = 3),
+                StepConfig("s", Steps.SCAN, scanCode = "X", scanLabel = "Sink"),
+                StepConfig("q", Steps.QUESTIONS, questions = listOf(Question("q", "Q?"))),
+            ),
         )
         assertEquals("solve 3 math → scan Sink → answer 1 question", CheckinText.steps(c))
     }
@@ -350,47 +353,55 @@ class BackgroundTest {
 class StepsTest {
     private val q = Question("q", "Q?")
     private val base = Checkin(id = "c", name = "C")
+    private fun kinds(c: Checkin) = c.steps.map { it.kind }
 
     @Test
-    fun defaultOrderIsMathScanQuestions() {
-        val c = base.copy(mathCount = 2, scanCode = "X", questions = listOf(q))
-        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
-        assertEquals("solve 2 math → scan code → answer 1 question", CheckinText.steps(c))
-    }
-
-    @Test
-    fun savedOrderWinsAndUnsetStepsDontRun() {
-        val c = base.copy(mathCount = 2, questions = listOf(q), steps = listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH))
-        assertEquals(listOf(Steps.QUESTIONS, Steps.SCAN, Steps.MATH), Steps.order(c))
-        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH), Steps.active(c)) // no code registered
+    fun stepsRunInTheirOrderAndUnsetOnesAreSkipped() {
+        val c = base.copy(steps = listOf(
+            StepConfig("q", Steps.QUESTIONS, questions = listOf(q)),
+            StepConfig("s", Steps.SCAN), // no code yet
+            StepConfig("m", Steps.MATH, mathCount = 2),
+        ))
+        assertEquals(listOf("q", "m"), Steps.active(c).map { it.id })
         assertEquals("answer 1 question → solve 2 math", CheckinText.steps(c))
-        assertEquals("Not set up: register a code", Steps.summary(c, Steps.SCAN))
+        assertEquals("Not set up: register a code", Steps.summary(c.steps[1]))
+        assertEquals(listOf(q), c.questions)
     }
 
     @Test
-    fun moveAddAndRemove() {
-        var c = base.copy(mathCount = 1, scanCode = "X", questions = listOf(q))
-        c = Steps.move(c, 2, 0)
-        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), Steps.order(c))
-        c = Steps.move(c, 0, 2)
-        assertEquals(listOf(Steps.MATH, Steps.SCAN, Steps.QUESTIONS), Steps.order(c))
-        c = Steps.remove(c, Steps.SCAN)
-        assertEquals(null, c.scanCode)
-        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS), Steps.order(c))
-        assertEquals(listOf(Steps.SCAN), Steps.available(c))
-        c = Steps.add(c, Steps.SCAN)
-        assertEquals(listOf(Steps.MATH, Steps.QUESTIONS, Steps.SCAN), Steps.order(c))
+    fun anyKindCanRepeatAsOftenAsYouLike() {
+        var c = base
+        repeat(100) { c = Steps.add(c, Steps.MATH) }
+        assertEquals(100, c.steps.size)
+        assertEquals("capped at ${Steps.MAX_STEPS}", 100, Steps.add(c, Steps.SCAN).steps.size)
+        assertEquals(100, c.steps.map { it.id }.toSet().size)
+        assertTrue(c.steps.all { it.mathCount == 3 })
+        assertEquals("solve 3 math → solve 3 math", CheckinText.steps(base.copy(steps = c.steps.take(2))))
+    }
 
-        val math = Steps.add(base, Steps.MATH)
-        assertEquals(3, math.mathCount)
-        assertEquals(listOf(Steps.MATH), Steps.active(math))
-        assertEquals(emptyList<String>(), Steps.order(Steps.remove(math, Steps.MATH)))
+    @Test
+    fun moveDuplicateAndRemove() {
+        var c = base.copy(steps = listOf(
+            StepConfig("m", Steps.MATH, mathCount = 1),
+            StepConfig("s", Steps.SCAN, scanCode = "X"),
+            StepConfig("q", Steps.QUESTIONS, questions = listOf(q)),
+        ))
+        c = Steps.move(c, 2, 0)
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), kinds(c))
+        c = Steps.duplicate(c, "m")
+        assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.MATH, Steps.SCAN), kinds(c))
+        c = Steps.duplicate(c, "q")
+        assertEquals("duplicated questions get their own ids", 2, c.questions.map { it.id }.toSet().size)
+        c = Steps.remove(c, "s")
+        assertEquals(listOf(Steps.QUESTIONS, Steps.QUESTIONS, Steps.MATH, Steps.MATH), kinds(c))
+        c = Steps.update(c, "m") { it.copy(mathCount = 50) }
+        assertEquals(50, c.steps.first { it.id == "m" }.mathCount)
     }
 
     @Test
     fun noStepsMeansDismiss() {
         assertEquals("tap Dismiss", CheckinText.steps(base))
-        assertEquals(Steps.ALL, Steps.available(base))
+        assertTrue(Steps.active(base).isEmpty())
     }
 }
 
@@ -401,5 +412,166 @@ class LinksTest {
         assertTrue("README.md should be found", readme.exists())
         assertTrue("README needs a '## Donate' heading", readme.readLines().any { it.trim() == "## Donate" })
         assertEquals(Links.REPO + "#donate", Links.DONATE)
+    }
+}
+
+class TriggerTest {
+    private val home = Place("Home", 40.7128, -74.0060, 200)
+    private fun at(h: Int, m: Int, day: Int = 9) = LocalDateTime.of(2026, 11, day, h, m) // Nov 9 2026 = Monday
+
+    @Test
+    fun distanceIsAboutRight() {
+        // One degree of latitude ≈ 111.2 km.
+        val d = Trigger.distanceM(40.0, -74.0, 41.0, -74.0)
+        assertTrue("got $d", d in 111_000.0..111_400.0)
+        assertTrue(home.contains(40.7129, -74.0061))
+        assertFalse(home.contains(40.7228, -74.0060)) // ~1.1 km north
+    }
+
+    @Test
+    fun windowsIncludingOnesAcrossMidnight() {
+        val morning = Trigger(windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0))
+        assertTrue(Trigger.inWindow(morning, java.time.LocalTime.of(6, 0)))
+        assertTrue(Trigger.inWindow(morning, java.time.LocalTime.of(9, 0)))
+        assertFalse(Trigger.inWindow(morning, java.time.LocalTime.of(9, 1)))
+        val night = Trigger(windowStart = AlarmTime(22, 0), windowEnd = AlarmTime(2, 0))
+        assertTrue(Trigger.inWindow(night, java.time.LocalTime.of(23, 30)))
+        assertTrue(Trigger.inWindow(night, java.time.LocalTime.of(1, 0)))
+        assertFalse(Trigger.inWindow(night, java.time.LocalTime.of(12, 0)))
+        assertTrue(Trigger.inWindow(Trigger(), java.time.LocalTime.of(3, 0)))
+    }
+
+    @Test
+    fun arrivingRingsOnlyWhenEveryConditionHolds() {
+        val c = Checkin(
+            id = "g", name = "Gym",
+            trigger = Trigger(Trigger.ARRIVE, home, windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
+            repeat = Repeat.weekly(Repeat.WEEKDAYS),
+        )
+        assertTrue(Trigger.placeEventRings(c, entering = true, now = at(7, 0), rangToday = false))
+        assertFalse("leaving isn't arriving", Trigger.placeEventRings(c, entering = false, now = at(7, 0), rangToday = false))
+        assertFalse("outside the window", Trigger.placeEventRings(c, true, at(10, 0), false))
+        assertFalse("not a weekday", Trigger.placeEventRings(c, true, at(7, 0, day = 8), false))
+        assertFalse("once a day", Trigger.placeEventRings(c, true, at(7, 0), rangToday = true))
+        assertTrue("unless allowed more", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(oncePerDay = false)), true, at(7, 0), true))
+        assertFalse("off", Trigger.placeEventRings(c.copy(enabled = false), true, at(7, 0), false))
+        assertFalse("no place set", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(place = null)), true, at(7, 0), false))
+        val leave = c.copy(trigger = c.trigger.copy(kind = Trigger.LEAVE))
+        assertTrue(Trigger.placeEventRings(leave, entering = false, now = at(8, 0), rangToday = false))
+    }
+
+    @Test
+    fun timedCheckinsCanRequireBeingAtOrAwayFromAPlace() {
+        val atHome = Trigger(where = Trigger.AT, place = home)
+        assertTrue(Trigger.locationAllows(atHome, 50.0))
+        assertFalse(Trigger.locationAllows(atHome, 5_000.0))
+        assertTrue("unknown location still rings", Trigger.locationAllows(atHome, null))
+        val away = Trigger(where = Trigger.AWAY, place = home)
+        assertTrue(Trigger.locationAllows(away, 5_000.0))
+        assertFalse(Trigger.locationAllows(away, 50.0))
+        assertTrue(Trigger.locationAllows(Trigger(), 5_000.0))
+    }
+
+    @Test
+    fun coordinatesParseFromMapsApps() {
+        assertEquals(40.7128 to -74.006, Place.parseCoordinates("40.7128, -74.0060"))
+        assertEquals(51.5 to -0.12, Place.parseCoordinates("(51.5,-0.12)"))
+        assertEquals(1.0 to 2.0, Place.parseCoordinates("1 2"))
+        assertEquals(null, Place.parseCoordinates("91, 0"))
+        assertEquals(null, Place.parseCoordinates("Main Street"))
+        assertEquals(null, Place.parseCoordinates("1, 2, 3"))
+    }
+
+    @Test
+    fun descriptions() {
+        val c = Checkin(
+            id = "g", name = "Gym", repeat = Repeat.weekly(setOf(1, 3, 5)),
+            trigger = Trigger(Trigger.ARRIVE, Place("Gym", 1.0, 2.0), windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
+        )
+        val text = CheckinText.whenText(c)
+        assertTrue(text, text.startsWith("when you arrive at Gym, Mon, Wed, Fri, between "))
+        assertTrue(text, text.endsWith(", once a day"))
+        assertEquals("when you leave Work", Trigger.describe(Trigger(Trigger.LEAVE, Place("Work", 1.0, 2.0))))
+        assertEquals("only when away from Home", Trigger.describe(Trigger(where = Trigger.AWAY, place = home)))
+        assertTrue("no set times for place triggers", AlarmScheduler.occurrences(c).isEmpty())
+    }
+}
+
+class RunDetectorTest {
+    /** Feeds [spm] steps a minute for [seconds], one sample a second, from [t0] with [total] steps. */
+    private fun RunDetector.feed(t0: Long, total: Long, seconds: Int, spm: Int, events: MutableList<RunDetector.Event>): Pair<Long, Long> {
+        var t = t0
+        var steps = total
+        for (i in 1..seconds) {
+            t += 1000
+            steps = total + i.toLong() * spm / 60 // whole steps so far
+            steps(t, steps)?.let { events += it }
+        }
+        return t to steps
+    }
+
+    private fun RunDetector.idle(t0: Long, seconds: Int, events: MutableList<RunDetector.Event>): Long {
+        var t = t0
+        repeat(seconds / 15) { t += 15_000; tick(t)?.let { events += it } }
+        return t
+    }
+
+    @Test
+    fun aFiveMinuteRunStartsAndFinishes() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        val (t, _) = d.feed(0, 1000, 300, 165, ev)
+        val started = ev.filterIsInstance<RunDetector.Event.Started>().single()
+        assertTrue("started after about a minute and a half: ${started.at}", started.at in 0..60_000)
+        assertTrue(d.running)
+        d.idle(t, 180, ev)
+        val done = ev.filterIsInstance<RunDetector.Event.Finished>().single()
+        assertFalse(d.running)
+        assertTrue("about 5 minutes: ${done.minutes}", done.minutes in 4..5)
+    }
+
+    @Test
+    fun walkingIsNotRunning() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        d.feed(0, 0, 600, 115, ev)
+        assertTrue(ev.isEmpty())
+    }
+
+    @Test
+    fun aShortDashDoesntCount() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        val (t, s) = d.feed(0, 0, 40, 170, ev)
+        d.feed(t, s, 300, 100, ev)
+        assertTrue(ev.isEmpty())
+    }
+
+    @Test
+    fun aShortStopDoesntEndTheRun() {
+        val d = RunDetector()
+        val ev = mutableListOf<RunDetector.Event>()
+        var (t, s) = d.feed(0, 0, 180, 165, ev)
+        t = d.idle(t, 45, ev) // waiting at a light
+        d.feed(t, s, 180, 165, ev)
+        assertEquals(1, ev.size) // just the start
+        assertTrue(d.running)
+    }
+
+    @Test
+    fun runTriggersFollowTheirConditions() {
+        val now = LocalDateTime.of(2026, 11, 9, 7, 0)
+        val start = Checkin(id = "a", name = "A", trigger = Trigger(Trigger.RUN_START))
+        assertTrue(Trigger.runEventRings(start, null, now, false))
+        assertFalse(Trigger.runEventRings(start, 20, now, false))
+        assertFalse("once a day", Trigger.runEventRings(start, null, now, true))
+        val end = Checkin(id = "b", name = "B", trigger = Trigger(Trigger.RUN_END, minRunMinutes = 10))
+        assertFalse(Trigger.runEventRings(end, null, now, false))
+        assertFalse("too short", Trigger.runEventRings(end, 9, now, false))
+        assertTrue(Trigger.runEventRings(end, 10, now, false))
+        val weekends = end.copy(repeat = Repeat.weekly(Repeat.WEEKENDS))
+        assertFalse("Monday", Trigger.runEventRings(weekends, 30, now, false))
+        assertEquals("when you finish a run of 10+ min", Trigger.describe(end.trigger))
+        assertTrue("no set times", AlarmScheduler.occurrences(end).isEmpty())
     }
 }

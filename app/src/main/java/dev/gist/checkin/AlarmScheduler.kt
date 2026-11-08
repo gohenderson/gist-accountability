@@ -31,7 +31,7 @@ object AlarmScheduler {
      */
     fun occurrences(c: Checkin, now: ZonedDateTime = ZonedDateTime.now(), count: Int = 8): List<Occurrence> {
         val out = mutableListOf<Occurrence>()
-        if (c.times.isEmpty()) return out
+        if (c.times.isEmpty() || c.trigger.isEvent) return out // event triggers have no set times
         var date = now.toLocalDate()
         val last = date.plusDays(400)
         while (out.size < count && !date.isAfter(last)) {
@@ -79,7 +79,9 @@ object AlarmScheduler {
 
     fun schedule(context: Context, c: Checkin) {
         val am = context.getSystemService(AlarmManager::class.java)
-        if (!c.enabled || c.times.isEmpty()) {
+        LocationTriggers.sync(context, c) // watches its place, or stops watching
+        MovementWatch.sync(context) // runs the step watcher if any check-in needs it
+        if (!c.enabled || c.times.isEmpty() || c.trigger.isEvent) {
             am.cancel(broadcast(context, c.id, test = false))
             return
         }
@@ -99,6 +101,7 @@ object AlarmScheduler {
         val am = context.getSystemService(AlarmManager::class.java)
         am.cancel(broadcast(context, checkinId, test = false))
         am.cancel(broadcast(context, checkinId, test = true))
+        LocationTriggers.remove(context, checkinId)
     }
 
     /**

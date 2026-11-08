@@ -38,6 +38,8 @@ object TestEnv {
         readyDevice()
         Store(ctx).checkins.forEach { AlarmScheduler.cancel(ctx, it.id) }
         ctx.stopService(Intent(ctx, AlarmService::class.java))
+        // Stopping is asynchronous: wait, or the next test could mistake this alarm for its own.
+        eventually(10_000) { if (AlarmService.running) throw AssertionError("alarm service still running") }
         ctx.getSystemService(NotificationManager::class.java).cancelAll()
         ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().clear().commit()
         val s = Store(ctx)
@@ -57,10 +59,16 @@ object TestEnv {
         aboutYesterday: Boolean = false,
     ) = Checkin(
         id = id, name = name, times = listOf(AlarmTime(12, 0)), enabled = true,
-        aboutYesterday = aboutYesterday, questions = questions,
-        mathCount = mathCount, mathLevel = mathLevel,
-        scanCode = scanCode, scanLabel = if (scanCode != null) "Test spot" else "",
+        aboutYesterday = aboutYesterday,
+        steps = steps(questions, mathCount, mathLevel, scanCode),
     )
+
+    /** Math → scan → questions, each only if given, with fixed step ids "m", "s", "q". */
+    fun steps(questions: List<Question> = emptyList(), mathCount: Int = 0, mathLevel: Int = 1, scanCode: String? = null) = buildList {
+        if (mathCount > 0) add(StepConfig("m", Steps.MATH, mathCount = mathCount, mathLevel = mathLevel))
+        if (scanCode != null) add(StepConfig("s", Steps.SCAN, scanCode = scanCode, scanLabel = "Test spot"))
+        if (questions.isNotEmpty()) add(StepConfig("q", Steps.QUESTIONS, questions = questions))
+    }
 
     /** Grants or resets "Display over other apps" (what lets an alarm come back to the front). */
     fun allowOverlay(allow: Boolean) {

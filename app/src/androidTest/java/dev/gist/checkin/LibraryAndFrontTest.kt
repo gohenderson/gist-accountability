@@ -78,7 +78,7 @@ class LibraryTest {
         }
         val c = TestEnv.store.checkins.last()
         assertTrue(c.questions.isEmpty())
-        assertEquals(0, c.mathCount)
+        assertTrue(c.steps.isEmpty())
     }
 }
 
@@ -99,7 +99,7 @@ class BringBackTest {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.allowOverlay(true)
         TestEnv.reset(listOf(TestEnv.checkin("f", "Front", listOf(Question("q", "Q?")))))
-        AlarmScheduler.scheduleTest(TestEnv.ctx, "f", 1_000)
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "f", 1_000, practice = false) // a real ring: tests can be left
         TestEnv.eventually(20_000) { assertTrue("alarm didn't start", AlarmService.running) }
         TestEnv.eventually(10_000) { assertTrue("alarm screen should open", CheckinActivity.visible) }
 

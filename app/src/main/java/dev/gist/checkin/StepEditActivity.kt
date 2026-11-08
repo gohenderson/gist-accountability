@@ -20,20 +20,20 @@ import android.widget.Toast
 class StepEditActivity : BaseActivity() {
     private lateinit var store: Store
     private lateinit var checkinId: String
-    private lateinit var kind: String
+    private lateinit var stepId: String
     private var scroll: ScrollView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
         val id = intent.getStringExtra(EXTRA_ID)
-        val k = intent.getStringExtra(EXTRA_KIND)
-        if (id == null || k !in Steps.ALL || store.checkin(id) == null) {
+        val sid = intent.getStringExtra(EXTRA_STEP)
+        if (id == null || sid == null || store.checkin(id)?.steps?.any { it.id == sid } != true) {
             finish()
             return
         }
         checkinId = id
-        kind = k!!
+        stepId = sid
     }
 
     override fun onResume() {
@@ -44,23 +44,34 @@ class StepEditActivity : BaseActivity() {
 
     private fun render() {
         val c = store.checkin(checkinId) ?: return finish()
+        val st = c.steps.firstOrNull { it.id == stepId } ?: return finish()
         val oldY = scroll?.scrollY ?: 0
-        val order = Steps.order(c)
-        val pos = order.indexOf(kind)
+        val pos = c.steps.indexOf(st)
         val page = column()
-        val where = if (pos >= 0) "Step ${pos + 1} of ${order.size}" else "Not in this check-in"
-        page.add(header(Steps.title(kind), "${c.name} · $where"))
-        page.add(muted(Steps.blurb(kind), 14f), dp(4))
+        page.add(header(Steps.title(st.kind), "${c.name} · Step ${pos + 1} of ${c.steps.size}"))
+        page.add(muted(Steps.blurb(st.kind), 14f), dp(4))
 
         val body = card()
-        when (kind) {
-            Steps.MATH -> mathUi(body, c)
-            Steps.SCAN -> scanUi(body, c)
-            else -> questionsUi(body, c)
+        when (st.kind) {
+            Steps.MATH -> mathUi(body, st)
+            Steps.SCAN -> scanUi(body, st)
+            else -> questionsUi(body, c, st)
         }
         page.add(body, dp(16))
 
-        if (pos >= 0) page.add(dangerButton("Remove this step") { confirmRemove(c) }, dp(24))
+        val actions = row()
+        actions.addWeighted(outlineButton("Duplicate step") {
+            val updated = Steps.duplicate(c, stepId)
+            store.checkins = store.checkins.map { if (it.id == checkinId) updated else it }
+            val copy = updated.steps.getOrNull(pos + 1)
+            if (copy != null && updated.steps.size > c.steps.size) {
+                Toast.makeText(this, "Added a copy as step ${pos + 2}.", Toast.LENGTH_SHORT).show()
+                startActivity(intent(this, checkinId, copy.id))
+                finish()
+            }
+        }.apply { tag = "duplicate-step" })
+        page.add(actions, dp(20))
+        page.add(dangerButton("Remove this step") { confirmRemove(st) }, dp(12))
 
         val sv = screen(page)
         setContentView(sv)
@@ -68,26 +79,31 @@ class StepEditActivity : BaseActivity() {
         sv.post { sv.scrollTo(0, oldY) }
     }
 
-    private fun change(f: (Checkin) -> Checkin) {
-        store.updateCheckin(checkinId, f)
+    private fun change(f: (StepConfig) -> StepConfig) {
+        save(f)
         render()
+    }
+
+    /** Saves without redrawing (e.g. while typing or spinning a wheel). */
+    private fun save(f: (StepConfig) -> StepConfig) {
+        store.updateCheckin(checkinId) { Steps.update(it, stepId, f) }
     }
 
     // ---------------------------------------------------------------- math
 
-    private fun mathUi(col: LinearLayout, c: Checkin) {
+    private fun mathUi(col: LinearLayout, st: StepConfig) {
         col.add(sectionTitle("Problems to solve"))
         val picker = NumberPicker(this).apply {
             minValue = 1
-            maxValue = 10
-            value = c.mathCount.coerceIn(1, 10)
+            maxValue = Steps.MAX_PROBLEMS
+            value = st.mathCount.coerceIn(1, Steps.MAX_PROBLEMS)
             wrapSelectorWheel = false
             tag = "math-count"
             // Saved without a redraw, so the wheel keeps spinning smoothly.
-            setOnValueChangedListener { _, _, v -> store.updateCheckin(checkinId) { it.copy(mathCount = v) } }
+            setOnValueChangedListener { _, _, v -> save { it.copy(mathCount = v) } }
         }
         col.add(picker, dp(4))
-        if (c.mathCount == 0 && Steps.MATH in Steps.order(c)) store.updateCheckin(checkinId) { it.copy(mathCount = picker.value) }
+        col.add(muted("Up to ${Steps.MAX_PROBLEMS} per step. Need more? Duplicate this step.", 13f), dp(2))
 
         col.add(sectionTitle("Difficulty"), dp(16))
         val group = RadioGroup(this)
@@ -95,12 +111,12 @@ class StepEditActivity : BaseActivity() {
             val tile = choiceTile("${lvl.name}\ne.g. ${lvl.example}").apply {
                 id = View.generateViewId()
                 tag = "math-level:${i + 1}"
-                isChecked = i + 1 == c.mathLevel
+                isChecked = i + 1 == st.mathLevel
             }
             group.addView(tile, RadioGroup.LayoutParams(RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = if (i == 0) 0 else dp(6)
             })
-            tile.setOnCheckedChangeListener { _, on -> if (on) store.updateCheckin(checkinId) { it.copy(mathLevel = i + 1) } }
+            tile.setOnCheckedChangeListener { _, on -> if (on) save { it.copy(mathLevel = i + 1) } }
         }
         col.add(group, dp(6))
         col.add(muted("A wrong answer gives you a new problem.", 13f), dp(10))
@@ -108,8 +124,8 @@ class StepEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- scan
 
-    private fun scanUi(col: LinearLayout, c: Checkin) {
-        val code = c.scanCode
+    private fun scanUi(col: LinearLayout, st: StepConfig) {
+        val code = st.scanCode
         if (code == null) {
             col.add(label("No code registered yet, so this step is skipped when the alarm rings.", 15f, color = colorWarn))
             col.add(muted("Any QR code or product barcode works: a sticker on the bathroom mirror, a cereal box in the kitchen.", 13f), dp(4))
@@ -120,7 +136,7 @@ class StepEditActivity : BaseActivity() {
         col.add(label(code, 15f).apply { setTextIsSelectable(true) }, dp(4))
         col.add(sectionTitle("Where is it?"), dp(16))
         val spot = EditText(this).apply {
-            setText(c.scanLabel)
+            setText(st.scanLabel)
             hint = "e.g. Bathroom sink"
             tag = "scan-label"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
@@ -129,7 +145,7 @@ class StepEditActivity : BaseActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: Editable?) {
                     val text = s?.toString()?.trim().orEmpty()
-                    store.updateCheckin(checkinId) { it.copy(scanLabel = text) }
+                    save { it.copy(scanLabel = text) }
                 }
             })
         }
@@ -157,11 +173,11 @@ class StepEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- questions
 
-    private fun questionsUi(col: LinearLayout, c: Checkin) {
-        if (c.questions.isEmpty()) {
+    private fun questionsUi(col: LinearLayout, c: Checkin, st: StepConfig) {
+        if (st.questions.isEmpty()) {
             col.add(label("No questions yet, so this step is skipped when the alarm rings.", 15f, color = colorWarn))
         }
-        c.questions.forEachIndexed { i, q -> col.add(questionRow(c, i, q), if (i == 0) 0 else dp(10)) }
+        st.questions.forEachIndexed { i, q -> col.add(questionRow(c, i, q), if (i == 0) 0 else dp(10)) }
         col.add(button("+ Add question") { editQuestion(c, null) }, dp(12))
         col.add(muted("Each question says whether \"Yes\" or \"No\" is on track; that drives the ✓/✗ in History.", 13f), dp(8))
     }
@@ -182,10 +198,7 @@ class StepEditActivity : BaseActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setText(q?.text ?: "")
         }
-        val yesGood = CheckBox(this).apply {
-            text = "Answering \"Yes\" is on track"
-            isChecked = q?.yesIsGood ?: false
-        }
+        val yesGood = checkTile("Answering \"Yes\" is on track", q?.yesIsGood ?: false)
         box.add(input)
         box.add(yesGood, dp(8))
 
@@ -226,17 +239,17 @@ class StepEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- remove
 
-    private fun confirmRemove(c: Checkin) {
-        val what = when (kind) {
-            Steps.MATH -> "The alarm will no longer ask for math."
+    private fun confirmRemove(st: StepConfig) {
+        val what = when (st.kind) {
+            Steps.MATH -> "The alarm will no longer ask for these problems."
             Steps.SCAN -> "The registered code is forgotten."
             else -> "Its questions are removed. Answers already logged stay on the phone but won't show in History."
         }
-        AlertDialog.Builder(this)
-            .setTitle("Remove ${Steps.title(kind)}?")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Remove this step?")
             .setMessage(what)
             .setPositiveButton("Remove") { _, _ ->
-                store.updateCheckin(checkinId) { Steps.remove(it, kind) }
+                store.updateCheckin(checkinId) { Steps.remove(it, stepId) }
                 finish()
             }
             .setNegativeButton("Cancel", null)
@@ -245,10 +258,10 @@ class StepEditActivity : BaseActivity() {
 
     companion object {
         private const val EXTRA_ID = "checkinId"
-        private const val EXTRA_KIND = "kind"
+        private const val EXTRA_STEP = "step"
         private const val REQ_REGISTER = 1
 
-        fun intent(context: Context, checkinId: String, kind: String): Intent =
-            Intent(context, StepEditActivity::class.java).putExtra(EXTRA_ID, checkinId).putExtra(EXTRA_KIND, kind)
+        fun intent(context: Context, checkinId: String, stepId: String): Intent =
+            Intent(context, StepEditActivity::class.java).putExtra(EXTRA_ID, checkinId).putExtra(EXTRA_STEP, stepId)
     }
 }

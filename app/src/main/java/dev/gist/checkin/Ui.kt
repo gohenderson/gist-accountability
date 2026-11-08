@@ -220,3 +220,107 @@ fun Context.screen(content: View): android.widget.ScrollView = android.widget.Sc
     addView(content)
     applySystemBarInsets(this, dp(20))
 }
+
+// ------------------------------------------------------------------ dialogs
+//
+// Every list in a dialog is drawn with the app's tiles (instead of Android's plain rows),
+// so dialogs match the rest of the app.
+
+/** One choice in [pickDialog]: a title, an optional line under it, and a test tag. */
+data class DialogOption(val title: String, val detail: String? = null, val tag: String? = null)
+
+/** Padded, scrolling body for a dialog. */
+fun Context.dialogBody(build: LinearLayout.() -> Unit): android.widget.ScrollView {
+    val col = column().apply { setPadding(dp(20), dp(8), dp(20), dp(8)) }
+    col.build()
+    return android.widget.ScrollView(this).apply { addView(col) }
+}
+
+/** A tappable tile: rounded, highlighted when [selected]. */
+fun Context.optionTile(option: DialogOption, selected: Boolean = false, onClick: () -> Unit): LinearLayout = column().apply {
+    val bg = if (selected) rounded(colorOf(R.color.primary_container), 14, colorPrimary)
+        else rounded(colorOf(R.color.surface_variant), 14)
+    background = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)), bg, null)
+    setPadding(dp(16), dp(12), dp(16), dp(12))
+    isClickable = true
+    isFocusable = true
+    option.tag?.let { tag = it }
+    val fg = if (selected) colorOf(R.color.on_primary_container) else colorText
+    add(label(option.title, 16f, bold = true, color = fg))
+    option.detail?.let { add(label(it, 13f, color = if (selected) fg else colorMuted), dp(2)) }
+    contentDescription = option.title
+    setOnClickListener { onClick() }
+}
+
+/**
+ * A titled dialog listing [options] as tiles; tapping one closes it and calls [onPick] with
+ * its index. [selected] highlights the current choice.
+ */
+fun Context.pickDialog(
+    title: String,
+    options: List<DialogOption>,
+    selected: Int = -1,
+    message: String? = null,
+    onPick: (Int) -> Unit,
+): android.app.AlertDialog {
+    lateinit var dialog: android.app.AlertDialog
+    val body = dialogBody {
+        if (message != null) add(muted(message, 14f))
+        options.forEachIndexed { i, o ->
+            add(optionTile(o, i == selected) { dialog.dismiss(); onPick(i) }, if (i == 0 && message == null) 0 else dp(8))
+        }
+    }
+    dialog = android.app.AlertDialog.Builder(this)
+        .setTitle(title)
+        .setView(body)
+        .setNegativeButton("Cancel", null)
+        .create()
+    dialog.show()
+    return dialog
+}
+
+/** A checkbox drawn as a tile (for lists of things to tick). */
+fun Context.checkTile(text: String, checked: Boolean, detail: String? = null): android.widget.CheckBox =
+    android.widget.CheckBox(this).apply {
+        this.text = if (detail == null) text else "$text\n$detail"
+        isChecked = checked
+        setTextColor(colorText)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        minHeight = dp(48)
+        setPadding(dp(8), dp(8), dp(12), dp(8))
+        buttonTintList = ColorStateList.valueOf(colorPrimary)
+        background = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)), rounded(colorOf(R.color.surface_variant), 14), null)
+    }
+
+/**
+ * A dialog of checkbox tiles in [columns] columns; [onSave] gets which are ticked. Short
+ * labels (dates) fit several to a row.
+ */
+fun Context.checklistDialog(
+    title: String,
+    labels: List<String>,
+    checked: BooleanArray,
+    columns: Int = 1,
+    message: String? = null,
+    onSave: (BooleanArray) -> Unit,
+) {
+    val boxes = labels.mapIndexed { i, l -> checkTile(l, checked[i]).apply { tag = "check:$l" } }
+    val body = dialogBody {
+        if (message != null) add(muted(message, 14f), 0)
+        boxes.chunked(columns).forEachIndexed { r, chunk ->
+            val line = row()
+            chunk.forEachIndexed { k, b -> line.addWeighted(b, startMargin = if (k == 0) 0 else dp(6)) }
+            repeat(columns - chunk.size) { line.addWeighted(android.view.View(this@checklistDialog), startMargin = dp(6)) }
+            add(line, if (r == 0 && message == null) 0 else dp(6))
+        }
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle(title)
+        .setView(body)
+        .setPositiveButton("Save") { _, _ -> onSave(BooleanArray(boxes.size) { boxes[it].isChecked }) }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
+
+/** A card-like group inside a dialog (e.g. one check-in in the export / import lists). */
+fun Context.dialogCard(): LinearLayout = card().apply { setPadding(dp(14), dp(10), dp(14), dp(12)) }

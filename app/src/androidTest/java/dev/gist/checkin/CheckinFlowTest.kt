@@ -98,7 +98,7 @@ class CheckinFlowTest {
     @Test
     fun customOrderQuestionsThenMathIsFollowed() {
         TestEnv.reset(
-            listOf(TestEnv.checkin("wake", "Wake up", listOf(soda), mathCount = 1).copy(steps = listOf(Steps.QUESTIONS, Steps.MATH))),
+            listOf(TestEnv.checkin("wake", "Wake up", listOf(soda), mathCount = 1).let { it.copy(steps = it.steps.reversed()) }),
             listOf(pendingToday("wake")),
         )
         launchAlarmScreen().use {
@@ -113,10 +113,36 @@ class CheckinFlowTest {
     }
 
     @Test
+    fun theSameKindOfStepCanRunSeveralTimes() {
+        TestEnv.reset(
+            listOf(TestEnv.checkin("wake", "Wake up").copy(steps = listOf(
+                StepConfig("m1", Steps.MATH, mathCount = 1, mathLevel = 1),
+                StepConfig("q1", Steps.QUESTIONS, questions = listOf(soda)),
+                StepConfig("m2", Steps.MATH, mathCount = 2, mathLevel = 1),
+            ))),
+            listOf(pendingToday("wake")),
+        )
+        launchAlarmScreen().use {
+            onView(withText("Problem 1 of 1")).check(matches(isDisplayed()))
+            answer(solve(textOf(tagged("math-problem"))))
+            onView(tagged("q:soda:no")).perform(scrollTo(), click())
+            onView(withText("Submit")).perform(scrollTo(), click())
+            onView(withText("Problem 1 of 2")).check(matches(isDisplayed()))
+            answer(solve(textOf(tagged("math-problem"))))
+            answer(solve(textOf(tagged("math-problem"))))
+        }
+        assertTrue("finished", TestEnv.store.pending.isEmpty())
+        assertEquals(mapOf("soda" to false), TestEnv.store.entry(TestEnv.today()))
+    }
+
+    @Test
     fun aStepThatIsntSetUpIsSkipped() {
         // Scan added but no code registered: only the math runs.
         TestEnv.reset(
-            listOf(TestEnv.checkin("wake", "Wake up", mathCount = 1).copy(steps = listOf(Steps.SCAN, Steps.MATH))),
+            listOf(TestEnv.checkin("wake", "Wake up").copy(steps = listOf(
+                StepConfig("s", Steps.SCAN), // no code registered
+                StepConfig("m", Steps.MATH, mathCount = 1, mathLevel = 1),
+            ))),
             listOf(pendingToday("wake")),
         )
         launchAlarmScreen().use {
