@@ -302,7 +302,7 @@ class SoundAndBackgroundTest {
     @Test
     fun silentMeansNoSound() {
         ring(TestEnv.checkin("s", "Silent test").copy(soundUri = Checkin.SILENT))
-        assertEquals(Checkin.SILENT, AlarmService.currentSound)
+        TestEnv.eventually { assertEquals(Checkin.SILENT, AlarmService.currentSound) }
         assertTrue("still an active alarm (vibrating)", AlarmService.running)
     }
 

@@ -38,6 +38,8 @@ object TestEnv {
         readyDevice()
         Store(ctx).checkins.forEach { AlarmScheduler.cancel(ctx, it.id) }
         ctx.stopService(Intent(ctx, AlarmService::class.java))
+        // Stopping is asynchronous: wait, or the next test could mistake this alarm for its own.
+        eventually(10_000) { if (AlarmService.running) throw AssertionError("alarm service still running") }
         ctx.getSystemService(NotificationManager::class.java).cancelAll()
         ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().clear().commit()
         val s = Store(ctx)
