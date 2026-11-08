@@ -29,10 +29,11 @@ Requires Android 10 or newer.
 
 ## Builds & releases (GitHub Actions)
 
-- **Every push to `main`** (and every pull request) runs **Build**: a debug APK plus lint.
-  The debug APK and all logs/reports are attached to the run as artifacts.
-- **Release** builds a signed APK and publishes it as a GitHub release, with a `.sha256`
-  checksum next to it. Start it either way:
+- **Every push to `main`** (and every pull request) runs **Build**: a debug APK, unit
+  tests, lint, and UI tests on an emulator (see Tests below). The debug APK and all
+  logs and reports are attached to the run as artifacts.
+- **Release** runs the full Build workflow (all tests) first, then builds a signed APK and
+  publishes it as a GitHub release, with a `.sha256` checksum next to it. Start it either way:
   - **Actions → Release → Run workflow**, then enter a version like `v1.0.0`. The tag is
     created on the latest `main` if it doesn't exist. Running it for an existing tag
     rebuilds that release.
@@ -92,6 +93,36 @@ as secrets in a protected `release` environment. It never needs to be in the rep
 
 To install a release, open its `.apk` on your phone and allow "Install unknown apps" for
 your browser or file manager when Android asks.
+
+## Tests
+
+Two kinds, both run by GitHub Actions on every push to `main` and every pull request.
+**Release** runs all of them first and won't publish if any fail.
+
+- **Unit tests** (`app/src/test`, plain JVM, seconds): math problems always have the right
+  answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
+  years); next-alarm time, including daylight-saving changes; stats; step descriptions.
+- **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
+  emulator, a few minutes):
+  - the alarm screen can't be escaped with Back; Submit stays disabled until every
+    question is answered; a wrong math answer gives a new problem; steps run in order;
+    two waiting check-ins run back to back; with no camera, the scan step offers the math
+    fallback; a check-in with no steps only needs Dismiss
+  - edit page: rename saves as you type; add and reorder questions; turning Ring daily
+    off/on cancels and reschedules the real alarm; delete
+  - History: correct stats, and fixing a day from the grid updates them
+  - saving and loading, including data from the first version
+  - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
+    over, the alarm rings until the question is answered, and the answer is saved
+
+The test libraries are test-only: they're never included in the APK you install.
+
+**When a test fails:** the run page lists it with its message and links to the exact
+line of test code. The **ui-test-logs** artifact has the HTML report, a screenshot of
+the screen at the moment each UI test failed, and the emulator's full log.
+
+Run them locally from Android Studio, or: `gradle testDebugUnitTest` (no device needed)
+and `gradle connectedDebugAndroidTest` (with a phone or emulator connected).
 
 ## First run
 
