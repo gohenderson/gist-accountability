@@ -5,6 +5,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Release signing comes from environment variables (set by the release workflow from
+// repository secrets). Without them, release builds are simply left unsigned.
+val signingStoreFile: String? = System.getenv("SIGNING_STORE_FILE")
+
 android {
     namespace = "dev.gist.checkin"
     compileSdk = 35
@@ -13,19 +17,40 @@ android {
         applicationId = "dev.gist.checkin"
         minSdk = 29          // Android 10+
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes these (-PversionCode=… -PversionName=…); local builds use the defaults.
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "dev"
+    }
+
+    signingConfigs {
+        if (signingStoreFile != null) {
+            create("release") {
+                storeFile = file(signingStoreFile)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (signingStoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        // Lint runs as its own CI step and its report is uploaded; it doesn't block builds.
+        abortOnError = false
+        checkReleaseBuilds = false
+        // Play Store target-SDK deadlines don't apply to a sideloaded app.
+        disable += "ExpiredTargetSdkVersion"
     }
 }
 

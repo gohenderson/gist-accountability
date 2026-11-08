@@ -1,0 +1,154 @@
+name: Release
+
+# Push a tag like v1.0.0 to build a signed APK and publish it as a GitHub release:
+#   git tag v1.0.0 && git push origin v1.0.0
+# Requires the signing secrets described in README.md ("Releases").
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build a release for, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write   # needed to create the release
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_VERSION: "8.14.3"
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    name: Signed release APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Validate tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "::error title=Bad tag::'$TAG' doesn't look like a version tag (expected e.g. v1.0.0)."
+            exit 1
+          fi
+          echo "VERSION_NAME=${TAG#v}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Check signing secrets
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "$KS" ]]        || missing+=(ANDROID_KEYSTORE_BASE64)
+          [[ -n "$KS_PASS" ]]   || missing+=(ANDROID_KEYSTORE_PASSWORD)
+          [[ -n "$KEY_ALIAS" ]] || missing+=(ANDROID_KEY_ALIAS)
+          [[ -n "$KEY_PASS" ]]  || missing+=(ANDROID_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            msg="Missing repository secrets: ${missing[*]}. See README.md → Releases."
+            echo "::error title=Signing not configured::$msg"
+            echo "### ❌ Release not built: $msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Decode keystore
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KS" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass:env KS_PASS > /dev/null 2>&1; then
+            echo "::error title=Bad keystore::ANDROID_KEYSTORE_BASE64 didn't decode to a keystore that opens with ANDROID_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          echo "SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          bash .github/scripts/run-gradle.sh assembleRelease \
+            -PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE"
+
+      - name: Verify signature and package
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          if [[ ! -f "$apk" ]]; then
+            echo "::error title=No signed APK::Expected $apk. Found:"; ls -R app/build/outputs/apk || true
+            exit 1
+          fi
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
+          "$apksigner" verify --print-certs "$apk" | tee build-logs/signature.txt
+          mkdir -p dist
+          out="dist/gist-${TAG}.apk"
+          cp "$apk" "$out"
+          (cd dist && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
+          cat dist/*.sha256
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="Signed APK for Android 10+. Verify the download with the .sha256 file."
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists; replacing its files."
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Gist $TAG" --notes "$notes" --generate-notes
+          fi
+          echo "### ✅ Released [$TAG](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-logs
+          path: |
+            build-logs/
+            app/build/reports/
+            build/reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          {
+            echo "### Release failed"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "If a Gradle step failed, its error details are above. Logs: the **release-logs** artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Release failed::See the job summary and the release-logs artifact."

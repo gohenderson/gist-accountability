@@ -26,8 +26,55 @@ diet without counting calories.
 
 Requires Android 10 or newer.
 
-> I wrote this without being able to compile it (my sandbox couldn't download the
-> Android SDK). If the first build shows an error, paste it to me and I'll fix it.
+
+## Builds & releases (GitHub Actions)
+
+- **Every push to `main`** (and every pull request) runs **Build**: a debug APK plus lint.
+  The debug APK and all logs/reports are attached to the run as artifacts.
+- **Pushing a version tag** runs **Release**. It builds a signed APK and publishes it as a
+  GitHub release, with a `.sha256` checksum next to it:
+  ```
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+  You can also re-run a release for an existing tag from **Actions → Release → Run workflow**.
+
+**When something fails:** compile errors appear as annotations on the run page and on
+the exact lines of code. The job summary shows Gradle's "What went wrong" section and
+the end of the log. The **build-logs** / **release-logs** artifact has the full Gradle
+logs plus the lint and build reports.
+
+### One-time setup: a signing key
+
+Android only installs an update if it's signed with the same key as the installed app,
+so releases need one permanent key. You create it once, on your computer, and store it
+as repository secrets. It never needs to be in the repo.
+
+1. Create the key. `keytool` comes with Android Studio, in its `jbr/bin` folder.
+   ```
+   keytool -genkeypair -v -keystore gist-release.jks -alias gist \
+     -keyalg RSA -keysize 4096 -validity 10000
+   ```
+   It asks for a password and some name fields. The name fields can be anything.
+2. Base64-encode it:
+   - macOS / Linux: `base64 < gist-release.jks | tr -d '\n' > gist-release.b64`
+   - Windows (PowerShell): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("gist-release.jks")) > gist-release.b64`
+3. On GitHub, open **Settings → Secrets and variables → Actions → New repository secret**
+   and add:
+
+   | Secret | Value |
+   |---|---|
+   | `ANDROID_KEYSTORE_BASE64` | contents of `gist-release.b64` |
+   | `ANDROID_KEYSTORE_PASSWORD` | the password you chose |
+   | `ANDROID_KEY_ALIAS` | `gist` |
+   | `ANDROID_KEY_PASSWORD` | the same password, unless you set a separate key password |
+
+4. **Back up `gist-release.jks` and the password** somewhere safe, such as a password
+   manager. If you lose them, future releases can't update the installed app, and you'd
+   have to uninstall it, which deletes your logged answers. Export a CSV first.
+
+To install a release, open its `.apk` on your phone and allow "Install unknown apps" for
+your browser or file manager when Android asks.
 
 ## First run
 
