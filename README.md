@@ -39,6 +39,15 @@ Requires Android 10 or newer.
   - or push a tag: `git tag v1.0.0 && git push origin v1.0.0`
   Each release run pauses until you approve it (see the signing key setup below).
 
+- **Screenshots** run automatically after each release. An Android emulator on GitHub
+  opens the app with demo data and captures the start page, history, a check-in's edit
+  page, and the alarm screen (math and questions). The PNGs are attached to the release
+  and shown in its notes. If this step fails, the release is still published. To make
+  screenshots without releasing, use **Actions → Screenshots → Run workflow** and leave
+  the tag empty. To make this possible, *debug* builds let these screens be opened
+  directly from the command line (`app/src/debug/AndroidManifest.xml`). The release
+  APK you install doesn't.
+
 **When something fails:** compile errors appear as annotations on the run page and on
 the exact lines of code. The job summary shows Gradle's "What went wrong" section and
 the end of the log. The **build-logs** / **release-logs** artifact has the full Gradle

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY. Lets the screenshot workflow open these screens directly with
+  `adb shell am start`. Release builds (the APK you install) keep them private.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name="dev.gist.checkin.CheckinEditActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
+            android:name="dev.gist.checkin.CheckinActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+    </application>
+</manifest>

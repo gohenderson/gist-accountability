@@ -169,3 +169,13 @@ jobs:
             echo "If a Gradle step failed, its error details are above. Logs: the **release-logs** artifact."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error title=Release failed::See the job summary and the release-logs artifact."
+
+  screenshots:
+    name: Screenshots
+    # Runs after the release is published; if it fails, the release is unaffected.
+    needs: release
+    uses: ./.github/workflows/screenshots.yml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+    permissions:
+      contents: write

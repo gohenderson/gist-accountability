@@ -1,0 +1,133 @@
+name: Screenshots
+
+# Runs the app in an Android emulator and captures screenshots with demo data.
+# - Called by the Release workflow after publishing: PNGs are attached to the release
+#   and shown in its notes.
+# - Or run it by hand (Actions → Screenshots → Run workflow). Leave "tag" empty to
+#   just get the PNGs as a run artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach screenshots to (leave empty for artifact only)"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # to attach screenshots to a release
+
+env:
+  GRADLE_VERSION: "8.14.3"
+  TAG: ${{ inputs.tag }}
+
+jobs:
+  screenshots:
+    name: Emulator screenshots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Build debug APK
+        run: bash .github/scripts/run-gradle.sh assembleDebug
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Take screenshots in emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          # One command only: the action runs each script line as a separate shell.
+          script: bash .github/scripts/screenshots.sh app/build/outputs/apk/debug/app-debug.apk screenshots
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Attach to release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(screenshots/*.png)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error title=No screenshots::Nothing to attach to $TAG."
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
+          body="$(gh release view "$TAG" --json body -q .body)"
+          if grep -q '^## Screenshots' <<< "$body"; then
+            echo "Release notes already have a Screenshots section; images were replaced in place."
+          else
+            base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+            {
+              printf '%s\n\n## Screenshots\n\n' "$body"
+              for f in "${files[@]}"; do
+                n="$(basename "$f")"
+                printf '<img src="%s/%s" width="240" alt="%s"> ' "$base" "$n" "${n%.png}"
+              done
+              printf '\n'
+            } > notes.md
+            gh release edit "$TAG" --notes-file notes.md
+          fi
+          echo "### 📎 Attached ${#files[@]} screenshots to [$TAG](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshots-logs
+          path: |
+            build-logs/
+            app/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report failure
+        if: failure()
+        run: |
+          {
+            echo "### Screenshots failed"
+            echo
+            echo "The release itself is unaffected. Logs (including emulator logcat): the **screenshots-logs** artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Screenshots failed::See the job summary and the screenshots-logs artifact."
