@@ -131,15 +131,18 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
   **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
   them, and add as many more as you like with **+ Add check-in**. The start page lists
-  each check-in with its time and steps. Tap one, or its **Edit** button, to open its own
-  page: name, on/off, time, "previous day" option, math, scan, questions, a 10-second
-  test, and delete. Changes save as you make them.
+  each check-in with its time, steps and last-7-days stat, plus two buttons:
+  - **Edit** opens its own page: name, on/off, time, "previous day" option, math, scan,
+    questions, a 10-second test, and delete. Changes save as you make them.
+  - **History** opens its last 30 days: logged / on-track counts, how often each question
+    went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.
+  Export all answers as CSV from the bottom of the start page.
 - **"About yesterday":** A check-in with this setting (Morning by default) logs its answers
   to the previous day, so last night's late snack lands on the right date. Separately,
   any alarm set before 4 AM also counts as the previous day.
 - **Two at once:** If two check-ins are waiting (say you slept through one), the alarm
   screen goes through them one after the other. It stops ringing only after the last one.
-- **Fixing mistakes:** Tap any day in a check-in's 30-day grid to fill it in or change it.
+- **Fixing mistakes:** Tap any day on a check-in's History page to fill it in or change it.
 - **Questions:** Add, edit, reorder, or delete them. Each one says whether "Yes" or "No"
   is on track. That drives the ✓/✗ grid and the "fully on track" counts.
 - **Honest limits:** Like Alarmy, it can't stop you from force-stopping or uninstalling
@@ -149,7 +152,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 
 ```
 app/src/main/java/dev/gist/checkin/
-  MainActivity.kt    start page: setup warnings, check-in list, stats, 30-day grids, CSV export
+  MainActivity.kt    start page: setup warnings, check-in list, 7-day stats, CSV export
+  HistoryActivity.kt one check-in's last 30 days: stats, per-question counts, day grid
   CheckinEditActivity.kt  one check-in's page: name, time, steps, questions, test, delete
   CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
   CheckinActivity.kt the alarm screen: runs math → scan → questions, then stops alarm

@@ -11,6 +11,10 @@
             android:exported="true"
             tools:replace="android:exported" />
         <activity
+            android:name="dev.gist.checkin.HistoryActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
             android:name="dev.gist.checkin.CheckinActivity"
             android:exported="true"
             tools:replace="android:exported" />

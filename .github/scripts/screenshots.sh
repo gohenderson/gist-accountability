@@ -105,8 +105,7 @@ shot 01-start
 echo "::endgroup::"
 
 echo "::group::History"
-for _ in 1 2 3; do adb shell input swipe 540 1900 540 500 300; sleep 1; done
-sleep 1
+launch .HistoryActivity --es checkinId evening
 shot 02-history
 echo "::endgroup::"
 
@@ -115,15 +114,20 @@ launch .CheckinEditActivity --es checkinId start
 shot 03-edit
 echo "::endgroup::"
 
+# Let any heads-up notification time out before the alarm-screen shots.
+settle() { sleep 6; }
+
 echo "::group::Alarm: math"
 seed start
 launch .CheckinActivity
+settle
 shot 04-alarm-math
 echo "::endgroup::"
 
 echo "::group::Alarm: questions"
 seed evening
 launch .CheckinActivity
+settle
 shot 05-alarm-questions
 echo "::endgroup::"
 

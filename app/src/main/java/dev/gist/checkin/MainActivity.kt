@@ -11,14 +11,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TableLayout
-import android.widget.TableRow
-import android.widget.TextView
 import android.widget.Toast
 
 /** Check-in settings, question editors, and history. */
@@ -67,20 +62,13 @@ class MainActivity : Activity() {
 
         col.add(label("Check-ins", 24f, bold = true), dp(28))
         col.add(button("+ Add check-in") { addCheckin() }, dp(8))
-        checkins.forEach { checkinRow(col, it) }
+        checkins.forEach { checkinRow(col, it, entries) }
         if (checkins.isEmpty()) {
             col.add(label("No check-ins yet.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(8))
         }
 
-        if (checkins.isNotEmpty()) {
-            col.add(label("Last 30 days", 24f, bold = true), dp(36))
-            col.add(label("Tap a day to fill it in or fix it.", 13f), dp(4))
-            checkins.forEach { c ->
-                col.add(label(c.name, 20f, bold = true), dp(24))
-                summary(col, c, entries)
-                history(col, c, entries)
-            }
-            col.add(button("Export CSV") { exportCsv() }, dp(20))
+        if (checkins.any { it.questions.isNotEmpty() }) {
+            col.add(button("Export all answers (CSV)") { exportCsv() }, dp(36))
         }
 
         val sv = ScrollView(this).apply {
@@ -93,19 +81,26 @@ class MainActivity : Activity() {
         sv.post { sv.scrollTo(0, oldY) }
     }
 
-    /** One line per check-in: name, time + steps, and an Edit button. */
-    private fun checkinRow(col: LinearLayout, c: Checkin) {
-        val r = row()
-        val text = column()
-        text.add(label(c.name, 19f, bold = true))
-        text.add(label(CheckinText.oneLine(c), 14f).apply {
+    /** Per check-in: name, time + steps, a 7-day stat, and History / Edit buttons. */
+    private fun checkinRow(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
+        col.add(label(c.name, 19f, bold = true), dp(20))
+        col.add(label(CheckinText.oneLine(c), 14f).apply {
             if (!c.enabled) setTextColor(COLOR_MUTED)
         }, dp(2))
-        r.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        r.addView(button("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) })
-        r.isClickable = true
-        r.setOnClickListener { startActivity(CheckinEditActivity.intent(this, c.id)) }
-        col.add(r, dp(12))
+        if (c.questions.isNotEmpty()) col.add(label(Stats.line(c, entries, 7), 14f), dp(2))
+
+        val buttons = row()
+        if (c.questions.isNotEmpty()) {
+            buttons.addView(
+                button("History") { startActivity(HistoryActivity.intent(this, c.id)) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            )
+        }
+        buttons.addView(
+            button("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        col.add(buttons, dp(4))
     }
 
     private fun setupWarnings(col: LinearLayout) {
@@ -135,75 +130,6 @@ class MainActivity : Activity() {
         if (items.isEmpty()) return
         col.add(label("Setup needed", 20f, bold = true), dp(28))
         items.forEach { (text, action) -> col.add(button(text, action), dp(6)) }
-    }
-
-    private fun summary(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
-        val qs = c.questions
-        if (qs.isEmpty()) return
-        // A day counts as "logged" for this check-in if any of its questions were answered.
-        fun loggedIn(days: List<String>) =
-            days.mapNotNull { entries[it] }.filter { e -> qs.any { e.containsKey(it.id) } }
-
-        fun line(n: Int): String {
-            val logged = loggedIn(Days.lastN(n))
-            val clean = logged.count { e -> qs.all { q -> e[q.id]?.let { q.isGood(it) } ?: true } }
-            return "Last $n days: ${logged.size} logged, $clean fully on track"
-        }
-        col.add(label(line(7), 16f), dp(6))
-        col.add(label(line(30), 16f), dp(2))
-
-        val month = loggedIn(Days.lastN(30))
-        qs.forEachIndexed { i, q ->
-            val answered = month.mapNotNull { it[q.id] }
-            if (answered.isEmpty()) return@forEachIndexed
-            val off = answered.count { !q.isGood(it) }
-            col.add(label("${i + 1}. off track $off of ${answered.size} days", 14f), dp(2))
-        }
-    }
-
-    private fun history(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
-        val qs = c.questions
-        if (qs.isEmpty()) return
-        val table = TableLayout(this)
-
-        val header = TableRow(this)
-        header.addView(cell(""))
-        qs.indices.forEach { header.addView(cell("${it + 1}", bold = true)) }
-        table.addView(header)
-
-        for (day in Days.lastN(30)) {
-            val e = entries[day]
-            val tr = TableRow(this)
-            tr.addView(cell(Days.short(day), gravity = Gravity.START))
-            for (q in qs) {
-                val a = e?.get(q.id)
-                tr.addView(
-                    when {
-                        a == null -> cell("·", COLOR_MUTED)
-                        q.isGood(a) -> cell("✓", COLOR_GOOD)
-                        else -> cell("✗", COLOR_BAD)
-                    }
-                )
-            }
-            tr.isClickable = true
-            tr.setOnClickListener { startActivity(CheckinActivity.editIntent(this, c.id, day)) }
-            table.addView(tr)
-        }
-
-        val hs = HorizontalScrollView(this)
-        hs.addView(table)
-        col.add(hs, dp(8))
-    }
-
-    private fun cell(
-        text: String,
-        color: Int? = null,
-        bold: Boolean = false,
-        gravity: Int = Gravity.CENTER
-    ): TextView = label(text, 16f, bold).apply {
-        setPadding(dp(8), dp(6), dp(8), dp(6))
-        this.gravity = gravity
-        if (color != null) setTextColor(color)
     }
 
     // ---------------------------------------------------------------- actions

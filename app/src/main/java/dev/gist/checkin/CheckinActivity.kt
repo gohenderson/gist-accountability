@@ -84,13 +84,24 @@ class CheckinActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::checkin.isInitialized) showStep()
+        if (!::checkin.isInitialized) return
+        // You're looking at the check-in, so the "still waiting" reminder would only cover it.
+        if (forced) Notif.clearWaiting(this)
+        showStep()
     }
 
     override fun onPause() {
         stopScanner()
         ui.removeCallbacksAndMessages(null)
         super.onPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Left without finishing, and the alarm is no longer ringing: bring the reminder back.
+        if (forced && !isFinishing && store.pending.isNotEmpty() && !AlarmService.running) {
+            Notif.showWaiting(this)
+        }
     }
 
     @Suppress("OVERRIDE_DEPRECATION")

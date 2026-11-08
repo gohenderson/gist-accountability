@@ -42,6 +42,7 @@ class AlarmService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        running = true
         startForeground(
             Notif.ID_ALARM,
             Notif.alarm(this),
@@ -117,6 +118,7 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         handler.removeCallbacksAndMessages(null)
         player?.let {
             try { it.stop() } catch (e: Exception) {}
@@ -138,6 +140,11 @@ class AlarmService : Service() {
     }
 
     companion object {
+        /** True while the alarm is ringing (its own notification is showing). */
+        @Volatile
+        var running = false
+            private set
+
         /** Stop making noise after an hour; the check-in stays pending. */
         private const val MAX_RING_MS = 60 * 60 * 1000L
         private const val VOLUME_FLOOR = 0.8
