@@ -63,6 +63,7 @@ def main():
             print(f"::warning title={title}::No JUnit XML results found in {dirs}")
             return
         icon = "❌" if failed else "✅"
+        print(f"{title}: {total - failed - skipped} passed, {failed} failed, {skipped} skipped ({len(files)} report files)")
         out.write(f"### {icon} {title}: {total - failed - skipped} passed, {failed} failed, {skipped} skipped\n\n")
         for cls, name, msg, detail in failures:
             simple = cls.rsplit(".", 1)[-1]
