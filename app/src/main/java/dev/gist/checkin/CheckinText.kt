@@ -27,7 +27,6 @@ object CheckinText {
 
     /** e.g. "7:00 AM, 12:30 PM, 9:30 PM" */
     fun times(c: Checkin): String = c.times.joinToString(", ") { Days.time(it.hour, it.minute) }
-    }
 
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
     fun oneLine(c: Checkin): String =
