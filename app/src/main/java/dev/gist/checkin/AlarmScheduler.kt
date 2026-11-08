@@ -100,7 +100,6 @@ object AlarmScheduler {
     /** The next ring of [c] that hasn't been done early or skipped, for the UI. */
     fun upcoming(context: Context, c: Checkin): Occurrence? =
         if (c.enabled && c.times.isNotEmpty()) nextOpenOccurrence(Store(context), c) else null
-    }
 
     fun canExact(context: Context): Boolean =
         Build.VERSION.SDK_INT < 31 ||
