@@ -51,6 +51,9 @@ android {
         checkReleaseBuilds = false
         // Play Store target-SDK deadlines don't apply to a sideloaded app.
         disable += "ExpiredTargetSdkVersion"
+        // Also print findings into the build log (visible on the Actions run page).
+        textReport = true
+        textOutput = file("stdout")
     }
 }
 
