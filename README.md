@@ -27,6 +27,24 @@ diet without counting calories.
 Requires Android 10 or newer.
 
 
+## Security & dependency checks
+
+- **Dependabot** (`.github/dependabot.yml`) opens a pull request each week when a library
+  or GitHub Action has an update or a security fix. The PR runs the full test suite.
+- **CodeQL** (`.github/workflows/codeql.yml`) scans the Kotlin code and the workflows
+  for security issues on every push and weekly. Results are under **Security → Code scanning**.
+- **Security report** (`.github/workflows/security-report.yml`, Mondays) checks:
+  - outdated build tools, libraries and Actions, including Actions on old Node.js versions;
+  - known vulnerabilities in every resolved dependency, using the free OSV database;
+  - open CodeQL alerts.
+
+  If it finds anything, it opens (or updates) an issue labeled `security-report` and
+  assigned to the repo owner, and GitHub emails you. It closes the issue when everything
+  is clear. Run it any time from **Actions → Security report → Run workflow**.
+- For email, keep GitHub's notification emails on (Settings → Notifications → Email).
+  Also turn on **Dependabot alerts** under the repo's Settings → Code security; that's a
+  repo setting only you can change.
+
 ## Builds & releases (GitHub Actions)
 
 - **Every push to `main`** (and every pull request) runs **Build**: a debug APK, unit
@@ -105,9 +123,12 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   years); next-alarm time, including daylight-saving changes; stats; step descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
-  - multiple times: each time's answers are saved separately; History shows ✗ for a day if
-    any time was off track, and fixing one time updates it; removing a time re-arms for
-    the rest, and the last time can't be removed;
+  - multiple times: each time's results are saved separately; History shows ✗ for a day if
+    any time was off track or missed and – for skipped days, and fixing one time updates
+    it; removing a time re-arms for the rest, and the last time can't be removed;
+  - Do it now / Skip: skipping moves the alarm past that ring and Undo restores it; a
+    skipped or early-resolved ring stays quiet when its time comes; early scanning has no
+    fallback
     the start page switch turns a check-in's alarm off and on
   - pausing: Start check-in silences a real ringing alarm and shows the countdown bar;
     each tap restarts the countdown; when it runs out the alarm rings again and progress
@@ -159,11 +180,21 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   it down, it goes straight back up. The original volume is restored afterwards.
 - **Several times a day:** A check-in can ring at more than one time (e.g. brushing
   teeth at 7:30 AM and 10:15 PM). On its page, under **Schedule**, use **+ Add time**,
-  tap a time to change it, or ✕ to remove it. Each time keeps its own answers. Reports
-  roll them up per day: a question is ✓ for a day only if every time it was answered
-  that day was on track, so one off-track time makes the day ✗. Times you didn't answer
-  don't count either way. On History, tapping a day asks which time to fix. The CSV has
-  one row per day and time.
+  tap a time to change it, or ✕ to remove it. Each time keeps its own result. Reports
+  roll them up per day:
+  - **✗** if any time that day was answered off track, **or rang and was never finished**
+    (missed);
+  - **✓** if every time that rang was answered on track;
+  - **–** if every time that day was skipped; **·** if nothing rang.
+  On History, tapping a day asks which time to fix (a missed time can be filled in
+  afterwards). The CSV has one row per day, check-in and time, with its status.
+- **Do it now / Skip:** Each check-in card on the start page shows its next ring.
+  - **Do it now** runs the same steps right away (math, scan, questions). That ring then
+    stays quiet. A scan must really be scanned: the "Can't scan?" fallback isn't offered
+    early.
+  - **Skip** cancels just that ring. It's only possible before the ring goes off, and
+    **Undo** brings it back.
+  Both apply to the next ring only.
 - **Sound and photo per check-in:** On a check-in's page, under **While it rings**, pick
   its alarm sound from the phone's sounds (or "Silent" to only vibrate), and optionally a
   background photo for the ringing screen. The photo is copied into the app (resized), so

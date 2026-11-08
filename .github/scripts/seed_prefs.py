@@ -51,22 +51,29 @@ CHECKINS = [
 
 
 def entries(today):
+    """day → check-in → time → {"s": status, "a": answers}; a few missed and skipped times."""
     rnd = random.Random(7)
     out = {}
-    skip = {4, 11}  # unanswered days
     for back in range(1, 22):
-        if back in skip:
-            continue
         day = (today - datetime.timedelta(days=back)).isoformat()
-        slots = {}
+        d = {}
         for c in CHECKINS:
-            if not c["questions"]:
-                continue
-            answers = slots.setdefault(c["times"][0], {})
-            for question in c["questions"]:
-                on_track = rnd.random() < 0.75
-                answers[question["id"]] = question["yesIsGood"] if on_track else not question["yesIsGood"]
-        out[day] = slots
+            slots = {}
+            for t in c["times"]:
+                if back in (4, 11):
+                    slots[t] = {"s": "skipped", "a": {}}
+                elif back == 9 and c["questions"]:
+                    slots[t] = {"s": "rang", "a": {}}
+                elif not c["questions"]:
+                    slots[t] = {"s": "done", "a": {}, "early": back % 5 == 0}
+                else:
+                    a = {}
+                    for question in c["questions"]:
+                        on_track = rnd.random() < 0.8
+                        a[question["id"]] = question["yesIsGood"] if on_track else not question["yesIsGood"]
+                    slots[t] = {"s": "answered", "a": a}
+            d[c["id"]] = slots
+        out[day] = d
     return out
 
 
@@ -80,7 +87,7 @@ def main():
     pending = [] if args.pending == "none" else [{"c": args.pending, "d": today.isoformat()}]
     values = {
         "checkins": json.dumps(CHECKINS),
-        "entries": json.dumps(entries(today)),
+        "results": json.dumps(entries(today)),
         "pendingList": json.dumps(pending),
     }
     print("<?xml version='1.0' encoding='utf-8' standalone='yes' ?>")

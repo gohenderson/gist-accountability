@@ -31,6 +31,11 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
+import java.time.format.FormatStyle
+import java.time.format.DateTimeFormatter
+import java.time.LocalTime
+import android.view.Gravity
+import android.util.TypedValue
 
 /**
  * The alarm screen. When opened by an alarm ("forced") it shows over the lock screen,
@@ -51,6 +56,8 @@ class CheckinActivity : BaseActivity() {
     private lateinit var target: Pending
     private lateinit var checkin: Checkin
     private var forced = false
+    private var early = false                  // resolving an upcoming ring ahead of time
+    private var earlyRequested = false
     private var steps: MutableList<Step> = mutableListOf()
     private var stepIndex = 0
     private var solved = 0                     // math problems solved in the current step
@@ -81,6 +88,7 @@ class CheckinActivity : BaseActivity() {
         val editId = intent.getStringExtra(EXTRA_CHECKIN)
         val editDay = intent.getStringExtra(EXTRA_DAY)
         val editTime = intent.getStringExtra(EXTRA_TIME) ?: ""
+        earlyRequested = intent.getBooleanExtra(EXTRA_EARLY, false)
         val t = if (editId != null && editDay != null) Pending(editId, editDay, editTime) else store.pending.firstOrNull()
         if (t == null || !load(t)) {
             stopIfNothingPending()
@@ -88,7 +96,8 @@ class CheckinActivity : BaseActivity() {
             return
         }
 
-        if (!forced) store.entry(target.day, slot)?.let { answers.putAll(it) } // pre-fill when editing
+        // Pre-fill when editing a past day.
+        if (!forced && !early) store.result(target.day, checkin.id, slot)?.answers?.let { answers.putAll(it) }
         savedInstanceState?.let { s ->
             stepIndex = s.getInt(STATE_STEP, 0).coerceIn(0, steps.size - 1)
             solved = s.getInt(STATE_SOLVED, 0)
@@ -159,7 +168,8 @@ class CheckinActivity : BaseActivity() {
         val secs = ((left + 999) / 1000).toInt()
         bar.progress = (left * 1000 / total).toInt()
         val warn = left <= 10_000
-        bar.progressTintList = ColorStateList.valueOf(if (warn) COLOR_BAD else COLOR_GOOD)
+        bar.progressTintList = ColorStateList.valueOf(if (warn) colorBad else colorPrimary)
+        label.setTextColor(if (warn) colorBad else colorText)
         label.text = if (warn) {
             "Alarm resumes in $secs s. Tap anything to keep it quiet."
         } else {
@@ -201,6 +211,8 @@ class CheckinActivity : BaseActivity() {
         target = t
         checkin = c
         forced = t in store.pending
+        early = earlyRequested && !forced
+        earlyRequested = false
         steps = buildSteps(c)
         stepIndex = 0
         solved = 0
@@ -215,7 +227,7 @@ class CheckinActivity : BaseActivity() {
     }
 
     private fun buildSteps(c: Checkin): MutableList<Step> {
-        if (!forced) return mutableListOf(Step.Survey) // editing history: questions only
+        if (!forced && !early) return mutableListOf(Step.Survey) // editing history: questions only
         val list = mutableListOf<Step>()
         if (c.mathCount > 0) list += Step.Math(c.mathCount, c.mathLevel)
         if (c.scanCode != null) list += Step.Scan
@@ -239,6 +251,15 @@ class CheckinActivity : BaseActivity() {
 
     private fun complete() {
         ticks.removeCallbacksAndMessages(null) // no more countdown redraws while finishing
+        if (checkin.questions.isEmpty() && (forced || early)) {
+            store.markDone(target.day, checkin.id, slot, early)
+        }
+        if (early) {
+            AlarmScheduler.schedule(this, checkin) // skip this ring; arm the one after
+            toast("Done early. No alarm at ${Days.timeOf(slot)}.")
+            finish()
+            return
+        }
         store.removePending(target)
         store.prunePending()
         val next = store.pending.firstOrNull()
@@ -277,54 +298,76 @@ class CheckinActivity : BaseActivity() {
         }
 
         val col = column()
-        val title = if (forced) checkin.name else "Edit: ${checkin.name}"
-        col.add(label(title, 26f, bold = true))
+        val title = when {
+            forced -> checkin.name
+            early -> "${checkin.name} · early"
+            else -> "Edit: ${checkin.name}"
+        }
+        col.add(label(title, 28f, bold = true))
         val sub = buildString {
             append(Days.pretty(target.day))
             if (checkin.times.size > 1 || !forced) append(" · ${Days.timeOf(slot)}")
-            if (steps.size > 1) append("  ·  step ${stepIndex + 1} of ${steps.size}")
         }
-        col.add(label(sub, 15f), dp(4))
+        col.add(muted(sub, 15f), dp(2))
+        if (steps.size > 1) col.add(stepDots(), dp(12))
+        if (early) {
+            col.add(chip("Done now, this time's alarm won't ring", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)), dp(12))
+        }
 
         when (val step = steps[stepIndex]) {
             is Step.Math -> mathUi(col, step)
             is Step.Scan -> scanUi(col)
             is Step.Survey -> surveyUi(col)
-            is Step.Dismiss -> col.add(button("Dismiss") { nextStep() }, dp(36))
+            is Step.Dismiss -> col.add(primaryButton("Dismiss") { nextStep() }, dp(32))
         }
 
         setScreen(col, withBar = quietNow())
     }
 
-    /** The alarm is sounding: one big button pauses it and shows the steps. */
+    /** "Step 2 of 3" with a dot per step. */
+    private fun stepDots(): View {
+        val r = row()
+        steps.indices.forEach { i ->
+            val dot = View(this).apply {
+                background = rounded(if (i <= stepIndex) colorPrimary else colorOf(R.color.outline), 4)
+            }
+            r.addView(dot, LinearLayout.LayoutParams(dp(if (i == stepIndex) 28 else 14), dp(6)).apply { marginEnd = dp(6) })
+        }
+        r.addWrapped(muted("Step ${stepIndex + 1} of ${steps.size}", 13f), dp(6))
+        return r
+    }
+
+    /** The alarm is sounding: big clock, and one button pauses it and shows the steps. */
     private fun showRinging() {
         val photo = if (checkin.hasBackground) Backgrounds.load(this, checkin.id) else null
-        val textColor = if (photo != null) Color.WHITE else null
-        fun text(t: String, size: Float, bold: Boolean = false) =
-            label(t, size, bold).apply { textColor?.let { setTextColor(it) } }
+        val fg = if (photo != null) Color.WHITE else colorText
+        val soft = if (photo != null) 0xCCFFFFFF.toInt() else colorMuted
 
-        val col = column()
-        col.add(text(checkin.name, 30f, bold = true), dp(24))
-        col.add(text("Alarm ringing", 18f), dp(8))
-        if (steps.size > 1 || stepIndex > 0) {
-            col.add(text("Step ${stepIndex + 1} of ${steps.size} · ${CheckinText.steps(checkin)}", 15f), dp(4))
+        val col = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+        col.add(label(LocalTime.now().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)), 64f, bold = true, color = fg).apply {
+            gravity = Gravity.CENTER
+        }, dp(48))
+        col.add(label(checkin.name, 26f, bold = true, color = fg).apply { gravity = Gravity.CENTER }, dp(4))
+        col.add(label("Alarm ringing · ${CheckinText.steps(checkin)}", 15f, color = soft).apply { gravity = Gravity.CENTER }, dp(6))
+        if (stepIndex > 0) {
+            col.add(label("Step ${stepIndex + 1} of ${steps.size} (your progress is kept)", 14f, color = soft).apply {
+                gravity = Gravity.CENTER
+            }, dp(4))
         }
         col.add(
-            button("Start check-in") {
+            primaryButton("Start check-in") {
                 AlarmService.instance?.pauseFor()
                 showStep()
             }.apply {
-                textSize = 22f
-                minHeight = dp(96)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                minHeight = dp(88)
             },
-            dp(48)
+            dp(56)
         )
         col.add(
-            text("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
-                "if it runs out, the alarm rings again and your progress is kept.", 14f).apply {
-                if (photo == null) setTextColor(COLOR_MUTED)
-            },
-            dp(16)
+            label("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
+                "if it runs out, the alarm rings again.", 13f, color = soft).apply { gravity = Gravity.CENTER },
+            dp(14)
         )
         setScreen(col, withBar = false, background = photo)
     }
@@ -333,7 +376,7 @@ class CheckinActivity : BaseActivity() {
     private fun setScreen(content: View, withBar: Boolean, background: Bitmap? = null) {
         val sv = ScrollView(this).apply {
             clipToPadding = false
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setPadding(dp(20), dp(20), dp(20), dp(28))
             addView(content)
         }
         val root = column()
@@ -360,17 +403,19 @@ class CheckinActivity : BaseActivity() {
 
     private fun pauseBar(): View {
         val box = column().apply {
-            setPadding(dp(20), dp(10), dp(20), dp(10))
-            setBackgroundColor(0x1A808080)
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            setBackgroundColor(colorOf(R.color.surface))
+            elevation = dp(3).toFloat()
             tag = "pause-bar"
         }
         val text = label("", 14f, bold = true)
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 1000
+            progressBackgroundTintList = ColorStateList.valueOf(colorOf(R.color.surface_variant))
         }
         box.add(text)
-        box.add(bar, dp(6))
+        box.add(bar, dp(8))
         barLabel = text
         barProgress = bar
         return box
@@ -378,12 +423,14 @@ class CheckinActivity : BaseActivity() {
 
     private fun mathUi(col: LinearLayout, step: Step.Math) {
         val p = problem ?: MathGen.make(step.level).also { problem = it }
-        col.add(label("Problem ${solved + 1} of ${step.count}", 15f), dp(24))
-        col.add(label("${p.text} = ?", 34f, bold = true).apply { tag = "math-problem" }, dp(12))
+        val box = card()
+        box.add(muted("Problem ${solved + 1} of ${step.count}", 14f))
+        box.add(label("${p.text} = ?", 34f, bold = true).apply { tag = "math-problem" }, dp(10))
 
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
-            textSize = 28f
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
+            setTextColor(colorText)
             hint = "Answer"
             imeOptions = EditorInfo.IME_ACTION_DONE
             tag = "math-answer"
@@ -410,8 +457,9 @@ class CheckinActivity : BaseActivity() {
         input.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { check(); true } else false
         }
-        col.add(input, dp(12))
-        col.add(button("Check") { check() }, dp(8))
+        box.add(input, dp(8))
+        col.add(box, dp(20))
+        col.add(primaryButton("Check") { check() }, dp(16))
 
         input.requestFocus()
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
@@ -420,21 +468,30 @@ class CheckinActivity : BaseActivity() {
     private fun scanUi(col: LinearLayout) {
         val where = checkin.scanLabel.ifEmpty { "your registered code" }
         col.add(label("Go scan: $where", 22f, bold = true), dp(24))
-        val status: TextView = label("Point the camera at the code.", 15f)
-        col.add(status, dp(6))
+        val status: TextView = muted("Point the camera at the code.", 15f)
+        col.add(status, dp(4))
 
-        val sv = ScannerView(this)
+        val sv = ScannerView(this).apply {
+            background = rounded(colorOf(R.color.surface_variant), 20)
+            clipToOutline = true
+        }
         scanner = sv
-        col.add(sv, dp(12))
+        col.add(sv, dp(14))
 
-        val fallback: Button = button("Can't scan? Solve $FALLBACK_PROBLEMS very hard problems instead") {
+        // Early: the code must really be scanned. Not near it? Go back and use Skip instead.
+        val fallback: Button? = if (early) null else outlineButton("Can't scan? Solve $FALLBACK_PROBLEMS very hard problems instead") {
             useScanFallback()
             showStep()
+        }.apply {
+            visibility = View.GONE
+            tag = "scan-fallback"
         }
-        fallback.visibility = View.GONE
-        fallback.tag = "scan-fallback"
-        col.add(fallback, dp(12))
-        ui.postDelayed({ fallback.visibility = View.VISIBLE }, FALLBACK_DELAY_MS)
+        if (fallback != null) {
+            col.add(fallback, dp(14))
+            ui.postDelayed({ fallback.visibility = View.VISIBLE }, FALLBACK_DELAY_MS)
+        } else {
+            col.add(muted("Doing it early means really scanning it. Not near it? Go back and use Skip.", 13f), dp(14))
+        }
 
         sv.start(
             onCode = { code ->
@@ -448,16 +505,14 @@ class CheckinActivity : BaseActivity() {
             },
             onError = { msg ->
                 status.text = msg
-                fallback.visibility = View.VISIBLE
+                fallback?.visibility = View.VISIBLE
             }
         )
     }
 
     private fun surveyUi(col: LinearLayout) {
         val qs = checkin.questions
-        if (forced) {
-            col.add(label("Be honest — this is just for you.", 14f), dp(8))
-        }
+        if (forced) col.add(muted("Be honest. This is just for you.", 14f), dp(10))
         lateinit var submit: Button
         fun refresh() {
             val left = qs.count { !answers.containsKey(it.id) }
@@ -466,28 +521,30 @@ class CheckinActivity : BaseActivity() {
         }
 
         for (q in qs) {
-            col.add(label(q.text, 19f), dp(28))
+            val box = card()
+            box.add(label(q.text, 18f))
             val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-            val yes = RadioButton(this).apply { id = View.generateViewId(); text = "Yes"; textSize = 18f; tag = "q:${q.id}:yes" }
-            val no = RadioButton(this).apply { id = View.generateViewId(); text = "No"; textSize = 18f; tag = "q:${q.id}:no" }
-            group.addView(yes, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            group.addView(no, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val yes = choiceTile("Yes").apply { id = View.generateViewId(); tag = "q:${q.id}:yes" }
+            val no = choiceTile("No").apply { id = View.generateViewId(); tag = "q:${q.id}:no" }
+            group.addView(yes, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+            group.addView(no, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
             answers[q.id]?.let { (if (it) yes else no).isChecked = true }
             group.setOnCheckedChangeListener { _, checkedId ->
                 answers[q.id] = checkedId == yes.id
                 refresh()
             }
-            col.add(group, dp(8))
+            box.add(group, dp(12))
+            col.add(box, dp(12))
         }
 
-        submit = button("Submit") {
+        submit = primaryButton("Submit") {
             val clean = qs.associate { it.id to answers.getValue(it.id) }
-            store.saveEntry(target.day, slot, clean)
+            store.saveAnswers(target.day, checkin.id, slot, clean, early)
             val good = qs.count { it.isGood(clean.getValue(it.id)) }
             toast("Logged: $good of ${qs.size} on track")
             nextStep()
         }
-        col.add(submit, dp(36))
+        col.add(submit, dp(24))
         refresh()
     }
 
@@ -502,6 +559,7 @@ class CheckinActivity : BaseActivity() {
         private const val EXTRA_CHECKIN = "checkin"
         private const val EXTRA_DAY = "day"
         private const val EXTRA_TIME = "time"
+        private const val EXTRA_EARLY = "early"
         private const val STATE_STEP = "step"
         private const val STATE_SOLVED = "solved"
         private const val STATE_FALLBACK = "fallback"
@@ -513,6 +571,10 @@ class CheckinActivity : BaseActivity() {
         /** Opens whichever check-in is waiting. */
         fun alarmIntent(context: Context): Intent =
             Intent(context, CheckinActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        /** Resolves an upcoming ring now (all steps, no alarm); that ring then stays quiet. */
+        fun earlyIntent(context: Context, checkinId: String, day: String, time: String): Intent =
+            editIntent(context, checkinId, day, time).putExtra(EXTRA_EARLY, true)
 
         /** Opens a check-in to fill in / fix a specific day's answers. */
         fun editIntent(context: Context, checkinId: String, day: String, time: String = ""): Intent =

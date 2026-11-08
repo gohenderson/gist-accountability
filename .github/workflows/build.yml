@@ -125,6 +125,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
+          cache-read-only: true   # the build job saves the cache; avoid both saving at once
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: Build app and test APKs

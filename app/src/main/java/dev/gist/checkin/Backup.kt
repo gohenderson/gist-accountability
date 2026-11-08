@@ -12,7 +12,7 @@ import java.time.Instant
  * {
  *   "format": "gist-backup", "version": 1, "exportedAt": "…",
  *   "checkins": [ …same as Store… ],
- *   "entries": { "2026-11-07": { "<questionId>": true, … }, … },
+ *   "entries": { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": {…} } } }, … },
  *   "backgrounds": { "<checkinId>": "<base64 JPEG>", … }
  * }
  * Alarm sounds are references to sounds on the phone; if a sound doesn't exist on the
@@ -20,7 +20,7 @@ import java.time.Instant
  */
 object Backup {
     const val FORMAT = "gist-backup"
-    const val VERSION = 1
+    const val VERSION = 2
 
     class Contents(
         val checkins: List<Checkin>,
@@ -64,6 +64,9 @@ object Backup {
         }
         if (root.optInt("version", 0) > VERSION) {
             throw IllegalArgumentException("This backup is from a newer version of Gist. Update the app first.")
+        }
+        if (root.optInt("version", 0) < VERSION) {
+            throw IllegalArgumentException("This backup is from an older version of Gist that this one can't read.")
         }
         val store = Store(context)
         try {

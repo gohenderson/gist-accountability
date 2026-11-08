@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -53,39 +54,40 @@ class MainActivity : BaseActivity() {
         val oldY = scroll?.scrollY ?: 0
         val col = column()
         val checkins = store.checkins
-        val entries = store.allEntries()
 
-        col.add(label("Gist", 30f, bold = true))
-        col.add(label("Daily check-ins on the gist of your diet.", 15f), dp(2))
+        col.add(header("Gist", todayLong()))
 
         setupWarnings(col)
 
-        col.add(label("Check-ins", 24f, bold = true), dp(28))
-        col.add(button("+ Add check-in") { addCheckin() }, dp(8))
-        checkins.forEach { checkinRow(col, it, entries) }
+        val bar = row()
+        bar.addWeighted(sectionTitle("Check-ins"))
+        bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
+        col.add(bar, dp(28))
+        checkins.forEach { col.add(checkinCard(it), dp(12)) }
         if (checkins.isEmpty()) {
-            col.add(label("No check-ins yet.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(8))
+            col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
         }
 
-        col.add(button("Settings · backup · dark mode") {
+        col.add(outlineButton("Settings · backup · dark mode") {
             startActivity(Intent(this, SettingsActivity::class.java))
-        }, dp(36))
+        }, dp(28))
 
-        val sv = ScrollView(this).apply {
-            clipToPadding = false
-            addView(col)
-        }
-        applySystemBarInsets(sv, dp(20))
+        val sv = screen(col)
         setContentView(sv)
         scroll = sv
         sv.post { sv.scrollTo(0, oldY) }
     }
 
-    /** Per check-in: name, time + steps, a 7-day stat, and History / Edit buttons. */
-    private fun checkinRow(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Answers>>) {
+    /**
+     * One check-in: name with its on/off switch, times and steps, last-7-days stat, the next
+     * ring (with Do it now / Skip), anything already done early or skipped, and History / Edit.
+     */
+    private fun checkinCard(c: Checkin): LinearLayout {
+        val card = card()
+
         val titleRow = row()
-        titleRow.addView(label(c.name, 19f, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(Switch(this).apply {
+        titleRow.addWeighted(label(c.name, 20f, bold = true))
+        titleRow.addWrapped(styledSwitch().apply {
             isChecked = c.enabled
             tag = "toggle:${c.id}"
             contentDescription = "${c.name} alarm on"
@@ -95,24 +97,84 @@ class MainActivity : BaseActivity() {
                 render()
             }
         })
-        col.add(titleRow, dp(20))
-        col.add(label(CheckinText.oneLine(c), 14f).apply {
-            if (!c.enabled) setTextColor(COLOR_MUTED)
-        }, dp(2))
-        if (c.questions.isNotEmpty()) col.add(label(Stats.line(c, entries, 7), 14f), dp(2))
+        card.add(titleRow)
+        card.add(muted(CheckinText.oneLine(c)), dp(2))
 
-        val buttons = row()
         if (c.questions.isNotEmpty()) {
-            buttons.addView(
-                button("History") { startActivity(HistoryActivity.intent(this, c.id)) },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            )
+            val results = store.allResults(c.id)
+            card.add(muted(Stats.line(c, results, 7), 13f), dp(4))
         }
-        buttons.addView(
-            button("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        col.add(buttons, dp(4))
+
+        if (c.enabled) {
+            // Rings coming up that were already handled (done early / skipped), with Undo for skips.
+            val soon = AlarmScheduler.occurrences(c).filter { it.at - System.currentTimeMillis() < 24 * 3600_000L }
+            for (o in soon) {
+                val r = store.result(o.day, c.id, o.timeKey) ?: continue
+                val line = row()
+                val (text, fg, bg) = if (r.status == SlotResult.SKIPPED) {
+                    Triple("${whenText(o)} · skipped", colorMuted, colorOf(R.color.surface_variant))
+                } else {
+                    Triple("${whenText(o)} · done early ✓", colorOf(R.color.good), colorOf(R.color.good_container))
+                }
+                line.addWeighted(chip(text, fg, bg).apply { tag = "closed:${o.timeKey}" })
+                if (r.status == SlotResult.SKIPPED) {
+                    line.addWrapped(textButton("Undo") {
+                        store.clearResult(o.day, c.id, o.timeKey)
+                        AlarmScheduler.schedule(this, c)
+                        render()
+                    })
+                }
+                card.add(line, dp(8))
+            }
+
+            val next = AlarmScheduler.upcoming(this, c)
+            if (next != null) {
+                val box = column().apply {
+                    background = rounded(colorOf(R.color.surface_variant), 14)
+                    setPadding(dp(14), dp(10), dp(10), dp(10))
+                }
+                val r = row()
+                r.addWeighted(label("Next · ${whenText(next)}", 15f).apply { tag = "next:${c.id}" })
+                r.addWrapped(textButton("Skip", colorMuted) { skip(c, next) })
+                r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
+                box.add(r)
+                card.add(box, dp(10))
+            }
+        }
+
+        val actions = row()
+        actions.addWeighted(View(this))
+        if (c.questions.isNotEmpty()) {
+            actions.addWrapped(textButton("History") { startActivity(HistoryActivity.intent(this, c.id)) })
+        }
+        actions.addWrapped(textButton("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) }, dp(4))
+        card.add(actions, dp(6))
+        return card
+    }
+
+    /** "today 9:30 PM" / "tomorrow 7:00 AM" */
+    private fun whenText(o: Occurrence): String {
+        val at = java.time.Instant.ofEpochMilli(o.at).atZone(java.time.ZoneId.systemDefault())
+        val today = java.time.LocalDate.now()
+        val day = when (at.toLocalDate()) {
+            today -> "today"
+            today.plusDays(1) -> "tomorrow"
+            else -> at.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("EEE"))
+        }
+        return "$day ${Days.time(o.time.hour, o.time.minute)}"
+    }
+
+    /** Skip the next ring (only possible before it rings). */
+    private fun skip(c: Checkin, o: Occurrence) {
+        store.markSkipped(o.day, c.id, o.timeKey)
+        AlarmScheduler.schedule(this, c)
+        Toast.makeText(this, "Skipped ${whenText(o)}", Toast.LENGTH_SHORT).show()
+        render()
+    }
+
+    /** Resolve the next ring now: same steps (a scan must really be scanned), no alarm. */
+    private fun doItNow(c: Checkin, o: Occurrence) {
+        startActivity(CheckinActivity.earlyIntent(this, c.id, o.day, o.timeKey))
     }
 
     private fun setupWarnings(col: LinearLayout) {
@@ -140,8 +202,11 @@ class MainActivity : BaseActivity() {
             }
         }
         if (items.isEmpty()) return
-        col.add(label("Setup needed", 20f, bold = true), dp(28))
-        items.forEach { (text, action) -> col.add(button(text, action), dp(6)) }
+        val box = card(colorOf(R.color.warn_container))
+        box.add(label("Finish setup", 17f, bold = true, color = colorWarn))
+        box.add(muted("So alarms ring on time and show over the lock screen.", 13f), dp(2))
+        items.forEach { (text, action) -> box.add(outlineButton(text, action), dp(8)) }
+        col.add(box, dp(20))
     }
 
     // ---------------------------------------------------------------- actions

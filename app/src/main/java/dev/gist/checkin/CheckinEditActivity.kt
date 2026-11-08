@@ -55,13 +55,15 @@ class CheckinEditActivity : BaseActivity() {
     private fun render() {
         val c = store.checkin(checkinId) ?: return finish()
         val oldY = scroll?.scrollY ?: 0
-        val col = column()
+        val page = column()
+        var col: LinearLayout = page // sections below swap this for their own card
 
-        val title = label(c.name, 26f, bold = true)
+        val title = label(c.name, 30f, bold = true)
         col.add(title)
+        col.add(muted(CheckinText.oneLine(c), 15f), dp(2))
 
         // Name: saved as you type (no redraw, so the keyboard stays put).
-        col.add(label("Name", 14f), dp(16))
+        col = section(page, "Name")
         val name = EditText(this).apply {
             setText(c.name)
             hint = "e.g. Starting the Day"
@@ -82,10 +84,8 @@ class CheckinEditActivity : BaseActivity() {
         col.add(name, dp(2))
 
         // Schedule
-        section(col, "Schedule")
-        val sw = Switch(this).apply {
-            text = "Ring daily"
-            textSize = 17f
+        col = section(page, "Schedule")
+        val sw = styledSwitch("Ring daily").apply {
             isChecked = c.enabled
             setOnCheckedChangeListener { _, on -> change { it.copy(enabled = on) } }
         }
@@ -115,7 +115,7 @@ class CheckinEditActivity : BaseActivity() {
         col.add(yesterday, dp(8))
 
         // Sound & background
-        section(col, "While it rings")
+        col = section(page, "While it rings")
         col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
         col.add(
             button(if (c.hasBackground) "Background photo: change or remove" else "Background photo: none") {
@@ -137,11 +137,9 @@ class CheckinEditActivity : BaseActivity() {
         }
 
         // Steps
-        section(col, "When it rings")
+        col = section(page, "When it rings")
         col.add(label(CheckinText.steps(c), 15f), dp(4))
-        col.add(label("Steps always run in this order: math → scan → questions.", 13f).apply {
-            setTextColor(COLOR_MUTED)
-        }, dp(2))
+        col.add(muted("Steps always run in this order: math → scan → questions.", 13f), dp(2))
 
         val mathText = if (c.mathCount > 0) {
             "1. Math: ${c.mathCount} × ${MathGen.levelName(c.mathLevel)}"
@@ -154,32 +152,33 @@ class CheckinEditActivity : BaseActivity() {
 
         col.add(label("3. Questions", 17f, bold = true), dp(16))
         if (c.questions.isEmpty()) {
-            col.add(label("None, so nothing gets logged.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(4))
+            col.add(muted("None, so nothing gets logged.", 14f), dp(4))
         }
         c.questions.forEachIndexed { i, q -> col.add(questionRow(i, q), dp(6)) }
         col.add(button("+ Add question") { editQuestion(c, null) }, dp(6))
 
         // Test & delete
-        section(col, "Try it")
+        col = section(page, "Try it")
         col.add(button("Test: ring in 10 seconds") {
             AlarmScheduler.scheduleTest(this, checkinId)
             toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. (Answers are logged.)")
         }, dp(4))
 
-        col.add(button("Delete this check-in") { confirmDelete(c) }.apply { setTextColor(COLOR_BAD) }, dp(36))
+        page.add(dangerButton("Delete this check-in") { confirmDelete(c) }, dp(24))
 
-        val sv = ScrollView(this).apply {
-            clipToPadding = false
-            addView(col)
-        }
-        applySystemBarInsets(sv, dp(20))
+        val sv = screen(page)
+        
         setContentView(sv)
         scroll = sv
         sv.post { sv.scrollTo(0, oldY) }
     }
 
-    private fun section(col: LinearLayout, title: String) {
-        col.add(label(title, 20f, bold = true), dp(28))
+    /** Starts a new card on [page] with a small title; returns it to add the section's content to. */
+    private fun section(page: LinearLayout, title: String): LinearLayout {
+        val card = card()
+        card.add(sectionTitle(title))
+        page.add(card, dp(14))
+        return card
     }
 
     private fun questionRow(index: Int, q: Question): View {

@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -22,24 +23,26 @@ class SettingsActivity : BaseActivity() {
 
     private fun render() {
         val col = column()
-        col.add(label("Settings", 26f, bold = true))
+        col.add(header("Settings"))
 
         // Appearance
-        col.add(label("Appearance", 20f, bold = true), dp(28))
-        val group = RadioGroup(this)
+        val look = card()
+        look.add(sectionTitle("Appearance"))
+        val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val options = listOf(
             Store.THEME_SYSTEM to "Same as phone",
             Store.THEME_LIGHT to "Light",
             Store.THEME_DARK to "Dark",
         )
-        val ids = options.map { (mode, text) ->
-            val rb = RadioButton(this).apply {
+        val ids = options.mapIndexed { i, (mode, text) ->
+            val rb = choiceTile(text).apply {
                 id = View.generateViewId()
-                this.text = text
-                textSize = 17f
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
                 isChecked = store.theme == mode
             }
-            group.addView(rb)
+            group.addView(rb, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (i > 0) marginStart = dp(8)
+            })
             rb.id to mode
         }.toMap()
         group.setOnCheckedChangeListener { _, checkedId ->
@@ -49,29 +52,31 @@ class SettingsActivity : BaseActivity() {
                 recreate()
             }
         }
-        col.add(group, dp(4))
+        look.add(group, dp(10))
+        col.add(look, dp(20))
 
         // Backup
-        col.add(label("Backup", 20f, bold = true), dp(28))
-        col.add(
-            label("One file with all your check-ins, their answers and background photos. " +
-                "Keep it somewhere safe (Drive, email to yourself) to move to a new phone.", 14f),
-            dp(4)
+        val backup = card()
+        backup.add(sectionTitle("Backup"))
+        backup.add(
+            label("One file with all your check-ins, their results and background photos. " +
+                "Keep it somewhere safe (Drive, email to yourself) to move to a new phone.", 15f),
+            dp(6)
         )
-        col.add(button("Export backup…") { exportBackup() }, dp(8))
-        col.add(button("Import backup…") { importBackup() }, dp(4))
+        val b = row()
+        b.addWeighted(primaryButton("Export backup…") { exportBackup() })
+        b.addWeighted(outlineButton("Import backup…") { importBackup() }, startMargin = dp(8))
+        backup.add(b, dp(12))
+        col.add(backup, dp(12))
 
         // CSV
-        col.add(label("Spreadsheet", 20f, bold = true), dp(28))
-        col.add(label("All answers as a CSV file, one row per day.", 14f), dp(4))
-        col.add(button("Export answers (CSV)…") { exportCsv() }, dp(8))
+        val csv = card()
+        csv.add(sectionTitle("Spreadsheet"))
+        csv.add(label("Every result as a CSV file: one row per day, check-in and time.", 15f), dp(6))
+        csv.add(outlineButton("Export results (CSV)…") { exportCsv() }, dp(12))
+        col.add(csv, dp(12))
 
-        val sv = ScrollView(this).apply {
-            clipToPadding = false
-            addView(col)
-        }
-        applySystemBarInsets(sv, dp(20))
-        setContentView(sv)
+        setContentView(screen(col))
     }
 
     // ---------------------------------------------------------------- backup
@@ -134,22 +139,26 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun buildCsv(): String {
-        val cols = store.checkins.flatMap { c -> c.questions.map { q -> c to q } }
         fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
+        val checkins = store.checkins
+        val qs = checkins.flatMap { it.questions }
         val sb = StringBuilder()
-        sb.append("date,time")
-        cols.forEach { (c, q) -> sb.append(',').append(esc("${c.name}: ${q.text}")) }
+        sb.append("date,time,check-in,status,early")
+        qs.forEach { sb.append(',').append(esc(it.text)) }
         sb.append('\n')
-        // One row per day and time a check-in was answered.
-        store.allEntries().forEach { (day, slots) ->
-            slots.toSortedMap().forEach { (time, answers) ->
-                sb.append(day).append(',').append(time)
-                cols.forEach { (_, q) ->
-                    sb.append(',')
-                    answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
-                }
-                sb.append('\n')
+        val rows = checkins.flatMap { c ->
+            store.allResults(c.id).flatMap { (day, slots) -> slots.map { (time, r) -> Triple(day, time, c to r) } }
+        }.sortedWith(compareBy({ it.first }, { it.second }))
+        for ((day, time, cr) in rows) {
+            val (c, r) = cr
+            sb.append(day).append(',').append(time).append(',').append(esc(c.name))
+                .append(',').append(if (r.status == SlotResult.RANG) "missed" else r.status)
+                .append(',').append(if (r.early) "yes" else "")
+            qs.forEach { q ->
+                sb.append(',')
+                r.answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
             }
+            sb.append('\n')
         }
         return sb.toString()
     }

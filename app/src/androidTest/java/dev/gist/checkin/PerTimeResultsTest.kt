@@ -45,16 +45,16 @@ class PerTimeResultsTest {
             onView(withText("Submit")).perform(scrollTo(), click())
         }
         val s = TestEnv.store
-        assertEquals(mapOf("soda" to false), s.entry(today, "18:00"))
-        assertEquals(mapOf("soda" to true), s.entry(today, "21:30"))
+        assertEquals(mapOf("soda" to false), s.result(today, "eve", "18:00")!!.answers)
+        assertEquals(mapOf("soda" to true), s.result(today, "eve", "21:30")!!.answers)
     }
 
     @Test
     fun historyShowsAnXIfAnyTimeThatDayWasOffTrack() {
         val yesterday = LocalDate.now().minusDays(1).toString()
         TestEnv.reset(listOf(twice))
-        TestEnv.store.saveEntry(yesterday, "18:00", mapOf("soda" to false)) // on track
-        TestEnv.store.saveEntry(yesterday, "21:30", mapOf("soda" to true))  // off track
+        TestEnv.store.saveAnswers(yesterday, "eve", "18:00", mapOf("soda" to false)) // on track
+        TestEnv.store.saveAnswers(yesterday, "eve", "21:30", mapOf("soda" to true))  // off track
 
         ActivityScenario.launch<HistoryActivity>(HistoryActivity.intent(TestEnv.ctx, "eve")).use {
             onView(withText("Last 7 days: 1 logged, 0 fully on track")).check(matches(isDisplayed()))
@@ -68,7 +68,7 @@ class PerTimeResultsTest {
 
             onView(withText("Last 7 days: 1 logged, 1 fully on track")).check(matches(isDisplayed()))
         }
-        assertEquals(mapOf("soda" to false), TestEnv.store.entry(yesterday, "18:00"))
-        assertEquals(mapOf("soda" to false), TestEnv.store.entry(yesterday, "21:30"))
+        assertEquals(mapOf("soda" to false), TestEnv.store.result(yesterday, "eve", "18:00")!!.answers)
+        assertEquals(mapOf("soda" to false), TestEnv.store.result(yesterday, "eve", "21:30")!!.answers)
     }
 }

@@ -53,74 +53,34 @@ class StoreTest {
     }
 
     @Test
-    fun eachTimeKeepsItsOwnAnswers() {
+    fun eachTimeKeepsItsOwnResult() {
         TestEnv.reset(emptyList())
         val s = TestEnv.store
-        s.saveEntry("2026-11-07", "07:00", mapOf("soda" to false))
-        s.saveEntry("2026-11-07", "21:30", mapOf("soda" to true))
-        s.saveEntry("2026-11-07", "07:00", mapOf("latefood" to true)) // another check-in at the same time
-        assertEquals(mapOf("soda" to false, "latefood" to true), s.entry("2026-11-07", "07:00"))
-        assertEquals(mapOf("soda" to true), s.entry("2026-11-07", "21:30"))
-        s.saveEntry("2026-11-07", "21:30", mapOf("soda" to false)) // fixing an answer overwrites only that time
-        assertEquals(mapOf("soda" to false), s.entry("2026-11-07", "21:30"))
-        assertEquals(mapOf("soda" to false, "latefood" to true), s.entry("2026-11-07", "07:00"))
+        s.saveAnswers("2026-11-07", "eve", "07:00", mapOf("soda" to false))
+        s.saveAnswers("2026-11-07", "eve", "21:30", mapOf("soda" to true))
+        s.saveAnswers("2026-11-07", "other", "07:00", mapOf("latefood" to true)) // another check-in, same time
+        assertEquals(mapOf("soda" to false), s.result("2026-11-07", "eve", "07:00")!!.answers)
+        assertEquals(mapOf("soda" to true), s.result("2026-11-07", "eve", "21:30")!!.answers)
+        assertEquals(mapOf("latefood" to true), s.result("2026-11-07", "other", "07:00")!!.answers)
+        s.saveAnswers("2026-11-07", "eve", "21:30", mapOf("soda" to false)) // fixing overwrites only that time
+        assertEquals(mapOf("soda" to false), s.result("2026-11-07", "eve", "21:30")!!.answers)
     }
 
     @Test
-    fun answersSavedPerDayMoveUnderTheCheckinsFirstTime() {
-        clearPrefs()
-        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
-            .putString("checkins", """[{"id":"eve","name":"Evening","times":["18:00","21:30"],"questions":[{"id":"soda","text":"Soda?"}]}]""")
-            .putString("entries", """{"2026-11-06":{"soda":true,"unknown":false}}""")
-            .commit()
-        val s = Store(TestEnv.ctx)
-        assertEquals(mapOf("soda" to true), s.entry("2026-11-06", "18:00"))
-        assertEquals(mapOf("unknown" to false), s.entry("2026-11-06", "12:00"))
-        // Converted once and saved in the new shape.
-        val raw = TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).getString("entries", "")!!
-        assertTrue(raw, raw.contains("\"18:00\""))
-    }
-
-    @Test
-    fun waitingListIsDeduplicatedAndPruned() {
-        TestEnv.reset(listOf(TestEnv.checkin("a")))
+    fun ringingDoesntOverwriteAFinishedOrSkippedTime() {
+        TestEnv.reset(emptyList())
         val s = TestEnv.store
-        s.addPending(Pending("a", "2026-11-07"))
-        s.addPending(Pending("a", "2026-11-07"))
-        s.addPending(Pending("deleted", "2026-11-07"))
-        assertEquals(2, s.pending.size)
-        s.prunePending()
-        assertEquals(listOf(Pending("a", "2026-11-07")), s.pending)
-        s.removePending(Pending("a", "2026-11-07"))
-        assertTrue(s.pending.isEmpty())
-    }
+        s.markSkipped("2026-11-07", "t", "22:15")
+        s.markRang("2026-11-07", "t", "22:15")
+        assertEquals(SlotResult.SKIPPED, s.result("2026-11-07", "t", "22:15")!!.status)
+        assertTrue(s.isClosed("2026-11-07", "t", "22:15"))
 
-    @Test
-    fun checkinsSavedWithASingleTimeLoadAsAOneTimeList() {
-        clearPrefs()
-        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
-            .putString("checkins", """[{"id":"old","name":"Morning","hour":7,"minute":15,"enabled":true,"questions":[]}]""")
-            .commit()
-        assertEquals(listOf(AlarmTime(7, 15)), Store(TestEnv.ctx).checkin("old")!!.times)
-    }
+        s.markRang("2026-11-07", "t", "07:30")
+        assertEquals(SlotResult.RANG, s.result("2026-11-07", "t", "07:30")!!.status)
+        assertFalse("rang but unfinished isn't closed", s.isClosed("2026-11-07", "t", "07:30"))
 
-    @Test
-    fun settingsFromTheFirstVersionAreMigrated() {
-        clearPrefs()
-        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit()
-            .putString("questions", """[{"id":"old","text":"Old question?","yesIsGood":false}]""")
-            .putInt("hour", 20)
-            .putInt("minute", 15)
-            .putBoolean("enabled", false)
-            .commit()
-        val cs = Store(TestEnv.ctx).checkins
-        assertEquals(1, cs.size)
-        with(cs[0]) {
-            assertEquals("Evening", name)
-            assertEquals(listOf(AlarmTime(20, 15)), times)
-            assertFalse(enabled)
-            assertEquals(listOf("Old question?"), questions.map { it.text })
-        }
+        s.clearResult("2026-11-07", "t", "22:15")
+        assertNull(s.result("2026-11-07", "t", "22:15"))
     }
 }
 

@@ -43,7 +43,8 @@ object TestEnv {
         val s = Store(ctx)
         s.checkins = checkins
         s.pending = pending
-        entries.forEach { (day, answers) -> s.saveEntry(day, "12:00", answers) } // TestEnv.checkin's time
+        // Answers go to the first check-in at 12:00 (TestEnv.checkin's time).
+        checkins.firstOrNull()?.let { c -> entries.forEach { (day, answers) -> s.saveAnswers(day, c.id, "12:00", answers) } }
     }
 
     fun checkin(

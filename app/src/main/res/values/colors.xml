@@ -1,4 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#2E7D32</color>
+    <!-- Light palette. values-night/colors.xml has the dark one with the same names. -->
+    <color name="ic_launcher_background">#1E7D5B</color>
+    <color name="bg">#F4F6F4</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#EAEFEC</color>
+    <color name="on_surface">#18201C</color>
+    <color name="muted">#5D6B64</color>
+    <color name="outline">#D9E1DC</color>
+    <color name="primary">#1E7D5B</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#D3F0E3</color>
+    <color name="on_primary_container">#0A3B29</color>
+    <color name="good">#23955E</color>
+    <color name="good_container">#D7F3E3</color>
+    <color name="bad">#D2423F</color>
+    <color name="bad_container">#FBE0DE</color>
+    <color name="warn">#B56A00</color>
+    <color name="warn_container">#FFEBCC</color>
+    <color name="ripple">#1F000000</color>
 </resources>

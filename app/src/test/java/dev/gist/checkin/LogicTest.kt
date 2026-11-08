@@ -147,45 +147,83 @@ class StatsTest {
     private val veg = Question("veg", "Vegetables?", yesIsGood = true)
     private val c = Checkin(id = "c", name = "Evening", times = listOf(AlarmTime(21, 30)), questions = listOf(soda, veg))
 
-    private fun day(vararg slots: Pair<String, Answers>): Map<String, Answers> = mapOf(*slots)
+    private fun answered(vararg a: Pair<String, Boolean>) = SlotResult(SlotResult.ANSWERED, mapOf(*a))
+    private val missed = SlotResult(SlotResult.RANG)
+    private val skipped = SlotResult(SlotResult.SKIPPED)
+    private fun day(vararg slots: Pair<String, SlotResult>): Map<String, SlotResult> = mapOf(*slots)
 
     @Test
     fun onTrackRespectsWhichAnswerIsGood() {
-        assertTrue(Stats.onTrack(c, day("21:30" to mapOf("soda" to false, "veg" to true))))
-        assertFalse(Stats.onTrack(c, day("21:30" to mapOf("soda" to true, "veg" to true))))
-        assertFalse(Stats.onTrack(c, day("21:30" to mapOf("soda" to false, "veg" to false))))
-    }
-
-    @Test
-    fun unansweredQuestionsDoNotCountAgainstADay() {
-        assertTrue(Stats.onTrack(c, day("21:30" to mapOf("soda" to false))))
+        assertTrue(Stats.onTrack(c, day("21:30" to answered("soda" to false, "veg" to true))))
+        assertFalse(Stats.onTrack(c, day("21:30" to answered("soda" to true, "veg" to true))))
+        assertFalse(Stats.onTrack(c, day("21:30" to answered("soda" to false, "veg" to false))))
     }
 
     @Test
     fun anOffTrackTimeMakesTheWholeDayOffTrackEvenIfAnotherTimeWasOnTrack() {
-        val d = day("07:00" to mapOf("soda" to false), "21:30" to mapOf("soda" to true))
-        assertEquals(false, Stats.dayResult(soda, d))
+        val d = day("07:00" to answered("soda" to false), "21:30" to answered("soda" to true))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(soda, d))
         assertFalse(Stats.onTrack(c, d))
-        // Order doesn't matter.
-        assertEquals(false, Stats.dayResult(soda, day("07:00" to mapOf("soda" to true), "21:30" to mapOf("soda" to false))))
     }
 
     @Test
-    fun aDayIsOnTrackOnlyIfEveryTimeWas() {
-        val d = day("07:00" to mapOf("soda" to false, "veg" to true), "21:30" to mapOf("soda" to false, "veg" to true))
-        assertEquals(true, Stats.dayResult(soda, d))
+    fun aMissedTimeIsAnX() {
+        val d = day("07:00" to answered("soda" to false, "veg" to true), "21:30" to missed)
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(soda, d))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(veg, d))
+        assertFalse(Stats.onTrack(c, d))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(soda, day("21:30" to missed)))
+    }
+
+    @Test
+    fun skippedTimesDontCountEitherWay() {
+        val d = day("07:00" to answered("soda" to false, "veg" to true), "21:30" to skipped)
+        assertEquals(Mark.ON_TRACK, Stats.dayMark(soda, d))
         assertTrue(Stats.onTrack(c, d))
-        assertEquals(null, Stats.dayResult(soda, day()))
+        assertEquals(Mark.SKIPPED, Stats.dayMark(soda, day("07:00" to skipped, "21:30" to skipped)))
+        assertEquals(Mark.NONE, Stats.dayMark(soda, day()))
     }
 
     @Test
-    fun loggedOnlyCountsDaysWithThisCheckinsAnswers() {
-        val entries = mapOf(
-            "2026-11-07" to day("21:30" to mapOf("soda" to false)),
-            "2026-11-06" to day("21:30" to mapOf("someOtherCheckinsQuestion" to true)),
+    fun loggedCountsDaysThatRangButNotSkippedOnlyDays() {
+        val results = mapOf(
+            "2026-11-07" to day("21:30" to answered("soda" to false)),
+            "2026-11-06" to day("21:30" to skipped),
+            "2026-11-05" to day("21:30" to missed),
         )
-        val logged = Stats.logged(c, entries, listOf("2026-11-07", "2026-11-06", "2026-11-05"))
-        assertEquals(1, logged.size)
+        val logged = Stats.logged(c, results, listOf("2026-11-07", "2026-11-06", "2026-11-05", "2026-11-04"))
+        assertEquals(2, logged.size)
+    }
+}
+
+class OccurrenceTest {
+    private val ny = ZoneId.of("America/New_York")
+    private fun at(d: Int, h: Int, mi: Int) = ZonedDateTime.of(2026, 11, d, h, mi, 0, 0, ny)
+    private val teeth = Checkin(id = "t", name = "Teeth", times = listOf(AlarmTime(7, 30), AlarmTime(22, 15)))
+
+    @Test
+    fun aClosedRingIsPassedOverForTheNextOne() {
+        val now = at(8, 6, 0)
+        val next = AlarmScheduler.nextOccurrence(teeth, now) { it.timeKey == "07:30" && it.day == "2026-11-08" }!!
+        assertEquals("22:15", next.timeKey)
+        assertEquals("2026-11-08", next.day)
+        assertEquals(at(8, 22, 15).toInstant().toEpochMilli(), next.at)
+    }
+
+    @Test
+    fun aboutYesterdayCheckinsCountForThePreviousDay() {
+        val morning = Checkin(id = "m", name = "Morning", times = listOf(AlarmTime(7, 0)), aboutYesterday = true)
+        val next = AlarmScheduler.nextOccurrence(morning, at(8, 6, 0))!!
+        assertEquals("2026-11-07", next.day)
+    }
+
+    @Test
+    fun occurrencesAreSoonestFirstAndAllInTheFuture() {
+        val now = at(8, 12, 0)
+        val list = AlarmScheduler.occurrences(teeth, now)
+        assertEquals("22:15", list.first().timeKey)
+        assertTrue(list.zipWithNext().all { (a, b) -> a.at < b.at })
+        assertTrue(list.all { it.at > now.toInstant().toEpochMilli() })
     }
 }
 

@@ -1,8 +1,14 @@
 package dev.gist.checkin
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Build
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -10,49 +16,190 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.Switch
 import android.widget.TextView
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
-/** Tiny helpers for building layouts in code (no XML layouts, no libraries). */
+/*
+ * A small design system built from plain Android views (no XML layouts, no libraries).
+ * Colors come from res/values/colors.xml and res/values-night/colors.xml, so every
+ * component follows the light / dark setting.
+ */
 
-val COLOR_GOOD = 0xFF43A047.toInt()
-val COLOR_BAD = 0xFFE53935.toInt()
-val COLOR_MUTED = 0xFF9E9E9E.toInt()
+// ------------------------------------------------------------------ colors & sizes
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+fun Context.colorOf(id: Int): Int = getColor(id)
 
-fun Context.label(text: CharSequence, sizeSp: Float = 16f, bold: Boolean = false): TextView =
+val Context.colorText get() = colorOf(R.color.on_surface)
+val Context.colorMuted get() = colorOf(R.color.muted)
+val Context.colorPrimary get() = colorOf(R.color.primary)
+val Context.colorGood get() = colorOf(R.color.good)
+val Context.colorBad get() = colorOf(R.color.bad)
+val Context.colorWarn get() = colorOf(R.color.warn)
+
+private val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+fun Context.rounded(color: Int, radiusDp: Int = 16, strokeColor: Int? = null): GradientDrawable =
+    GradientDrawable().apply {
+        cornerRadius = dp(radiusDp).toFloat()
+        setColor(color)
+        if (strokeColor != null) setStroke(dp(1), strokeColor)
+    }
+
+// ------------------------------------------------------------------ text
+
+fun Context.label(text: CharSequence, sizeSp: Float = 16f, bold: Boolean = false, color: Int? = null): TextView =
     TextView(this).apply {
         this.text = text
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        if (bold) setTypeface(typeface, Typeface.BOLD)
+        setTextColor(color ?: colorText)
+        if (bold) typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        setLineSpacing(0f, 1.15f)
     }
 
-fun Context.button(text: String, onClick: () -> Unit): Button =
-    Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        setOnClickListener { onClick() }
-    }
+fun Context.muted(text: CharSequence, sizeSp: Float = 14f): TextView = label(text, sizeSp, color = colorMuted)
 
-fun Context.column(): LinearLayout =
-    LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+/** Big screen title with an optional muted subtitle. */
+fun Context.header(title: String, subtitle: String? = null): LinearLayout = column().apply {
+    add(label(title, 30f, bold = true))
+    if (subtitle != null) add(muted(subtitle, 15f), dp(2))
+}
 
-fun Context.row(): LinearLayout =
-    LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-    }
+/** Small all-caps section label, e.g. "CHECK-INS". */
+fun Context.sectionTitle(text: String): TextView = label(text.uppercase(), 12f, color = colorMuted).apply {
+    typeface = MEDIUM
+    letterSpacing = 0.08f
+}
+
+fun todayLong(): String = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d"))
+
+// ------------------------------------------------------------------ layout
+
+fun Context.column(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+fun Context.row(): LinearLayout = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+}
 
 /** Add a full-width child with an optional top margin (px). */
 fun LinearLayout.add(v: View, topMargin: Int = 0) {
     addView(
         v,
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { this.topMargin = topMargin }
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { this.topMargin = topMargin }
     )
 }
+
+/** Add a child that takes the remaining width in a row. */
+fun LinearLayout.addWeighted(v: View, weight: Float = 1f, startMargin: Int = 0) {
+    addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight).apply { marginStart = startMargin })
+}
+
+/** Add a child at its natural size (e.g. a button at the end of a row). */
+fun LinearLayout.addWrapped(v: View, startMargin: Int = 0) {
+    addView(
+        v,
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { marginStart = startMargin }
+    )
+}
+
+/** A rounded surface that groups related content. */
+fun Context.card(tint: Int? = null): LinearLayout = column().apply {
+    background = rounded(tint ?: colorOf(R.color.surface), 20, if (tint == null) colorOf(R.color.outline) else null)
+    setPadding(dp(16), dp(14), dp(16), dp(16))
+}
+
+/** A small rounded tag, e.g. "✓ done early". */
+fun Context.chip(text: String, fg: Int, bg: Int): TextView = label(text, 13f, color = fg).apply {
+    typeface = MEDIUM
+    background = rounded(bg, 12)
+    setPadding(dp(10), dp(4), dp(10), dp(4))
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+}
+
+// ------------------------------------------------------------------ buttons
+
+private fun Context.styledButton(text: String, bg: Int, fg: Int, outline: Int?, onClick: () -> Unit): Button =
+    Button(this).apply {
+        this.text = text
+        isAllCaps = false
+        typeface = MEDIUM
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        stateListAnimator = null
+        minHeight = dp(48)
+        minimumHeight = dp(48)
+        minWidth = 0
+        minimumWidth = 0
+        setPadding(dp(18), dp(10), dp(18), dp(10))
+        val disabled = intArrayOf(-android.R.attr.state_enabled)
+        setTextColor(ColorStateList(arrayOf(disabled, intArrayOf()), intArrayOf(colorMuted, fg)))
+        val shape = rounded(bg, 14, outline)
+        shape.setColor(ColorStateList(arrayOf(disabled, intArrayOf()), intArrayOf(colorOf(R.color.surface_variant), bg)))
+        background = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)), shape, null)
+        setOnClickListener { onClick() }
+    }
+
+/** Main action of a screen: filled. */
+fun Context.primaryButton(text: String, onClick: () -> Unit): Button =
+    styledButton(text, colorPrimary, colorOf(R.color.on_primary), null, onClick)
+
+/** Regular action: soft tinted. */
+fun Context.button(text: String, onClick: () -> Unit): Button =
+    styledButton(text, colorOf(R.color.primary_container), colorOf(R.color.on_primary_container), null, onClick)
+
+/** Low-emphasis action: outlined. */
+fun Context.outlineButton(text: String, onClick: () -> Unit): Button =
+    styledButton(text, colorOf(R.color.surface), colorText, colorOf(R.color.outline), onClick)
+
+/** Text-only action. */
+fun Context.textButton(text: String, color: Int? = null, onClick: () -> Unit): Button =
+    styledButton(text, android.graphics.Color.TRANSPARENT, color ?: colorPrimary, null, onClick).apply {
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+    }
+
+/** Destructive action. */
+fun Context.dangerButton(text: String, onClick: () -> Unit): Button =
+    styledButton(text, colorOf(R.color.bad_container), colorBad, null, onClick)
+
+// ------------------------------------------------------------------ inputs
+
+/** On/off switch in the app's colors. */
+fun Context.styledSwitch(text: String? = null): Switch = Switch(this).apply {
+    if (text != null) {
+        this.text = text
+        setTextColor(colorText)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+    }
+    val checked = intArrayOf(android.R.attr.state_checked)
+    thumbTintList = ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(colorPrimary, colorOf(R.color.surface)))
+    trackTintList = ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(colorOf(R.color.primary_container), colorOf(R.color.outline)))
+}
+
+/** A big tappable choice (used for Yes / No): a RadioButton drawn as a rounded tile. */
+fun Context.choiceTile(text: String): RadioButton = RadioButton(this).apply {
+    this.text = text
+    buttonDrawable = null
+    gravity = Gravity.CENTER
+    typeface = MEDIUM
+    setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+    minHeight = dp(52)
+    setPadding(dp(12), dp(12), dp(12), dp(12))
+    val checked = intArrayOf(android.R.attr.state_checked)
+    setTextColor(ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(colorOf(R.color.on_primary_container), colorText)))
+    val states = StateListDrawable().apply {
+        addState(checked, rounded(colorOf(R.color.primary_container), 14, colorPrimary))
+        addState(intArrayOf(), rounded(colorOf(R.color.surface_variant), 14))
+    }
+    background = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)), states as Drawable, null)
+}
+
+// ------------------------------------------------------------------ insets
 
 /** Pad the view by [basePad] plus whatever the status/navigation bars cover (edge-to-edge). */
 fun applySystemBarInsets(view: View, basePad: Int) {
@@ -64,4 +211,12 @@ fun applySystemBarInsets(view: View, basePad: Int) {
             insets
         }
     }
+}
+
+/** Standard scrolling screen: content padded and inset for the system bars. */
+fun Context.screen(content: View): android.widget.ScrollView = android.widget.ScrollView(this).apply {
+    clipToPadding = false
+    isFillViewport = true
+    addView(content)
+    applySystemBarInsets(this, dp(20))
 }

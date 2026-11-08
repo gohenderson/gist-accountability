@@ -6,39 +6,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.HorizontalScrollView
-import android.widget.ScrollView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TableLayout
 import android.widget.TableRow
 import android.widget.TextView
-
-/**
- * Answer statistics for one check-in, shared by the start page and the history page.
- * Answers are saved per time; reports roll them up per day: a question is on track for
- * a day only if every time it was answered that day was on track.
- */
-object Stats {
-    /** A day's result for [q]: null if never answered that day, false if any time was off track. */
-    fun dayResult(q: Question, day: Map<String, Answers>): Boolean? {
-        val answers = day.values.mapNotNull { it[q.id] }
-        if (answers.isEmpty()) return null
-        return answers.all { q.isGood(it) }
-    }
-
-    /** Logged days among [days]: days where at least one of [c]'s questions was answered. */
-    fun logged(c: Checkin, entries: Map<String, Map<String, Answers>>, days: List<String>) =
-        days.mapNotNull { entries[it] }.filter { day -> c.questions.any { q -> dayResult(q, day) != null } }
-
-    /** A logged day is "on track" if no answered question was off track at any time. */
-    fun onTrack(c: Checkin, day: Map<String, Answers>): Boolean =
-        c.questions.all { q -> dayResult(q, day) != false }
-
-    /** e.g. "Last 7 days: 5 logged, 4 fully on track" */
-    fun line(c: Checkin, entries: Map<String, Map<String, Answers>>, n: Int): String {
-        val logged = logged(c, entries, Days.lastN(n))
-        val clean = logged.count { onTrack(c, it) }
-        return "Last $n days: ${logged.size} logged, $clean fully on track"
-    }
-}
 
 /** One check-in's last 30 days: summary, per-question counts, and a tappable day grid. */
 class HistoryActivity : BaseActivity() {
@@ -64,65 +36,89 @@ class HistoryActivity : BaseActivity() {
 
     private fun render() {
         val c = store.checkin(checkinId) ?: return finish()
-        val entries = store.allEntries()
+        val results = store.allResults(c.id)
         val qs = c.questions
         val col = column()
 
-        col.add(label(c.name, 26f, bold = true))
-        col.add(label("Last 30 days", 16f), dp(2))
+        col.add(header(c.name, "History · last 30 days"))
 
         if (qs.isEmpty()) {
-            col.add(label("This check-in has no questions, so nothing is logged.", 15f), dp(16))
-        } else {
-            col.add(label(Stats.line(c, entries, 7), 16f), dp(16))
-            col.add(label(Stats.line(c, entries, 30), 16f), dp(2))
-
-            col.add(label("Off track, by question", 18f, bold = true), dp(24))
-            val month = Stats.logged(c, entries, Days.lastN(30))
-            qs.forEachIndexed { i, q ->
-                val answered = month.mapNotNull { Stats.dayResult(q, it) }
-                val off = answered.count { !it }
-                val counts = if (answered.isEmpty()) "no answers yet" else "$off of ${answered.size} days"
-                col.add(label("${i + 1}. ${q.text}\n     $counts", 14f), dp(6))
-            }
-
-            col.add(label("Day by day", 18f, bold = true), dp(24))
-            val legend = if (c.times.size > 1) {
-                "✗ if any of the day's times was off track. Tap a day to fill in or fix one of its times."
-            } else {
-                "Tap a day to fill it in or fix it."
-            }
-            col.add(label(legend, 13f).apply { setTextColor(COLOR_MUTED) }, dp(2))
-            col.add(grid(c, entries), dp(8))
+            col.add(card().apply { add(muted("This check-in has no questions, so there's nothing to chart.", 15f)) }, dp(20))
+            setContentView(screen(col))
+            return
         }
 
-        val sv = ScrollView(this).apply {
-            clipToPadding = false
-            addView(col)
+        // Summary
+        val summary = card()
+        summary.add(sectionTitle("Summary"))
+        for (n in listOf(7, 30)) {
+            val logged = Stats.logged(c, results, Days.lastN(n))
+            val clean = logged.count { Stats.onTrack(c, it) }
+            val r = row()
+            r.addWeighted(label(Stats.line(c, results, n), 15f))
+            r.addWrapped(chip(if (logged.isEmpty()) "–" else "${clean * 100 / logged.size}%",
+                if (logged.isNotEmpty() && clean == logged.size) colorGood else colorText,
+                colorOf(R.color.surface_variant)))
+            summary.add(r, dp(8))
         }
-        applySystemBarInsets(sv, dp(20))
-        setContentView(sv)
+        col.add(summary, dp(20))
+
+        // Per question
+        val perQ = card()
+        perQ.add(sectionTitle("Off track, by question"))
+        val month = Days.lastN(30).mapNotNull { results[it] }
+        qs.forEachIndexed { i, q ->
+            val marks = month.map { Stats.dayMark(q, it) }.filter { it == Mark.ON_TRACK || it == Mark.OFF_TRACK }
+            val off = marks.count { it == Mark.OFF_TRACK }
+            perQ.add(label("${i + 1}. ${q.text}", 15f), dp(12))
+            val counts = if (marks.isEmpty()) "no answers yet" else "$off of ${marks.size} days"
+            val r = row()
+            val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = maxOf(1, marks.size)
+                progress = off
+                progressTintList = android.content.res.ColorStateList.valueOf(colorBad)
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(colorOf(R.color.good_container))
+            }
+            r.addWeighted(bar)
+            r.addWrapped(muted(counts, 13f), dp(10))
+            perQ.add(r, dp(2))
+        }
+        col.add(perQ, dp(12))
+
+        // Day by day
+        val days = card()
+        days.add(sectionTitle("Day by day"))
+        days.add(muted(
+            if (c.times.size > 1) "✗ if any of the day's times was off track or missed. Tap a day to fill in or fix one of its times."
+            else "✗ = off track or missed · – = skipped. Tap a day to fill it in or fix it.",
+            13f
+        ), dp(4))
+        days.add(grid(c, results), dp(10))
+        col.add(days, dp(12))
+
+        setContentView(screen(col))
     }
 
-    private fun grid(c: Checkin, entries: Map<String, Map<String, Answers>>): HorizontalScrollView {
+    private fun grid(c: Checkin, results: Map<String, Map<String, SlotResult>>): HorizontalScrollView {
         val qs = c.questions
         val table = TableLayout(this)
 
         val header = TableRow(this)
-        header.addView(cell(""))
-        qs.indices.forEach { header.addView(cell("${it + 1}", bold = true)) }
+        header.addView(cell("", null, null))
+        qs.indices.forEach { header.addView(cell("${it + 1}", colorMuted, null, bold = true)) }
         table.addView(header)
 
         for (day in Days.lastN(30)) {
-            val slots = entries[day] ?: emptyMap()
+            val slots = results[day] ?: emptyMap()
             val tr = TableRow(this)
-            tr.addView(cell(Days.short(day), gravity = Gravity.START))
+            tr.addView(cell(Days.short(day), colorText, null, gravity = Gravity.START))
             for (q in qs) {
                 tr.addView(
-                    when (Stats.dayResult(q, slots)) {
-                        null -> cell("·", COLOR_MUTED)
-                        true -> cell("✓", COLOR_GOOD)
-                        false -> cell("✗", COLOR_BAD)
+                    when (Stats.dayMark(q, slots)) {
+                        Mark.NONE -> cell("·", colorMuted, null)
+                        Mark.ON_TRACK -> cell("✓", colorGood, colorOf(R.color.good_container))
+                        Mark.OFF_TRACK -> cell("✗", colorBad, colorOf(R.color.bad_container))
+                        Mark.SKIPPED -> cell("–", colorMuted, colorOf(R.color.surface_variant))
                     }
                 )
             }
@@ -135,25 +131,15 @@ class HistoryActivity : BaseActivity() {
     }
 
     /** Opens a day's answers for editing; asks which time first if there's more than one. */
-    private fun fixDay(c: Checkin, day: String, slots: Map<String, Answers>) {
-        // The check-in's times, plus any other time that has answers for it that day.
-        val mine = c.questions.map { it.id }.toSet()
-        val times = (c.times.map { it.toString() } + slots.filter { (_, a) -> a.keys.any { it in mine } }.keys)
+    private fun fixDay(c: Checkin, day: String, slots: Map<String, SlotResult>) {
+        val times = (c.times.map { it.toString() } + slots.keys)
             .distinct()
             .sortedBy { AlarmTime.parse(it) ?: AlarmTime(0, 0) }
         if (times.size == 1) {
             startActivity(CheckinActivity.editIntent(this, c.id, day, times[0]))
             return
         }
-        val labels = times.map { t ->
-            val answers = slots[t]
-            val status = when {
-                answers == null || c.questions.none { answers.containsKey(it.id) } -> "not answered"
-                c.questions.all { q -> answers[q.id]?.let { q.isGood(it) } != false } -> "✓ on track"
-                else -> "✗ off track"
-            }
-            "${Days.timeOf(t)}  ·  $status"
-        }
+        val labels = times.map { t -> "${Days.timeOf(t)}  ·  ${Stats.describe(c, slots[t])}" }
         AlertDialog.Builder(this)
             .setTitle("${Days.pretty(day)}: which time?")
             .setItems(labels.toTypedArray()) { _, i ->
@@ -163,16 +149,14 @@ class HistoryActivity : BaseActivity() {
             .show()
     }
 
-    private fun cell(
-        text: String,
-        color: Int? = null,
-        bold: Boolean = false,
-        gravity: Int = Gravity.CENTER
-    ): TextView = label(text, 16f, bold).apply {
-        setPadding(dp(8), dp(6), dp(8), dp(6))
-        this.gravity = gravity
-        if (color != null) setTextColor(color)
-    }
+    private fun cell(text: String, fg: Int?, bg: Int?, bold: Boolean = false, gravity: Int = Gravity.CENTER): TextView =
+        label(text, 15f, bold, fg).apply {
+            this.gravity = gravity
+            if (bg != null) background = rounded(bg, 8)
+            minWidth = if (gravity == Gravity.CENTER) dp(32) else 0
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            layoutParams = TableRow.LayoutParams().apply { setMargins(dp(2), dp(2), dp(2), dp(2)) }
+        }
 
     companion object {
         private const val EXTRA_ID = "checkinId"

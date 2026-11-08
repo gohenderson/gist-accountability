@@ -63,11 +63,27 @@ data class Pending(val checkinId: String, val day: String, val time: String = ""
 typealias Answers = Map<String, Boolean>
 
 /**
+ * What happened with one check-in at one time on one day.
+ * [status]: RANG (rang, not finished: counts as missed), ANSWERED (questions answered),
+ * DONE (finished a check-in without questions), SKIPPED (skipped before it rang).
+ * [early]: finished before the alarm time.
+ */
+data class SlotResult(val status: String, val answers: Answers = emptyMap(), val early: Boolean = false) {
+    /** Finished or skipped: the alarm for this time no longer needs to ring. */
+    val closed: Boolean get() = status != RANG
+
+    companion object {
+        const val RANG = "rang"
+        const val ANSWERED = "answered"
+        const val DONE = "done"
+        const val SKIPPED = "skipped"
+    }
+}
+
+/**
  * All app state, kept in one private SharedPreferences file on the phone.
- * Answers are stored per day and per time the check-in rang:
- *   { "2026-11-07": { "07:30": { "<questionId>": true/false, … }, "21:30": { … } }, … }
- * Question ids are unique across check-ins, so several check-ins can share a day and time.
- * (Before multiple times, a day held answers directly; that's converted on first read.)
+ * Results are stored per day, check-in and time:
+ *   { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": { "<questionId>": true }, "early": false } } } }
  */
 class Store(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gist", Context.MODE_PRIVATE)
@@ -76,7 +92,7 @@ class Store(context: Context) {
 
     var checkins: List<Checkin>
         get() {
-            val raw = prefs.getString(K_CHECKINS, null) ?: return legacyOrDefault()
+            val raw = prefs.getString(K_CHECKINS, null) ?: return DEFAULT_CHECKINS
             val arr = JSONArray(raw)
             return (0 until arr.length()).map { checkinFromJson(arr.getJSONObject(it)) }
         }
@@ -126,46 +142,86 @@ class Store(context: Context) {
         if (kept.size != list.size) pending = kept
     }
 
-    // ------------------------------------------------------------ entries
+    // ------------------------------------------------------------ results
 
-    /** A day's answers by time ("HH:mm" → answers). Empty if nothing was logged. */
-    fun slots(day: String): Map<String, Answers> =
-        entriesJson().optJSONObject(day)?.toSlots() ?: emptyMap()
+    fun result(day: String, checkinId: String, time: String): SlotResult? = results(day, checkinId)[time]
 
-    /** The answers logged at one time on one day. */
-    fun entry(day: String, time: String): Answers? = slots(day)[time]
+    /** One check-in's results on one day, by time. */
+    fun results(day: String, checkinId: String): Map<String, SlotResult> =
+        entriesJson().optJSONObject(day)?.optJSONObject(checkinId)?.toResults() ?: emptyMap()
 
-    /** Every answer logged on [day], all times merged (later times win). Handy for tests. */
-    fun entry(day: String): Answers? {
-        val s = slots(day)
-        if (s.isEmpty()) return null
-        return s.toSortedMap().values.fold(emptyMap()) { acc, a -> acc + a }
-    }
-
-    /** All logged days, oldest first: day → time → answers. */
-    fun allEntries(): Map<String, Map<String, Answers>> {
+    /** One check-in's results for every day, oldest first: day → time → result. */
+    fun allResults(checkinId: String): Map<String, Map<String, SlotResult>> {
         val all = entriesJson()
-        val out = sortedMapOf<String, Map<String, Answers>>()
-        all.keys().forEach { day -> all.optJSONObject(day)?.let { out[day] = it.toSlots() } }
+        val out = sortedMapOf<String, Map<String, SlotResult>>()
+        all.keys().forEach { day ->
+            all.optJSONObject(day)?.optJSONObject(checkinId)?.let { out[day] = it.toResults() }
+        }
         return out
     }
 
-    /** Saves one time's [answers] (other times and other check-ins' answers are kept). */
-    fun saveEntry(day: String, time: String, answers: Answers) {
+    /** Is this time finished or skipped (so its alarm shouldn't ring)? */
+    fun isClosed(day: String, checkinId: String, time: String): Boolean =
+        result(day, checkinId, time)?.closed == true
+
+    /** Answers for one time (merged into any already saved for it). */
+    fun saveAnswers(day: String, checkinId: String, time: String, answers: Answers, early: Boolean = false) {
+        val prev = result(day, checkinId, time)
+        val merged = (prev?.answers ?: emptyMap()) + answers
+        put(day, checkinId, time, SlotResult(SlotResult.ANSWERED, merged, early || prev?.early == true))
+    }
+
+    /** A check-in without questions was completed. */
+    fun markDone(day: String, checkinId: String, time: String, early: Boolean = false) =
+        put(day, checkinId, time, SlotResult(SlotResult.DONE, early = early))
+
+    /** The alarm rang. Doesn't overwrite a time that's already finished or skipped. */
+    fun markRang(day: String, checkinId: String, time: String) {
+        if (result(day, checkinId, time) == null) put(day, checkinId, time, SlotResult(SlotResult.RANG))
+    }
+
+    fun markSkipped(day: String, checkinId: String, time: String) =
+        put(day, checkinId, time, SlotResult(SlotResult.SKIPPED))
+
+    /** Forget a time's result (e.g. undo a skip). */
+    fun clearResult(day: String, checkinId: String, time: String) {
         val all = entriesJson()
-        val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
-        val slot = d.optJSONObject(time) ?: JSONObject().also { d.put(time, it) }
-        answers.forEach { (id, value) -> slot.put(id, value) }
+        val c = all.optJSONObject(day)?.optJSONObject(checkinId) ?: return
+        c.remove(time)
+        if (c.length() == 0) all.getJSONObject(day).remove(checkinId)
+        if (all.getJSONObject(day).length() == 0) all.remove(day)
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
     }
 
-    private fun JSONObject.toSlots(): Map<String, Answers> {
-        val out = mutableMapOf<String, Answers>()
-        keys().forEach { time -> optJSONObject(time)?.let { out[time] = it.toBoolMap() } }
-        return out
+    /** Every answer on [day], all check-ins and times merged. Handy for tests. */
+    fun entry(day: String): Answers? {
+        val d = entriesJson().optJSONObject(day) ?: return null
+        var merged: Answers = emptyMap()
+        d.keys().forEach { id -> results(day, id).toSortedMap().values.forEach { merged = merged + it.answers } }
+        return merged.ifEmpty { null }
     }
 
-    // ------------------------------------------------------------ internals
+    private fun put(day: String, checkinId: String, time: String, r: SlotResult) {
+        val all = entriesJson()
+        val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
+        val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
+        val a = JSONObject()
+        r.answers.forEach { (k, v) -> a.put(k, v) }
+        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early))
+        prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+    }
+
+    private fun JSONObject.toResults(): Map<String, SlotResult> {
+        val out = mutableMapOf<String, SlotResult>()
+        keys().forEach { time ->
+            val o = optJSONObject(time) ?: return@forEach
+            val a = o.optJSONObject("a")
+            val answers = mutableMapOf<String, Boolean>()
+            a?.keys()?.forEach { k -> answers[k] = a.optBoolean(k) }
+            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false))
+        }
+        return out
+    }
 
     // ------------------------------------------------------------ settings
 
@@ -176,64 +232,13 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ backup support
 
-    /** All answers as stored (day → time → question → answer). */
-    fun entriesJson(): JSONObject {
-        val all = prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: return JSONObject()
-        if (migratePerDayAnswers(all)) prefs.edit().putString(K_ENTRIES, all.toString()).commit()
-        return all
-    }
+    /** All results as stored (day → check-in → time → result). */
+    fun entriesJson(): JSONObject =
+        prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: JSONObject()
 
-    /**
-     * Answers saved before multiple times (day → question → answer) move under the owning
-     * check-in's first time. Returns true if anything changed.
-     */
-    private fun migratePerDayAnswers(all: JSONObject): Boolean {
-        val days = all.keys().asSequence().toList()
-        val legacy = days.filter { day ->
-            val d = all.optJSONObject(day)
-            d != null && d.keys().asSequence().any { d.opt(it) is Boolean }
-        }
-        if (legacy.isEmpty()) return false
-        val ownerTime = checkins
-            .flatMap { c -> c.questions.map { q -> q.id to c.times.first().toString() } }
-            .toMap()
-        for (day in legacy) {
-            val d = all.getJSONObject(day)
-            val qids = d.keys().asSequence().filter { d.opt(it) is Boolean }.toList()
-            for (qid in qids) {
-                val value = d.getBoolean(qid)
-                d.remove(qid)
-                val time = ownerTime[qid] ?: "12:00"
-                val slot = d.optJSONObject(time) ?: JSONObject().also { d.put(time, it) }
-                if (!slot.has(qid)) slot.put(qid, value)
-            }
-        }
-        return true
-    }
-
-    private fun JSONObject.toBoolMap(): Map<String, Boolean> {
-        val m = mutableMapOf<String, Boolean>()
-        keys().forEach { k -> m[k] = optBoolean(k) }
-        return m
-    }
-
-    /** Replaces all answers with [json] (same shape as [entriesJson]). */
+    /** Replaces all results with [json] (same shape as [entriesJson]). */
     fun replaceEntries(json: JSONObject) {
         prefs.edit().putString(K_ENTRIES, json.toString()).commit()
-    }
-
-    /** Converts settings from the first (single-alarm) version, if present. */
-    private fun legacyOrDefault(): List<Checkin> {
-        val rawQuestions = prefs.getString(K_LEGACY_QUESTIONS, null) ?: return DEFAULT_CHECKINS
-        val arr = JSONArray(rawQuestions)
-        val migrated = Checkin(
-            id = "evening",
-            name = "Evening",
-            times = listOf(AlarmTime(prefs.getInt(K_LEGACY_HOUR, 21), prefs.getInt(K_LEGACY_MINUTE, 30))),
-            enabled = prefs.getBoolean(K_LEGACY_ENABLED, true),
-            questions = (0 until arr.length()).map { questionFromJson(arr.getJSONObject(it)) },
-        )
-        return listOf(migrated)
     }
 
     private fun questionFromJson(o: JSONObject) =
@@ -244,10 +249,12 @@ class Store(context: Context) {
 
     fun checkinFromJson(o: JSONObject): Checkin {
         val qs = o.optJSONArray("questions") ?: JSONArray()
+        val ts = o.getJSONArray("times")
         return Checkin(
             id = o.getString("id"),
             name = o.optString("name", "Check-in"),
-            times = timesFromJson(o),
+            times = (0 until ts.length()).mapNotNull { AlarmTime.parse(ts.optString(it)) }
+                .distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) },
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
             questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) },
@@ -259,17 +266,6 @@ class Store(context: Context) {
             soundTitle = o.optString("soundTitle", ""),
             hasBackground = o.optBoolean("hasBackground", false),
         )
-    }
-
-    /** "times": ["07:00", "21:30"]; data saved before multiple times has "hour"/"minute". */
-    private fun timesFromJson(o: JSONObject): List<AlarmTime> {
-        val arr = o.optJSONArray("times")
-        val times = if (arr != null) {
-            (0 until arr.length()).mapNotNull { AlarmTime.parse(arr.optString(it)) }
-        } else {
-            listOf(AlarmTime(o.optInt("hour", 21), o.optInt("minute", 30)))
-        }
-        return times.distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) }
     }
 
     fun checkinToJson(c: Checkin): JSONObject {
@@ -294,16 +290,12 @@ class Store(context: Context) {
     companion object {
         private const val K_CHECKINS = "checkins"
         private const val K_PENDING = "pendingList"
-        private const val K_ENTRIES = "entries"
+        private const val K_ENTRIES = "results"
         private const val K_THEME = "theme"
 
         const val THEME_SYSTEM = 0
         const val THEME_LIGHT = 1
         const val THEME_DARK = 2
-        private const val K_LEGACY_QUESTIONS = "questions"
-        private const val K_LEGACY_HOUR = "hour"
-        private const val K_LEGACY_MINUTE = "minute"
-        private const val K_LEGACY_ENABLED = "enabled"
 
         fun newId(): String = UUID.randomUUID().toString().take(8)
 
