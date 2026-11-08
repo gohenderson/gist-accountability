@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v1.0.0 to build a signed APK and publish it as a GitHub release:
-#   git tag v1.0.0 && git push origin v1.0.0
+# Two ways to release:
+#   - Actions → Release → Run workflow, enter a version like v1.0.0. If that tag doesn't
+#     exist yet, it's created on the commit you run from (normally main's latest).
+#   - Or push a tag yourself: git tag v1.0.0 && git push origin v1.0.0
 # Requires the signing secrets in the "release" environment (README.md → Releases);
 # each run waits for approval under Actions before it can use them.
 
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)build a release for, e.g. v1.0.0"
+        description: "Version tag, e.g. v1.0.0 (created on this commit if it doesn't exist)"
         required: true
 
 permissions:
@@ -34,16 +36,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout tag
+      - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.TAG }}
+          fetch-depth: 0
 
-      - name: Validate tag
+      - name: Validate and check out tag
         run: |
+          set -euo pipefail
           if [[ ! "$TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}([-.][0-9A-Za-z.]+)?$ ]]; then
             echo "::error title=Bad tag::'$TAG' doesn't look like a version tag (expected e.g. v1.0.0)."
             exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
+            echo "Using existing tag $TAG ($(git rev-list -n1 "$TAG"))"
+            git checkout -q "refs/tags/$TAG"
+          else
+            echo "Creating tag $TAG at $(git rev-parse HEAD)"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Gist $TAG"
+            git push origin "refs/tags/$TAG"
           fi
           echo "VERSION_NAME=${TAG#v}" >> "$GITHUB_ENV"
           echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"

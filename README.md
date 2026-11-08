@@ -31,13 +31,12 @@ Requires Android 10 or newer.
 
 - **Every push to `main`** (and every pull request) runs **Build**: a debug APK plus lint.
   The debug APK and all logs/reports are attached to the run as artifacts.
-- **Pushing a version tag** runs **Release**. It builds a signed APK and publishes it as a
-  GitHub release, with a `.sha256` checksum next to it:
-  ```
-  git tag v1.0.0
-  git push origin v1.0.0
-  ```
-  You can also re-run a release for an existing tag from **Actions → Release → Run workflow**.
+- **Release** builds a signed APK and publishes it as a GitHub release, with a `.sha256`
+  checksum next to it. Start it either way:
+  - **Actions → Release → Run workflow**, then enter a version like `v1.0.0`. The tag is
+    created on the latest `main` if it doesn't exist. Running it for an existing tag
+    rebuilds that release.
+  - or push a tag: `git tag v1.0.0 && git push origin v1.0.0`
   Each release run pauses until you approve it (see the signing key setup below).
 
 **When something fails:** compile errors appear as annotations on the run page and on
