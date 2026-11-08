@@ -143,7 +143,7 @@ class EndToEndAlarmTest {
         device.pressHome()
         device.sleep() // screen off: the alarm should wake it and take over the screen
         SystemClock.sleep(1_000)
-        AlarmScheduler.scheduleTest(TestEnv.ctx, "e2e", 3_000)
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "e2e", 3_000, practice = false) // a real ring
 
         assertTrue(
             "alarm screen didn't appear within 30 s",
@@ -163,6 +163,52 @@ class EndToEndAlarmTest {
         assertFalse("alarm still ringing after answering", AlarmService.running)
         assertTrue(TestEnv.store.pending.isEmpty())
         assertEquals(mapOf("e2e" to false), TestEnv.store.entry(Days.forAlarmNow(false)))
+    }
+}
+
+/** The edit page's "Test: ring in 10 seconds" is a practice run: nothing is logged. */
+@RunWith(AndroidJUnit4::class)
+class PracticeRingTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
+    @After
+    fun tearDown() = TestEnv.reset(emptyList())
+
+    @Test
+    fun aTestRingLogsNothingAndTheNextRealRingStillRings() {
+        TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        val q = Question("soda", "Soda?")
+        // Times around now, so the test ring would land on one of them.
+        val now = java.time.LocalTime.now()
+        val c = TestEnv.checkin("t", "Practice", listOf(q)).copy(
+            times = listOf(AlarmTime(now.hour, now.minute), AlarmTime((now.hour + 1) % 24, now.minute)).distinct().sorted(),
+        )
+        TestEnv.reset(listOf(c))
+        AlarmScheduler.schedule(TestEnv.ctx, c)
+        val nextBefore = AlarmScheduler.upcoming(TestEnv.ctx, c)
+
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "t", 1_000) // what the Test button does
+        TestEnv.eventually(20_000) { assertTrue("test ring didn't start", AlarmService.running) }
+        assertTrue(TestEnv.store.pending.single().practice)
+
+        androidx.test.core.app.ActivityScenario.launch<CheckinActivity>(
+            android.content.Intent(TestEnv.ctx, CheckinActivity::class.java),
+        ).use {
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Start check-in"))
+                .perform(androidx.test.espresso.action.ViewActions.click())
+            androidx.test.espresso.Espresso.onView(tagged("practice-chip"))
+                .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
+            androidx.test.espresso.Espresso.onView(tagged("q:soda:no"))
+                .perform(androidx.test.espresso.action.ViewActions.scrollTo(), androidx.test.espresso.action.ViewActions.click())
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Submit"))
+                .perform(androidx.test.espresso.action.ViewActions.scrollTo(), androidx.test.espresso.action.ViewActions.click())
+        }
+        TestEnv.eventually(10_000) { assertFalse("alarm stopped", AlarmService.running) }
+        assertTrue(TestEnv.store.pending.isEmpty())
+        assertTrue("nothing logged", TestEnv.store.allResults("t").isEmpty())
+        assertEquals("next real ring unchanged", nextBefore, AlarmScheduler.upcoming(TestEnv.ctx, TestEnv.store.checkin("t")!!))
+        assertNotNull("a real alarm is still set", TestEnv.ctx.getSystemService(android.app.AlarmManager::class.java).nextAlarmClock)
     }
 }
 

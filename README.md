@@ -171,6 +171,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     starts blank
   - leaving a ringing alarm with Home brings it back to the front, both while ringing and
     after Start check-in
+  - a test ring from the edit page is marked as a test, logs nothing, and leaves the next
+    real ring alone
+  - About opens from the start page and shows the version, Donate and the source link
   - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
     over, the alarm rings until the question is answered, and the answer is saved
 
@@ -240,6 +243,9 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     (photos resized), so deleting the originals doesn't break it.
   - **Caption:** optional text shown in large type on the ringing screen, e.g. "Future
     you says thanks". It works with or without a background.
+- **About** (bottom of the start page, or Settings → About): version, privacy, links to
+  the source code and to report a problem, and **Donate**, which opens the
+  [Donate](#donate) section below in your browser.
 - **Settings** (button at the bottom of the start page):
   - **Appearance:** same as phone, Light, or Dark.
   - **Export backup…** first asks which check-ins to include (all are ticked) and, for
@@ -303,6 +309,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   right of its name, and two buttons:
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
     sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
+    The **test ring** is a practice run: it rings and runs every step, but nothing is
+    logged and the next real alarm still rings as scheduled.
   - **History** opens its last 30 days: logged / on-track counts, how often each question
     went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.
   Backup, CSV export and dark mode are under **Settings** at the bottom of the start page.
@@ -339,6 +347,8 @@ app/src/main/java/dev/gist/checkin/
   ScanActivity.kt    registers a code for a check-in
   MathGen.kt         math problem generator
   AlarmService.kt    plays sound/vibration, guards volume, brings the alarm back to the front, 60-min safety stop
+  AboutActivity.kt   About page: version, privacy, source code, Donate
+  Links.kt           the web pages the app opens (repository, donate, issues)
   AlarmScheduler.kt  schedules each check-in's alarm with AlarmManager.setAlarmClock
   Receivers.kt       alarm fired → start ringing; reboot/time change → reschedule
   Notif.kt           notification channels + full-screen alarm notification
@@ -349,3 +359,14 @@ app/src/main/java/dev/gist/checkin/
 
 The default check-ins and questions are in `Store.kt` (`DEFAULT_CHECKINS`). You can
 change all of it in the app.
+
+## Donate
+
+Gist is free, has no ads, and never will. If it's helped you stick to a habit and you'd
+like to say thanks, a donation keeps it maintained:
+
+<!-- Owner: replace the line below with your donation link, e.g. GitHub Sponsors,
+     Ko-fi or PayPal. The app's About → Donate button opens this section. -->
+- **Donation link coming soon.**
+
+Not into donating? A ⭐ on the repository, a bug report, or telling a friend helps too.

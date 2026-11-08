@@ -179,7 +179,7 @@ class CheckinEditActivity : BaseActivity() {
         col = section(page, "Try it")
         col.add(button("Test: ring in 10 seconds") {
             AlarmScheduler.scheduleTest(this, checkinId)
-            toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. (Answers are logged.)")
+            toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. Nothing is logged, and the next real alarm still rings.")
         }, dp(4))
 
         page.add(dangerButton("Delete this check-in") { confirmDelete(c) }, dp(24))

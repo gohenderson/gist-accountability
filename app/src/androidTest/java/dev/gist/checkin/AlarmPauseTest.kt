@@ -36,7 +36,7 @@ class AlarmPauseTest {
         AlarmService.pauseMs = 3_000
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(listOf(TestEnv.checkin("p", "Pause test", listOf(q))))
-        AlarmScheduler.scheduleTest(TestEnv.ctx, "p", 1_000)
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "p", 1_000, practice = false) // a real ring
         TestEnv.eventually(20_000) { assertTrue("alarm didn't start ringing", AlarmService.running) }
     }
 
