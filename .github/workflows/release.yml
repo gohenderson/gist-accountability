@@ -2,7 +2,8 @@ name: Release
 
 # Push a tag like v1.0.0 to build a signed APK and publish it as a GitHub release:
 #   git tag v1.0.0 && git push origin v1.0.0
-# Requires the signing secrets described in README.md ("Releases").
+# Requires the signing secrets in the "release" environment (README.md → Releases);
+# each run waits for approval under Actions before it can use them.
 
 on:
   push:
@@ -27,6 +28,9 @@ env:
 jobs:
   release:
     name: Signed release APK
+    # Signing secrets live in the "release" environment, which requires the repo
+    # owner's approval before any run can read them.
+    environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -57,7 +61,7 @@ jobs:
           [[ -n "$KEY_ALIAS" ]] || missing+=(ANDROID_KEY_ALIAS)
           [[ -n "$KEY_PASS" ]]  || missing+=(ANDROID_KEY_PASSWORD)
           if (( ${#missing[@]} )); then
-            msg="Missing repository secrets: ${missing[*]}. See README.md → Releases."
+            msg="Missing secrets in the release environment: ${missing[*]}. See README.md → Releases."
             echo "::error title=Signing not configured::$msg"
             echo "### ❌ Release not built: $msg" >> "$GITHUB_STEP_SUMMARY"
             exit 1

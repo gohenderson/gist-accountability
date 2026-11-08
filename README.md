@@ -38,6 +38,7 @@ Requires Android 10 or newer.
   git push origin v1.0.0
   ```
   You can also re-run a release for an existing tag from **Actions → Release → Run workflow**.
+  Each release run pauses until you approve it (see the signing key setup below).
 
 **When something fails:** compile errors appear as annotations on the run page and on
 the exact lines of code. The job summary shows Gradle's "What went wrong" section and
@@ -48,7 +49,7 @@ logs plus the lint and build reports.
 
 Android only installs an update if it's signed with the same key as the installed app,
 so releases need one permanent key. You create it once, on your computer, and store it
-as repository secrets. It never needs to be in the repo.
+as secrets in a protected `release` environment. It never needs to be in the repo.
 
 1. Create the key. `keytool` comes with Android Studio, in its `jbr/bin` folder.
    ```
@@ -58,9 +59,14 @@ as repository secrets. It never needs to be in the repo.
    It asks for a password and some name fields. The name fields can be anything.
 2. Base64-encode it:
    - macOS / Linux: `base64 < gist-release.jks | tr -d '\n' > gist-release.b64`
-   - Windows (PowerShell): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("gist-release.jks")) > gist-release.b64`
-3. On GitHub, open **Settings → Secrets and variables → Actions → New repository secret**
-   and add:
+   - Windows (PowerShell): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$PWD\gist-release.jks")) | Set-Content -NoNewline -Encoding ascii gist-release.b64`
+3. On GitHub, open **Settings → Environments → New environment** and name it `release`.
+   - Under **Deployment protection rules**, tick **Required reviewers**, add yourself, and
+     **Save protection rules**. Every release run then waits for you to approve it
+     (Actions → the run → **Review deployments**) before it can read the signing key.
+   - Optionally, under **Deployment branches and tags**, choose **Selected branches and
+     tags** and add a tag rule `v*`.
+   - Under **Environment secrets → Add environment secret**, add:
 
    | Secret | Value |
    |---|---|
@@ -68,6 +74,9 @@ as repository secrets. It never needs to be in the repo.
    | `ANDROID_KEYSTORE_PASSWORD` | the password you chose |
    | `ANDROID_KEY_ALIAS` | `gist` |
    | `ANDROID_KEY_PASSWORD` | the same password, unless you set a separate key password |
+
+   Add them **only** as environment secrets, not as repository secrets. Any workflow can
+   read repository secrets without approval.
 
 4. **Back up `gist-release.jks` and the password** somewhere safe, such as a password
    manager. If you lose them, future releases can't update the installed app, and you'd
