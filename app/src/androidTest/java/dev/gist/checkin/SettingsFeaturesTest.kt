@@ -358,9 +358,13 @@ class SoundAndBackgroundTest {
         ring(TestEnv.checkin("v", "Video").copy(background = Background(Background.VIDEO))) {
             Backgrounds.videoFile(TestEnv.ctx, "v").writeBytes(testVideoBytes())
         }
-        alarmScreen().use {
+        alarmScreen().use { scenario ->
             onView(tagged("ringing-video")).check(matches(isDisplayed()))
-            TestEnv.eventually(10_000) { assertTrue("video should be playing", CheckinActivity.videoPlaying) }
+            TestEnv.eventually(15_000) {
+                var playing = false
+                scenario.onActivity { playing = it.videoIsPlaying }
+                assertTrue("video should be playing", playing)
+            }
             // The alarm sound is still the one playing (the video is muted).
             assertTrue(AlarmService.running)
         }

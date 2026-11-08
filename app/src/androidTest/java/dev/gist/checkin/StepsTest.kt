@@ -11,7 +11,6 @@ import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.uiautomator.UiDevice
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.startsWith
 import org.junit.After
@@ -51,10 +50,9 @@ class StepsTest {
     fun stepsAreListedInTheirOrder() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Wake", listOf(q), mathCount = 2).copy(steps = listOf(Steps.QUESTIONS, Steps.MATH))))
         edit("c").use {
-            onView(tagged("step:questions")).perform(scrollTo())
-            onView(withText("1. Questions")).check(matches(isDisplayed()))
-            onView(withText("2. Math problems")).check(matches(isDisplayed()))
-            onView(withText(containsString("answer 1 question → solve 2 math"))).check(matches(isDisplayed()))
+            onView(withText("1. Questions")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("2. Math problems")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText(containsString("answer 1 question → solve 2 math"))).perform(scrollTo()).check(matches(isDisplayed()))
         }
     }
 
@@ -63,16 +61,37 @@ class StepsTest {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Wake", listOf(q), mathCount = 2, scanCode = "CODE")))
         edit("c").use {
             onView(tagged("step:questions")).perform(scrollTo())
+            onView(tagged("step:math")).perform(scrollTo())
             val handle = boundsOf("drag:questions")
             val top = boundsOf("step:math")
-            // Drag Questions (3rd) up past Math (1st).
-            UiDevice.getInstance(TestEnv.instrumentation)
-                .drag(handle.centerX(), handle.centerY(), handle.centerX(), top.top - 10, 120)
+            // Drag Questions (3rd) up past Math (1st), like a finger would.
+            dragVertically(handle.centerX(), handle.centerY(), top.top - 10)
             TestEnv.eventually {
                 assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), Steps.order(TestEnv.store.checkin("c")!!))
             }
             TestEnv.eventually { onView(withText("1. Questions")).check(matches(isDisplayed())) }
         }
+    }
+
+    /** Touch down, move in small steps (letting the list relayout), lift. */
+    private fun dragVertically(x: Int, fromY: Int, toY: Int) {
+        val inst = TestEnv.instrumentation
+        val start = android.os.SystemClock.uptimeMillis()
+        fun send(action: Int, y: Int) {
+            val ev = android.view.MotionEvent.obtain(start, android.os.SystemClock.uptimeMillis(), action, x.toFloat(), y.toFloat(), 0)
+            inst.sendPointerSync(ev)
+            ev.recycle()
+        }
+        send(android.view.MotionEvent.ACTION_DOWN, fromY)
+        val steps = 30
+        for (i in 1..steps) {
+            send(android.view.MotionEvent.ACTION_MOVE, fromY + (toY - fromY) * i / steps)
+            android.os.SystemClock.sleep(30)
+        }
+        android.os.SystemClock.sleep(200)
+        send(android.view.MotionEvent.ACTION_MOVE, toY)
+        send(android.view.MotionEvent.ACTION_UP, toY)
+        inst.waitForIdleSync()
     }
 
     @Test
@@ -95,7 +114,7 @@ class StepsTest {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Plain").copy(steps = listOf(Steps.SCAN))))
         edit("c").use {
             onView(withText("Not set up: register a code")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("step:scan")).perform(click())
+            onView(tagged("step:scan")).perform(scrollTo(), click())
             onView(tagged("register-code")).check(matches(isDisplayed()))
         }
     }

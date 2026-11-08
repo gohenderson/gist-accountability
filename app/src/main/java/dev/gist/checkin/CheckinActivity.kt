@@ -479,9 +479,8 @@ class CheckinActivity : BaseActivity() {
                     mp.setOnVideoSizeChangedListener { _, vw, vh -> cropToFill(tv, vw, vh) }
                     mp.setOnPreparedListener {
                         it.start()
-                        videoPlaying = true
                     }
-                    mp.setOnErrorListener { _, _, _ -> videoPlaying = false; true }
+                    mp.setOnErrorListener { _, _, _ -> true }
                     mp.prepareAsync()
                     video = mp
                 } catch (e: Exception) {
@@ -500,6 +499,10 @@ class CheckinActivity : BaseActivity() {
         return tv
     }
 
+    /** Is this screen's background video playing? (For tests.) */
+    val videoIsPlaying: Boolean
+        get() = try { video?.isPlaying == true } catch (e: IllegalStateException) { false }
+
     private fun cropToFill(tv: TextureView, vw: Int, vh: Int) {
         val w = tv.width.toFloat()
         val h = tv.height.toFloat()
@@ -511,7 +514,6 @@ class CheckinActivity : BaseActivity() {
     private fun releaseVideo() {
         val mp = video ?: return
         video = null
-        videoPlaying = false
         try { mp.stop() } catch (e: Exception) {}
         mp.release()
     }
@@ -686,10 +688,6 @@ class CheckinActivity : BaseActivity() {
         var timesShown = 0
             private set
 
-        /** True while a background video is playing on the ringing screen (for tests). */
-        @Volatile
-        var videoPlaying = false
-            private set
 
         private const val EXTRA_CHECKIN = "checkin"
         private const val EXTRA_DAY = "day"

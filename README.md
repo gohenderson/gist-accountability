@@ -1,8 +1,8 @@
 # Gist — an un-dismissable daily diet check-in
 
 Android alarms that ring on your schedule and won't stop until you complete the check-in's
-steps: **solve math problems → scan a QR code / barcode → answer yes/no questions**
-about what you ate. Each step is optional, so a check-in can be a plain hard-to-dismiss
+steps: **solve math problems, scan a QR code / barcode, answer yes/no questions**
+about what you ate, in whatever order you choose. Each step is optional, so a check-in can be a plain hard-to-dismiss
 wake-up alarm, a diet survey, or both. You can have as many check-ins as you like. It keeps a simple log so you can see the *gist* of your
 diet without counting calories.
 
@@ -14,7 +14,7 @@ diet without counting calories.
   on purpose: 3.x needs Java 11 library methods that Android 10–12 don't have.
 - **No internet permission.** Nothing ever leaves your phone. Answers live in the app's
   private storage, and the only way out is the **Export CSV** button.
-- About 4,400 lines of Kotlin in 25 files, with no generated code.
+- About 4,900 lines of Kotlin in 28 files, with no generated code.
 
 <p>
 <img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/01-start.png" width="200" alt="Start page">
@@ -146,14 +146,21 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     question is answered; a wrong math answer gives a new problem; steps run in order;
     two waiting check-ins run back to back; with no camera, the scan step offers the math
     fallback; a check-in with no steps only needs Dismiss
+  - steps: they're listed in their order; dragging Questions above Math reorders them; a
+    custom order (questions, then math) is what the alarm runs; a step that isn't set up
+    (scan without a code) says so and is skipped; adding Math opens its page and the
+    difficulty saves; the scan spot name saves; removing a step keeps the others' order
   - edit page: rename saves as you type; add and reorder questions; turning the alarm
     off/on cancels and reschedules the real alarm; Weekdays and Monthly-on-the-1st
     rules save and move the real alarm to the right day; delete
   - History: correct stats, and fixing a day from the grid updates them
   - saving and loading, including data from the first version
-  - backup: YAML export → import on a "fresh phone" restores check-ins, answers, slideshow
-    photos and video; old JSON backups and hand-edited YAML import; bad files are
-    rejected without changing anything
+  - backup: export → import on a "fresh phone" restores check-ins, step order, answers,
+    slideshow photos and video; only the chosen check-ins (and history) are exported;
+    importing a check-in you already have can update it (history merged or kept), replace
+    it (history too, or none) or add a copy ("Wake (imported)"); unchosen check-ins are
+    left alone; the export and import dialogs pass on what you tick; hand-edited YAML
+    imports; bad files are rejected without changing anything
   - Light and Dark override the phone's setting
   - a real alarm plays the check-in's chosen sound; Silent plays nothing; a missing sound
     falls back to a default; a photo, a cycling slideshow and a playing (muted) video show
@@ -235,14 +242,23 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     you says thanks". It works with or without a background.
 - **Settings** (button at the bottom of the start page):
   - **Appearance:** same as phone, Light, or Dark.
-  - **Backup:** *Export backup…* saves one `.yaml` file with all check-ins, their
-    answers and backgrounds (photos and videos, as base64). It's readable and you can
-    edit it by hand (times are `"HH:mm"`; a comment at the top says how to import it).
-    Old `.json` backups still import, since JSON is valid YAML. On a new phone, install Gist and use *Import
-    backup…*. It replaces everything on that phone (after a confirmation) and sets the
-    alarms. A bad or unrelated file is rejected without changing anything. Alarm sounds
-    are saved by reference, so if the new phone lacks a sound, that check-in uses the
-    default alarm sound.
+  - **Export backup…** first asks which check-ins to include (all are ticked) and, for
+    each, whether to **include its history**. It saves one `.yaml` file with their
+    settings, backgrounds (photos and videos, as base64) and the history you chose. It's
+    readable and you can edit it by hand (times are `"HH:mm"`; a comment at the top says
+    how to import it). With one check-in the file is named after it, which is handy for
+    sharing a check-in.
+  - **Import backup…** lists the check-ins in the file. For each one, choose whether to
+    import it and whether to **import its history**. If you already have it (same
+    check-in, or same name), choose what happens:
+    - **Update it:** settings and background from the file, your history kept (plus the
+      file's, if you import it; the file wins for the same time on the same day);
+    - **Replace it:** the file's version, history included; yours is deleted;
+    - **Keep it and add this as a copy**, named e.g. "Wake (imported)".
+    Check-ins you don't pick, and ones on the phone that aren't in the file, are left
+    alone. Alarms are set right away. A bad or unrelated file is rejected without changing
+    anything. Alarm sounds are saved by reference, so if the new phone lacks a sound, that
+    check-in uses the default alarm sound.
   - **Export answers (CSV)…**, for spreadsheets.
 - **Pause while you work:** While it rings, the alarm screen shows one big **Start
   check-in** button. Tapping it silences the sound and vibration for 30 seconds and shows
@@ -259,15 +275,20 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   opening the app takes you straight back to the questions.
 - **Safety valve:** After 60 minutes the sound stops so it can't drain your battery.
   The check-in stays pending as a sticky notification until you answer.
-- **Steps (per check-in, always in this order):**
-  1. **Math:** 0–10 problems at one of four levels: Easy `47 + 38`, Medium
-     `47 × 6 + 23`, Hard `47 × 38 + 512`, Very hard `347 × 38 + 47 × 26`. A wrong
-     answer gives you a new problem.
-  2. **Scan:** Register any QR code or product barcode with the **Scan** button on the check-in's page
-     and name the spot (e.g. "Bathroom sink"). When the alarm rings, only that exact code
-     stops it. If you can't scan (you're traveling, the camera fails), a **"Can't scan?"**
-     button appears after 2 minutes. It swaps the scan for 5 very hard problems.
-  3. **Questions:** the yes/no survey. These are the only answers that get logged.
+- **Steps:** On a check-in's page, **When it rings** lists its steps in the order they
+  run. **+ Add step** picks a type; **drag a step by its ≡ handle** above or below the
+  others to change the order; **tap a step** to open its own page, where you set it up or
+  remove it. A step that isn't set up yet (a scan without a code, questions without any)
+  is shown in orange and skipped when the alarm rings. The types:
+  - **Math problems:** 1–10 problems at one of four levels: Easy `47 + 38`, Medium
+    `47 × 6 + 23`, Hard `47 × 38 + 512`, Very hard `347 × 38 + 47 × 26`. A wrong answer
+    gives you a new problem.
+  - **Scan a code:** **Register a code** (any QR code or product barcode) and name the
+    spot (e.g. "Bathroom sink"). When the alarm rings, only that exact code stops it. If
+    you can't scan (you're traveling, the camera fails), a **"Can't scan?"** button
+    appears after 2 minutes. It swaps the scan for 5 very hard problems.
+  - **Questions:** the yes/no survey: add, edit, reorder and delete questions. These are
+    the only answers that get logged.
   A check-in with no steps at all just shows a Dismiss button.
 - **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
   **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
@@ -280,8 +301,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
   right of its name, and two buttons:
-  - **Edit** opens its own page: name, on/off, times, "previous day" option, math, scan,
-    questions, a 10-second test, and delete. Changes save as you make them.
+  - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
+    sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
   - **History** opens its last 30 days: logged / on-track counts, how often each question
     went off track, and a ✓/✗ grid. Tap a day to fill it in or fix it.
   Backup, CSV export and dark mode are under **Settings** at the bottom of the start page.
@@ -310,7 +331,10 @@ app/src/main/java/dev/gist/checkin/
   Backgrounds.kt     stores the background photos and video in the app's private files
   Backup.kt / Yaml.kt  backup file export/import (YAML via SnakeYAML Engine)
   CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
-  CheckinActivity.kt the alarm screen: runs math → scan → questions, then stops alarm
+  CheckinActivity.kt the alarm screen: runs the steps in their order, then stops the alarm
+  Steps.kt           step types, their order, and what each one needs
+  StepEditActivity.kt one step's own page (math level, scan code, questions)
+  ReorderList.kt     the drag-to-reorder list on the edit page
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
   ScanActivity.kt    registers a code for a check-in
   MathGen.kt         math problem generator
