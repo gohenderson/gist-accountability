@@ -22,12 +22,20 @@ object TestEnv {
 
     fun today(): String = Days.today()
 
+    /** Screen on, unlocked, no system dialog in front: otherwise test screens never get focus. */
+    fun readyDevice() {
+        shell("input keyevent KEYCODE_WAKEUP")
+        shell("wm dismiss-keyguard")
+        shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+    }
+
     /** Wipe all app state, cancel alarms, stop any ringing, then install the given state. */
     fun reset(
         checkins: List<Checkin>,
         pending: List<Pending> = emptyList(),
         entries: Map<String, Map<String, Boolean>> = emptyMap(),
     ) {
+        readyDevice()
         Store(ctx).checkins.forEach { AlarmScheduler.cancel(ctx, it.id) }
         ctx.stopService(Intent(ctx, AlarmService::class.java))
         ctx.getSystemService(NotificationManager::class.java).cancelAll()

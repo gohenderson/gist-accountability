@@ -21,6 +21,19 @@ for _ in $(seq 1 90); do
 done
 echo "Android $(adb shell getprop ro.build.version.release | tr -d '\r'), $(adb shell wm size | tr -d '\r')"
 
+# A freshly booted emulator sometimes shows a system dialog (e.g. "System UI isn't
+# responding") or sits on the lock screen. Either one keeps test screens from getting
+# focus, so clear them first and log what has focus.
+echo "::group::Prepare device"
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell wm dismiss-keyguard || true
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null || true
+adb shell input keyevent KEYCODE_HOME || true
+sleep 2
+adb shell settings put system screen_off_timeout 1800000 || true
+echo "Focus before tests: $(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')"
+echo "::endgroup::"
+
 adb shell rm -rf /data/local/tmp/gist-test-failures || true
 adb logcat -c || true
 adb logcat -v time > "$LOGS/logcat.txt" 2>&1 &
@@ -33,6 +46,9 @@ bash "$SCRIPTS/run-gradle.sh" connectedDebugAndroidTest
 status=$?
 set -e
 trap 'on_crash "${LINENO}" "${BASH_COMMAND}" "$?"' ERR
+
+echo "Focus after tests: $(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')"
+grep -E "ANR in|isn't responding" "$LOGS/logcat.txt" | head -n 5 || true
 
 adb pull /data/local/tmp/gist-test-failures "$LOGS/" > /dev/null 2>&1 || true
 if ls "$LOGS"/gist-test-failures/*.png > /dev/null 2>&1; then
