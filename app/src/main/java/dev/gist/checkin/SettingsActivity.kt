@@ -284,8 +284,19 @@ class SettingsActivity : BaseActivity() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
         // Only accept documents from the system file picker (content:// from another app's
-        // provider), never a file path or one of this app's own providers.
+        // provider), never a file path, one of this app's own providers, or anything whose
+        // normalized path points into private storage.
         if (uri.scheme != "content" || uri.authority.orEmpty().startsWith(packageName)) {
+            toast("That file location isn't supported.")
+            return
+        }
+        val path = uri.path
+        if (path.isNullOrBlank()) {
+            toast("That file location isn't supported.")
+            return
+        }
+        val normalized = java.nio.file.FileSystems.getDefault().getPath(path).normalize()
+        if (normalized.startsWith("/data") || normalized.any { it.toString() == ".." }) {
             toast("That file location isn't supported.")
             return
         }

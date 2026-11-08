@@ -451,7 +451,7 @@ class CheckinEditActivity : BaseActivity() {
             val clip = data.clipData
             if (clip != null) for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri)
             else data.data?.let { add(it) }
-        }.filter { it.scheme == "content" }
+        }.mapNotNull { SafeUri.picked(this, it) }
         if (uris.isEmpty()) return
         toast(if (request == REQ_VIDEO) "Preparing video…" else "Preparing photo${if (uris.size > 1) "s" else ""}…")
         if (request == REQ_IMAGES && uris.size > Backgrounds.MAX_PHOTOS) {
