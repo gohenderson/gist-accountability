@@ -25,7 +25,7 @@ import android.widget.Toast
 /** Everything about one check-in: name, schedule, steps (math, scan, questions), test, delete. */
 class CheckinEditActivity : Activity() {
     private lateinit var store: Store
-    private lateinit var id: String
+    private lateinit var checkinId: String
     private var scroll: ScrollView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,20 +36,20 @@ class CheckinEditActivity : Activity() {
             finish()
             return
         }
-        id = extra
+        checkinId = extra
     }
 
     override fun onResume() {
         super.onResume()
-        if (!::id.isInitialized) return
-        if (store.checkin(id) == null) { finish(); return } // deleted elsewhere
+        if (!::checkinId.isInitialized) return
+        if (store.checkin(checkinId) == null) { finish(); return } // deleted elsewhere
         render()
     }
 
     // ---------------------------------------------------------------- layout
 
     private fun render() {
-        val c = store.checkin(id) ?: return finish()
+        val c = store.checkin(checkinId) ?: return finish()
         val oldY = scroll?.scrollY ?: 0
         val col = column()
 
@@ -68,7 +68,7 @@ class CheckinEditActivity : Activity() {
                 override fun afterTextChanged(s: Editable?) {
                     val n = s?.toString()?.trim().orEmpty()
                     if (n.isNotEmpty()) {
-                        store.updateCheckin(id) { it.copy(name = n) }
+                        store.updateCheckin(checkinId) { it.copy(name = n) }
                         title.text = n
                     }
                 }
@@ -120,7 +120,7 @@ class CheckinEditActivity : Activity() {
         // Test & delete
         section(col, "Try it")
         col.add(button("Test: ring in 10 seconds") {
-            AlarmScheduler.scheduleTest(this, id)
+            AlarmScheduler.scheduleTest(this, checkinId)
             toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. (Answers are logged.)")
         }, dp(4))
 
@@ -148,7 +148,7 @@ class CheckinEditActivity : Activity() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         if (index > 0) r.addView(button("↑") { moveQuestionUp(index) })
-        val c = store.checkin(id)
+        val c = store.checkin(checkinId)
         r.addView(button("Edit") { if (c != null) editQuestion(c, q) })
         return r
     }
@@ -157,8 +157,8 @@ class CheckinEditActivity : Activity() {
 
     /** Update this check-in, re-arm its alarm, redraw. */
     private fun change(f: (Checkin) -> Checkin) {
-        store.updateCheckin(id, f)
-        store.checkin(id)?.let { AlarmScheduler.schedule(this, it) }
+        store.updateCheckin(checkinId, f)
+        store.checkin(checkinId)?.let { AlarmScheduler.schedule(this, it) }
         render()
     }
 
@@ -177,8 +177,8 @@ class CheckinEditActivity : Activity() {
             .setTitle("Delete \"${c.name}\"?")
             .setMessage("Its alarm, steps and questions are removed. Answers it already logged stay on the phone but won't show in history or the CSV.")
             .setPositiveButton("Delete") { _, _ ->
-                AlarmScheduler.cancel(this, id)
-                store.checkins = store.checkins.filter { it.id != id }
+                AlarmScheduler.cancel(this, checkinId)
+                store.checkins = store.checkins.filter { it.id != checkinId }
                 store.prunePending()
                 finish()
             }
@@ -247,7 +247,7 @@ class CheckinEditActivity : Activity() {
     }
 
     private fun finishRegister(code: String) {
-        val c = store.checkin(id) ?: return
+        val c = store.checkin(checkinId) ?: return
         val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
         val where = EditText(this).apply {
             hint = "Where is it? e.g. Bathroom sink"
