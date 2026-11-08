@@ -1,6 +1,7 @@
 package dev.gist.checkin
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
@@ -162,7 +163,7 @@ class AlarmService : Service() {
      * again (on every tap or keystroke) restarts the countdown. When it runs out, ringing
      * resumes, even if the alarm screen isn't open.
      */
-    fun pauseFor(ms: Long = pauseMs) {
+    fun pauseFor(ms: Long = pauseMs(this)) {
         if (!ringing) return
         pausedUntil = SystemClock.elapsedRealtime() + ms
         if (!paused) {
@@ -245,9 +246,12 @@ class AlarmService : Service() {
         var currentSound: String? = null
             private set
 
-        /** How long the alarm stays quiet after the last tap. Tests shorten it. */
+        /** Tests set a short pause here; otherwise it's the Settings choice (default 45 s). */
         @Volatile
-        var pauseMs = 30_000L
+        var testPauseMs: Long? = null
+
+        /** How long the alarm stays quiet after the last tap. */
+        fun pauseMs(context: Context): Long = testPauseMs ?: Store(context).pauseSeconds * 1000L
 
         /** True while the alarm is active (its own notification is showing). */
         @Volatile
