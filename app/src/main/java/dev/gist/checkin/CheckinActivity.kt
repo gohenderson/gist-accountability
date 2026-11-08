@@ -173,7 +173,7 @@ class CheckinActivity : BaseActivity() {
     private fun updateBar() {
         val label = barLabel ?: return
         val bar = barProgress ?: return
-        val total = AlarmService.pauseMs.coerceAtLeast(1)
+        val total = AlarmService.pauseMs(this).coerceAtLeast(1)
         val left = (AlarmService.pausedUntil - SystemClock.elapsedRealtime()).coerceIn(0, total)
         val secs = ((left + 999) / 1000).toInt()
         bar.progress = (left * 1000 / total).toInt()
@@ -386,6 +386,7 @@ class CheckinActivity : BaseActivity() {
         val fg = if (bgView != null) Color.WHITE else colorText
         val soft = if (bgView != null) 0xCCFFFFFF.toInt() else colorMuted
 
+        // Clock, name and caption at the top; the buttons at the bottom, out of the picture's way.
         val col = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
         col.add(label(LocalTime.now().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)), 64f, bold = true, color = fg).apply {
             gravity = Gravity.CENTER
@@ -404,6 +405,9 @@ class CheckinActivity : BaseActivity() {
                 gravity = Gravity.CENTER
             }, dp(4))
         }
+        col.addView(View(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+            topMargin = dp(32) // the picture shows through here
+        })
         col.add(
             primaryButton("Start check-in") {
                 AlarmService.instance?.pauseFor()
@@ -411,21 +415,23 @@ class CheckinActivity : BaseActivity() {
             }.apply {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
                 minHeight = dp(88)
+                tag = "start-checkin"
             },
-            dp(56)
+            0
         )
         if (target.practice) col.add(endTestButton(), dp(12))
         col.add(
-            label("Pauses the alarm for ${AlarmService.pauseMs / 1000} seconds. Every tap restarts the countdown; " +
+            label("Pauses the alarm for ${AlarmService.pauseMs(this) / 1000} seconds. Every tap restarts the countdown; " +
                 "if it runs out, the alarm rings again.", 13f, color = soft).apply { gravity = Gravity.CENTER },
             dp(14)
         )
-        setScreen(col, withBar = false, background = bgView)
+        setScreen(col, withBar = false, background = bgView, fill = true)
     }
 
     /** Scrolling content, with the countdown bar fixed above it while the alarm is paused. */
-    private fun setScreen(content: View, withBar: Boolean, background: View? = null) {
+    private fun setScreen(content: View, withBar: Boolean, background: View? = null, fill: Boolean = false) {
         val sv = ScrollView(this).apply {
+            isFillViewport = fill // lets the content's spacer push the buttons to the bottom
             clipToPadding = false
             setPadding(dp(20), dp(20), dp(20), dp(28))
             addView(content)

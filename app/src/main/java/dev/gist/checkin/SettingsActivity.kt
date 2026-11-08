@@ -57,6 +57,28 @@ class SettingsActivity : BaseActivity() {
         look.add(group, dp(10))
         col.add(look, dp(20))
 
+        // Alarm
+        val alarm = card()
+        alarm.add(sectionTitle("While you check in"))
+        alarm.add(label("After each tap, the alarm stays quiet for:", 15f), dp(6))
+        val pauseGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val pauseIds = Store.PAUSE_CHOICES.mapIndexed { i, sec ->
+            val rb = choiceTile("$sec s").apply {
+                id = View.generateViewId()
+                tag = "pause:$sec"
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
+                isChecked = store.pauseSeconds == sec
+            }
+            pauseGroup.addView(rb, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (i > 0) marginStart = dp(8)
+            })
+            rb.id to sec
+        }.toMap()
+        pauseGroup.setOnCheckedChangeListener { _, checkedId -> pauseIds[checkedId]?.let { store.pauseSeconds = it } }
+        alarm.add(pauseGroup, dp(10))
+        alarm.add(muted("If the countdown runs out before you finish, the alarm rings again. Applies to every check-in.", 13f), dp(8))
+        col.add(alarm, dp(12))
+
         // Backup
         val backup = card()
         backup.add(sectionTitle("Backup"))

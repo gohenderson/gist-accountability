@@ -159,6 +159,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     long enough run; the step watcher runs only while needed (or says the phone has no step
     sensor); choosing "finish running" and a minimum on the edit page saves them
   - a test ring can be stopped part-way with End test, logging nothing
+  - the pause after each tap defaults to 45 s and can be changed in Settings; on the
+    ringing screen, Start check-in sits in the bottom half
   - edit page: rename saves as you type; add and reorder questions; turning the alarm
     off/on cancels and reschedules the real alarm; Weekdays and Monthly-on-the-1st
     rules save and move the real alarm to the right day; delete
@@ -307,10 +309,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     anything. Alarm sounds are saved by reference, so if the new phone lacks a sound, that
     check-in uses the default alarm sound.
   - **Export answers (CSV)…**, for spreadsheets.
-- **Pause while you work:** While it rings, the alarm screen shows one big **Start
-  check-in** button. Tapping it silences the sound and vibration for 30 seconds and shows
+- **Pause while you work:** While it rings, the alarm screen shows the time, the check-in's
+  name and caption at the top and one big **Start check-in** button at the bottom, so the
+  background picture stays visible. Tapping it silences the sound and vibration and shows
   the steps, with a countdown bar fixed at the top of the screen. Every tap or keystroke
-  restarts the 30 seconds. If the countdown runs out, even with the app in the
+  restarts the countdown. Its length is a setting (**Settings → While you check in**):
+  15, 30, 45 (the default) or 60 seconds. If the countdown runs out, even with the app in the
   background, the alarm rings again and the Start screen comes back. Your progress
   (solved problems, answers) is kept.
 - **Can't dismiss it:** The check-in screen shows over the lock screen, the Back button

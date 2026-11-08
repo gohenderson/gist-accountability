@@ -234,6 +234,11 @@ class Store(context: Context) {
         get() = prefs.getInt(K_THEME, THEME_SYSTEM)
         set(v) { prefs.edit().putInt(K_THEME, v).commit() }
 
+    /** How long the alarm stays quiet after each tap while you work through a check-in. */
+    var pauseSeconds: Int
+        get() = prefs.getInt(K_PAUSE, DEFAULT_PAUSE).takeIf { it in PAUSE_CHOICES } ?: DEFAULT_PAUSE
+        set(v) { prefs.edit().putInt(K_PAUSE, v).commit() }
+
     // ------------------------------------------------------------ backup support
 
     /** All results as stored (day → check-in → time → result). */
@@ -350,6 +355,11 @@ class Store(context: Context) {
         private const val K_PENDING = "pendingList"
         private const val K_ENTRIES = "results"
         private const val K_THEME = "theme"
+        private const val K_PAUSE = "pauseSeconds"
+
+        const val DEFAULT_PAUSE = 45
+
+        val PAUSE_CHOICES = listOf(15, 30, 45, 60)
 
         const val THEME_SYSTEM = 0
         const val THEME_LIGHT = 1

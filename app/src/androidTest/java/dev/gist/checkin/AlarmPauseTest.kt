@@ -33,7 +33,7 @@ class AlarmPauseTest {
 
     @Before
     fun setUp() {
-        AlarmService.pauseMs = 3_000
+        AlarmService.testPauseMs = 3_000
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(listOf(TestEnv.checkin("p", "Pause test", listOf(q))))
         AlarmScheduler.scheduleTest(TestEnv.ctx, "p", 1_000, practice = false) // a real ring
@@ -42,7 +42,7 @@ class AlarmPauseTest {
 
     @After
     fun tearDown() {
-        AlarmService.pauseMs = 30_000
+        AlarmService.testPauseMs = null
         TestEnv.reset(emptyList())
     }
 
@@ -65,7 +65,7 @@ class AlarmPauseTest {
 
     @Test
     fun eachTapRestartsTheCountdown() {
-        AlarmService.pauseMs = 6_000 // roomier than 3 s: CI emulators can be slow to respond
+        AlarmService.testPauseMs = 6_000 // roomier than 3 s: CI emulators can be slow to respond
         openAlarmScreen().use {
             onView(withText("Start check-in")).perform(click())
             SystemClock.sleep(2_500) // well into the countdown, with time to spare
@@ -93,5 +93,59 @@ class AlarmPauseTest {
         }
         TestEnv.eventually { assertFalse("alarm should stop after the check-in", AlarmService.running) }
         assertEquals(mapOf("p1" to false), TestEnv.store.entry(Days.forAlarmNow(false)))
+    }
+}
+
+/** The pause length is a setting (15 / 30 / 45 / 60 s, 45 by default). */
+@RunWith(AndroidJUnit4::class)
+class PauseSettingTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
+    @After
+    fun tearDown() {
+        TestEnv.store.pauseSeconds = Store.DEFAULT_PAUSE
+        TestEnv.reset(emptyList())
+    }
+
+    @Test
+    fun defaultsTo45AndCanBeChangedInSettings() {
+        TestEnv.reset(emptyList())
+        TestEnv.store.pauseSeconds = Store.DEFAULT_PAUSE
+        assertEquals(45_000L, AlarmService.pauseMs(TestEnv.ctx))
+        ActivityScenario.launch<SettingsActivity>(Intent(TestEnv.ctx, SettingsActivity::class.java)).use {
+            onView(tagged("pause:45")).perform(androidx.test.espresso.action.ViewActions.scrollTo())
+                .check(matches(androidx.test.espresso.matcher.ViewMatchers.isChecked()))
+            onView(tagged("pause:15")).perform(androidx.test.espresso.action.ViewActions.scrollTo(), click())
+        }
+        assertEquals(15, TestEnv.store.pauseSeconds)
+        assertEquals(15_000L, AlarmService.pauseMs(TestEnv.ctx))
+    }
+}
+
+/** The ringing screen keeps its buttons low, so the background picture shows. */
+@RunWith(AndroidJUnit4::class)
+class RingingLayoutTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
+    @After
+    fun tearDown() = TestEnv.reset(emptyList())
+
+    @Test
+    fun startCheckinSitsInTheBottomPartOfTheScreen() {
+        TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        TestEnv.reset(listOf(TestEnv.checkin("l", "Layout", listOf(Question("q", "Q?")))))
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "l", 1_000)
+        TestEnv.eventually(20_000) { assertTrue(AlarmService.running) }
+        ActivityScenario.launch<CheckinActivity>(Intent(TestEnv.ctx, CheckinActivity::class.java)).use {
+            onView(tagged("start-checkin")).check { v, e ->
+                if (e != null) throw e
+                val xy = IntArray(2)
+                v.getLocationOnScreen(xy)
+                val screen = v.rootView.height
+                assertTrue("button top ${xy[1]} should be in the bottom half of $screen", xy[1] > screen / 2)
+            }
+        }
     }
 }
