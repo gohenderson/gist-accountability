@@ -131,6 +131,27 @@ jobs:
           fi
           echo "### 📎 Attached ${#files[@]} screenshots to [$TAG](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Publish to the screenshots branch (shown in the README)
+        if: env.TAG != '' || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(screenshots/*.png)
+          (( ${#files[@]} )) || { echo "No screenshots to publish."; exit 0; }
+          label="${TAG:-main @ ${GITHUB_SHA::7}}"
+          tmp="$(mktemp -d)"
+          cp "${files[@]}" "$tmp/"
+          cd "$tmp"
+          printf '# Screenshots\n\nLatest: %s\n' "$label" > README.md
+          git init -q -b screenshots
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Screenshots: $label"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots
+          echo "Published ${#files[@]} screenshots to the screenshots branch."
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v7

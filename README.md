@@ -14,6 +14,13 @@ diet without counting calories.
   private storage, and the only way out is the **Export CSV** button.
 - About 1,900 lines of Kotlin in 12 files. You can read all of it in one sitting.
 
+<p>
+<img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/01-start.png" width="200" alt="Start page">
+<img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/04-alarm-math.png" width="200" alt="Alarm: math">
+<img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/05-alarm-questions.png" width="200" alt="Alarm: questions">
+<img src="https://raw.githubusercontent.com/gohenderson/gist-accountability/screenshots/02-history.png" width="200" alt="History">
+</p>
+
 ## Build & install
 
 1. Install [Android Studio](https://developer.android.com/studio).
