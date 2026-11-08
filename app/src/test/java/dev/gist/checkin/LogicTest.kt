@@ -298,12 +298,4 @@ class RepeatTest {
         assertEquals("monthly on the 2nd, 3rd, 11th and 22nd", Repeat.monthly(setOf(2, 3, 11, 22)).describe())
         assertEquals("every day", Repeat.weekly((1..7).toSet()).describe())
     }
-
-    @Test
-    fun repeatSurvivesSavingAndLoading() {
-        for (r in listOf(Repeat.EVERY_DAY, Repeat.weekly(setOf(1, 3, 5)), Repeat.monthly(setOf(1, Repeat.LAST_DAY)))) {
-            assertEquals(r, Repeat.fromJson(r.toJson()))
-        }
-        assertEquals(Repeat.EVERY_DAY, Repeat.fromJson(null))
-    }
 }

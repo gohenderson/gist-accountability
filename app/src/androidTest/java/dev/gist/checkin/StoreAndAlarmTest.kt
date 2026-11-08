@@ -41,9 +41,18 @@ class StoreTest {
             id = "x", name = "Starting the Day", times = listOf(AlarmTime(6, 45), AlarmTime(18, 0)), enabled = false,
             aboutYesterday = true, questions = listOf(Question("a", "A?", yesIsGood = true)),
             mathCount = 3, mathLevel = 4, scanCode = "ABC-123", scanLabel = "Sink",
+            repeat = Repeat.monthly(setOf(1, Repeat.LAST_DAY)),
         )
         TestEnv.store.checkins = listOf(c)
         assertEquals(listOf(c), Store(TestEnv.ctx).checkins)
+    }
+
+    @Test
+    fun repeatRulesRoundTrip() {
+        for (r in listOf(Repeat.EVERY_DAY, Repeat.weekly(setOf(1, 3, 5)), Repeat.monthly(setOf(1, Repeat.LAST_DAY)))) {
+            assertEquals(r, Repeat.fromJson(r.toJson()))
+        }
+        assertEquals(Repeat.EVERY_DAY, Repeat.fromJson(null))
     }
 
     @Test
