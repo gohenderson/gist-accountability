@@ -164,7 +164,10 @@ def resolved_deps(files):
 
 
 def check_osv(findings, files):
-    coords = resolved_deps(files)
+    """Returns ([(coord, vuln id, where)], count). 'where' is 'app' or 'build tools only'."""
+    build_only = resolved_deps([f for f in files if "buildscript" in f])
+    in_app = set(resolved_deps([f for f in files if "buildscript" not in f]))
+    coords = sorted(set(build_only) | in_app)
     if not coords:
         return [], 0
     vulns = []
@@ -179,7 +182,8 @@ def check_osv(findings, files):
             results = json.loads(r.read())["results"]
         for (g, a, v), res in zip(chunk, results):
             for vuln in res.get("vulns", []) or []:
-                vulns.append((f"{g}:{a}:{v}", vuln["id"]))
+                where = "app / tests" if (g, a, v) in in_app else "build tools only (not in the APK)"
+                vulns.append((f"{g}:{a}:{v}", vuln["id"], where))
                 findings.append(f"Vulnerability {vuln['id']} in {g}:{a}:{v}")
     return vulns, len(coords)
 
@@ -231,7 +235,7 @@ def main():
     elif not scanned:
         lines.append("No resolved dependency list was provided.")
     elif vulns:
-        lines += [f"- **{vid}** in `{coord}`: https://osv.dev/vulnerability/{vid}" for coord, vid in vulns]
+        lines += [f"- **{vid}** in `{coord}` ({where}): https://osv.dev/vulnerability/{vid}" for coord, vid, where in vulns]
     else:
         lines.append(f"None in {scanned} resolved dependencies.")
     lines += ["", "## Code scanning (CodeQL)", ""]

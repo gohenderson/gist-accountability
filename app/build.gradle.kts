@@ -1,8 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("com.android.application") // AGP 9 has Kotlin support built in
 }
 
 // Release signing comes from environment variables (set by the release workflow from
@@ -11,7 +10,7 @@ val signingStoreFile: String? = System.getenv("SIGNING_STORE_FILE")
 
 android {
     namespace = "dev.gist.checkin"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.gist.checkin"
@@ -72,14 +71,14 @@ kotlin {
 dependencies {
     // The only dependency: ZXing's pure-Java barcode decoder (Apache-2.0,
     // https://github.com/zxing/zxing). No network access, no Google Play services.
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // Test-only libraries: used to build and run the tests, never included in the app APK.
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.1")
 }

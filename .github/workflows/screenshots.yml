@@ -24,7 +24,7 @@ permissions:
   contents: write   # to attach screenshots to a release
 
 env:
-  GRADLE_VERSION: "8.14.3"
+  GRADLE_VERSION: "9.9.0"
   TAG: ${{ inputs.tag }}
 
 jobs:
@@ -34,14 +34,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout app (the release tag, or this branch)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       # Scripts and the debug-only test manifest come from this workflow's commit, so
       # releases tagged before they existed can still get screenshots.
       - name: Checkout screenshot tooling
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           path: ci
@@ -58,13 +58,13 @@ jobs:
           fi
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: screenshots/*.png
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots-logs
           path: |

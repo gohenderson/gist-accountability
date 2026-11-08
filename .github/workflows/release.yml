@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GRADLE_VERSION: "8.14.3"
+  GRADLE_VERSION: "9.9.0"
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -90,13 +90,13 @@ jobs:
           fi
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
@@ -154,7 +154,7 @@ jobs:
 
       - name: Upload logs and reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: release-logs
           path: |
