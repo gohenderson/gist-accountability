@@ -2,9 +2,7 @@ package dev.gist.checkin
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.NotificationManager
-import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,38 +11,24 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.InputType
-import android.text.format.DateFormat
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
-import android.widget.NumberPicker
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TableLayout
 import android.widget.TableRow
 import android.widget.TextView
 import android.widget.Toast
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 
 /** Check-in settings, question editors, and history. */
 class MainActivity : Activity() {
     private lateinit var store: Store
     private var scroll: ScrollView? = null
-    private var registeringFor: String? = null // check-in waiting for a scanned code
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
-        registeringFor = savedInstanceState?.getString(STATE_REGISTERING)
         Notif.ensureChannels(this)
         AlarmScheduler.scheduleAll(this)
         if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
@@ -58,11 +42,6 @@ class MainActivity : Activity() {
         store.prunePending()
         if (store.pending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(STATE_REGISTERING, registeringFor)
     }
 
     override fun onRequestPermissionsResult(
@@ -86,8 +65,12 @@ class MainActivity : Activity() {
 
         setupWarnings(col)
 
-        checkins.forEach { checkinCard(col, it) }
-        col.add(button("+ Add check-in") { addCheckin() }, dp(20))
+        col.add(label("Check-ins", 24f, bold = true), dp(28))
+        col.add(button("+ Add check-in") { addCheckin() }, dp(8))
+        checkins.forEach { checkinRow(col, it) }
+        if (checkins.isEmpty()) {
+            col.add(label("No check-ins yet.", 14f).apply { setTextColor(COLOR_MUTED) }, dp(8))
+        }
 
         if (checkins.isNotEmpty()) {
             col.add(label("Last 30 days", 24f, bold = true), dp(36))
@@ -110,41 +93,19 @@ class MainActivity : Activity() {
         sv.post { sv.scrollTo(0, oldY) }
     }
 
-    private fun checkinCard(col: LinearLayout, c: Checkin) {
-        col.add(label(c.name, 24f, bold = true), dp(32))
-
-        val sw = Switch(this).apply {
-            text = "Ring daily"
-            textSize = 17f
-            isChecked = c.enabled
-            setOnCheckedChangeListener { _, on -> change(c.id) { it.copy(enabled = on) } }
-        }
-        col.add(sw, dp(4))
-
-        val status = buildString {
-            append(if (c.enabled) "Next: ${nextAlarmText(c)}" else "Off")
-            if (c.aboutYesterday) append(" · answers count for the previous day")
-        }
-        col.add(label(status, 14f), dp(2))
-
-        col.add(label("When it rings: ${stepsSummary(c)}", 14f), dp(2))
-
-        val buttons = row()
-        buttons.addView(button(Days.time(c.hour, c.minute)) { pickTime(c) })
-        val mathText = if (c.mathCount > 0) "Math: ${c.mathCount}× ${MathGen.levelName(c.mathLevel)}" else "Math: off"
-        buttons.addView(button(mathText) { editMath(c) })
-        val scanText = if (c.scanCode != null) "Scan: ${c.scanLabel.ifEmpty { "on" }}" else "Scan: off"
-        buttons.addView(button(scanText) { editScan(c) })
-        buttons.addView(button("Settings") { editCheckin(c) })
-        buttons.addView(button("Test") {
-            AlarmScheduler.scheduleTest(this, c.id)
-            toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. (This logs real answers.)")
-        })
-        col.add(HorizontalScrollView(this).apply { addView(buttons) }, dp(4))
-
-        c.questions.forEachIndexed { i, q -> col.add(questionRow(c, i, q), dp(6)) }
-        if (c.questions.isEmpty()) col.add(label("No questions (no survey step).", 14f).apply { setTextColor(COLOR_MUTED) }, dp(6))
-        col.add(button("+ Add question") { editQuestion(c, null) }, dp(6))
+    /** One line per check-in: name, time + steps, and an Edit button. */
+    private fun checkinRow(col: LinearLayout, c: Checkin) {
+        val r = row()
+        val text = column()
+        text.add(label(c.name, 19f, bold = true))
+        text.add(label(CheckinText.oneLine(c), 14f).apply {
+            if (!c.enabled) setTextColor(COLOR_MUTED)
+        }, dp(2))
+        r.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        r.addView(button("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) })
+        r.isClickable = true
+        r.setOnClickListener { startActivity(CheckinEditActivity.intent(this, c.id)) }
+        col.add(r, dp(12))
     }
 
     private fun setupWarnings(col: LinearLayout) {
@@ -174,18 +135,6 @@ class MainActivity : Activity() {
         if (items.isEmpty()) return
         col.add(label("Setup needed", 20f, bold = true), dp(28))
         items.forEach { (text, action) -> col.add(button(text, action), dp(6)) }
-    }
-
-    private fun questionRow(c: Checkin, index: Int, q: Question): View {
-        val r = row()
-        val onTrack = if (q.yesIsGood) "On track = Yes" else "On track = No"
-        r.addView(
-            label("${index + 1}. ${q.text}\n$onTrack", 15f),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        if (index > 0) r.addView(button("↑") { moveQuestionUp(c, index) })
-        r.addView(button("Edit") { editQuestion(c, q) })
-        return r
     }
 
     private fun summary(col: LinearLayout, c: Checkin, entries: Map<String, Map<String, Boolean>>) {
@@ -259,13 +208,6 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- actions
 
-    /** Update one check-in, re-arm its alarm, redraw. */
-    private fun change(id: String, f: (Checkin) -> Checkin) {
-        store.updateCheckin(id, f)
-        store.checkin(id)?.let { AlarmScheduler.schedule(this, it) }
-        render()
-    }
-
     private fun addCheckin() {
         val c = Checkin(
             id = Store.newId(),
@@ -275,201 +217,7 @@ class MainActivity : Activity() {
         )
         store.checkins = store.checkins + c
         AlarmScheduler.schedule(this, c)
-        render()
-        editCheckin(c)
-    }
-
-    private fun editCheckin(c: Checkin) {
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        val name = EditText(this).apply {
-            hint = "Name, e.g. Morning"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-            setText(c.name)
-        }
-        val yesterday = CheckBox(this).apply {
-            text = "Questions are about yesterday (e.g. a morning check-in about last night)"
-            isChecked = c.aboutYesterday
-        }
-        box.add(name)
-        box.add(yesterday, dp(8))
-
-        AlertDialog.Builder(this)
-            .setTitle("Check-in settings")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                val n = name.text.toString().trim().ifEmpty { c.name }
-                change(c.id) { it.copy(name = n, aboutYesterday = yesterday.isChecked) }
-            }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Delete") { _, _ -> confirmDeleteCheckin(c) }
-            .show()
-    }
-
-    private fun confirmDeleteCheckin(c: Checkin) {
-        AlertDialog.Builder(this)
-            .setTitle("Delete \"${c.name}\"?")
-            .setMessage("Its alarm and questions are removed. Answers it already logged are kept on the phone but won't show in history or the CSV.")
-            .setPositiveButton("Delete") { _, _ ->
-                AlarmScheduler.cancel(this, c.id)
-                store.checkins = store.checkins.filter { it.id != c.id }
-                store.prunePending()
-                render()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun stepsSummary(c: Checkin): String {
-        val parts = mutableListOf<String>()
-        if (c.mathCount > 0) parts += "solve ${c.mathCount} math"
-        if (c.scanCode != null) parts += "scan ${c.scanLabel.ifEmpty { "code" }}"
-        if (c.questions.isNotEmpty()) parts += "answer ${c.questions.size} questions"
-        return if (parts.isEmpty()) "tap Dismiss" else parts.joinToString(" → ")
-    }
-
-    private fun editMath(c: Checkin) {
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        box.add(label("Problems to solve (0 = off)", 15f))
-        val picker = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 10
-            value = c.mathCount.coerceIn(0, 10)
-            wrapSelectorWheel = false
-        }
-        box.add(picker, dp(4))
-        box.add(label("Difficulty", 15f), dp(12))
-        val group = RadioGroup(this)
-        val ids = MathGen.LEVELS.mapIndexed { i, lvl ->
-            val rb = RadioButton(this).apply {
-                id = View.generateViewId()
-                text = "${lvl.name}   e.g. ${lvl.example}"
-                isChecked = i + 1 == c.mathLevel
-            }
-            group.addView(rb)
-            rb.id
-        }
-        box.add(group, dp(4))
-
-        AlertDialog.Builder(this)
-            .setTitle("Math for ${c.name}")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Save") { _, _ ->
-                val i = ids.indexOf(group.checkedRadioButtonId)
-                val level = if (i >= 0) i + 1 else c.mathLevel
-                change(c.id) { it.copy(mathCount = picker.value, mathLevel = level) }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun editScan(c: Checkin) {
-        if (c.scanCode == null) {
-            startRegister(c)
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Scan: ${c.scanLabel.ifEmpty { "registered code" }}")
-            .setMessage("To stop this alarm you have to scan the code with this content:\n\n${c.scanCode}")
-            .setPositiveButton("Re-register") { _, _ -> startRegister(c) }
-            .setNeutralButton("Remove") { _, _ -> change(c.id) { it.copy(scanCode = null, scanLabel = "") } }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun startRegister(c: Checkin) {
-        registeringFor = c.id
-        startActivityForResult(Intent(this, ScanActivity::class.java), REQ_REGISTER)
-    }
-
-    private fun finishRegister(id: String, code: String) {
-        val c = store.checkin(id) ?: return
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        val where = EditText(this).apply {
-            hint = "Where is it? e.g. Bathroom sink"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setText(c.scanLabel)
-        }
-        box.add(label("Code saved. Name the spot so the alarm can tell you where to go.", 14f))
-        box.add(where, dp(8))
-        AlertDialog.Builder(this)
-            .setTitle("Code registered")
-            .setView(box)
-            .setCancelable(false)
-            .setPositiveButton("Save") { _, _ ->
-                val spot = where.text.toString().trim()
-                change(id) { it.copy(scanCode = code, scanLabel = spot) }
-            }
-            .show()
-    }
-
-    private fun pickTime(c: Checkin) {
-        TimePickerDialog(
-            this,
-            { _, h, m -> change(c.id) { it.copy(hour = h, minute = m, enabled = true) } },
-            c.hour,
-            c.minute,
-            DateFormat.is24HourFormat(this)
-        ).show()
-    }
-
-    private fun nextAlarmText(c: Checkin): String {
-        val at = Instant.ofEpochMilli(AlarmScheduler.nextTriggerMillis(c.hour, c.minute))
-            .atZone(ZoneId.systemDefault())
-        val whichDay = if (at.toLocalDate() == LocalDate.now()) "today" else "tomorrow"
-        return "$whichDay at ${Days.time(c.hour, c.minute)}"
-    }
-
-    private fun editQuestion(c: Checkin, q: Question?) {
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        val input = EditText(this).apply {
-            hint = "e.g. Did you drink alcohol today?"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setText(q?.text ?: "")
-        }
-        val yesGood = CheckBox(this).apply {
-            text = "Answering \"Yes\" is on track"
-            isChecked = q?.yesIsGood ?: false
-        }
-        box.add(input)
-        box.add(yesGood, dp(8))
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(if (q == null) "New question for ${c.name}" else "Edit question")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                val text = input.text.toString().trim()
-                if (text.isNotEmpty()) {
-                    change(c.id) { cur ->
-                        val list = cur.questions.toMutableList()
-                        if (q == null) {
-                            list += Question(Store.newId(), text, yesGood.isChecked)
-                        } else {
-                            val i = list.indexOfFirst { it.id == q.id }
-                            if (i >= 0) list[i] = q.copy(text = text, yesIsGood = yesGood.isChecked)
-                        }
-                        cur.copy(questions = list)
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-        if (q != null) {
-            dialog.setNeutralButton("Delete") { _, _ ->
-                change(c.id) { cur -> cur.copy(questions = cur.questions.filter { it.id != q.id }) }
-            }
-        }
-        dialog.show()
-    }
-
-    private fun moveQuestionUp(c: Checkin, index: Int) {
-        change(c.id) { cur ->
-            val list = cur.questions.toMutableList()
-            if (index > 0 && index < list.size) {
-                val tmp = list[index - 1]
-                list[index - 1] = list[index]
-                list[index] = tmp
-            }
-            cur.copy(questions = list)
-        }
+        startActivity(CheckinEditActivity.intent(this, c.id))
     }
 
     private fun exportCsv() {
@@ -482,13 +230,6 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_REGISTER) {
-            val id = registeringFor
-            registeringFor = null
-            val code = data?.getStringExtra(ScanActivity.EXTRA_CODE)
-            if (resultCode == RESULT_OK && id != null && code != null) finishRegister(id, code)
-            return
-        }
         if (requestCode != REQ_EXPORT || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -538,7 +279,5 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_NOTIF = 1
         private const val REQ_EXPORT = 2
-        private const val REQ_REGISTER = 4
-        private const val STATE_REGISTERING = "registeringFor"
     }
 }

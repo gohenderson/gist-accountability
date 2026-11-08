@@ -113,16 +113,18 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   1. **Math:** 0–10 problems at one of four levels: Easy `47 + 38`, Medium
      `47 × 6 + 23`, Hard `47 × 38 + 512`, Very hard `347 × 38 + 47 × 26`. A wrong
      answer gives you a new problem.
-  2. **Scan:** Register any QR code or product barcode with the card's **Scan** button
+  2. **Scan:** Register any QR code or product barcode with the **Scan** button on the check-in's page
      and name the spot (e.g. "Bathroom sink"). When the alarm rings, only that exact code
      stops it. If you can't scan (you're traveling, the camera fails), a **"Can't scan?"**
      button appears after 2 minutes. It swaps the scan for 5 very hard problems.
   3. **Questions:** the yes/no survey. These are the only answers that get logged.
   A check-in with no steps at all just shows a Dismiss button.
-- **Several check-ins:** By default you get **Morning** (7:00 AM, 2 questions about last
-  night) and **Evening** (9:30 PM, 5 questions about today). Add more with
-  **+ Add check-in**. Each one has its own on/off switch, time, questions, Test button,
-  and history grid. Rename or delete one under **Settings**.
+- **Check-ins:** You get **Morning** (7:00 AM, 2 questions about last night) and
+  **Evening** (9:30 PM, 5 questions about today) to start with. Rename, change or delete
+  them, and add as many more as you like with **+ Add check-in**. The start page lists
+  each check-in with its time and steps. Tap one, or its **Edit** button, to open its own
+  page: name, on/off, time, "previous day" option, math, scan, questions, a 10-second
+  test, and delete. Changes save as you make them.
 - **"About yesterday":** A check-in with this setting (Morning by default) logs its answers
   to the previous day, so last night's late snack lands on the right date. Separately,
   any alarm set before 4 AM also counts as the previous day.
@@ -138,7 +140,9 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 
 ```
 app/src/main/java/dev/gist/checkin/
-  MainActivity.kt    settings, question editor, summary, 30-day grid, CSV export
+  MainActivity.kt    start page: setup warnings, check-in list, stats, 30-day grids, CSV export
+  CheckinEditActivity.kt  one check-in's page: name, time, steps, questions, test, delete
+  CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
   CheckinActivity.kt the alarm screen: runs math → scan → questions, then stops alarm
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
   ScanActivity.kt    registers a code for a check-in

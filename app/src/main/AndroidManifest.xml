@@ -49,6 +49,10 @@
             android:turnScreenOn="true" />
 
         <activity
+            android:name=".CheckinEditActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ScanActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
