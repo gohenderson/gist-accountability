@@ -25,17 +25,28 @@ object AlarmScheduler {
         return t.toInstant().toEpochMilli()
     }
 
-    /** The check-in's rings over the next few days, soonest first, all strictly after [now]. */
-    fun occurrences(c: Checkin, now: ZonedDateTime = ZonedDateTime.now(), days: Int = 3): List<Occurrence> =
-        (0..days).flatMap { offset ->
-            val date = now.toLocalDate().plusDays(offset.toLong())
-            c.times.mapNotNull { t ->
-                val at = ZonedDateTime.of(date, LocalTime.of(t.hour, t.minute), now.zone)
-                if (at.isAfter(now)) {
-                    Occurrence(t, at.toInstant().toEpochMilli(), Days.forAlarmNow(c.aboutYesterday, at.toLocalDateTime()))
-                } else null
+    /**
+     * The check-in's next [count] rings, soonest first, all strictly after [now], following its
+     * repeat rule (looks up to ~13 months ahead, enough for any monthly date).
+     */
+    fun occurrences(c: Checkin, now: ZonedDateTime = ZonedDateTime.now(), count: Int = 8): List<Occurrence> {
+        val out = mutableListOf<Occurrence>()
+        if (c.times.isEmpty()) return out
+        var date = now.toLocalDate()
+        val last = date.plusDays(400)
+        while (out.size < count && !date.isAfter(last)) {
+            if (c.repeat.matches(date)) {
+                for (t in c.times) {
+                    val at = ZonedDateTime.of(date, LocalTime.of(t.hour, t.minute), now.zone)
+                    if (at.isAfter(now)) {
+                        out += Occurrence(t, at.toInstant().toEpochMilli(), Days.forAlarmNow(c.aboutYesterday, at.toLocalDateTime()))
+                    }
+                }
             }
-        }.sortedBy { it.at }
+            date = date.plusDays(1)
+        }
+        return out.sortedBy { it.at }.take(count)
+    }
 
     /** The next ring that isn't [closed] (done early or skipped). */
     fun nextOccurrence(
@@ -49,8 +60,8 @@ object AlarmScheduler {
         nextOccurrence(c, now) { store.isClosed(it.day, c.id, it.timeKey) }
 
     /** The soonest of the check-in's times, strictly after [now]. */
-    fun nextTriggerMillis(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Long =
-        occurrences(c, now).first().at
+    fun nextTriggerMillis(c: Checkin, now: ZonedDateTime = ZonedDateTime.now()): Long? =
+        occurrences(c, now, 1).firstOrNull()?.at
 
     /** The check-in's time closest to [at] (either direction, around midnight too). */
     fun nearestTime(c: Checkin, at: LocalTime = LocalTime.now()): AlarmTime {

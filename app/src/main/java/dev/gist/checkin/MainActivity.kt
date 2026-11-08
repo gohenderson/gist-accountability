@@ -154,17 +154,8 @@ class MainActivity : BaseActivity() {
         return card
     }
 
-    /** "today 9:30 PM" / "tomorrow 7:00 AM" */
-    private fun whenText(o: Occurrence): String {
-        val at = java.time.Instant.ofEpochMilli(o.at).atZone(java.time.ZoneId.systemDefault())
-        val today = java.time.LocalDate.now()
-        val day = when (at.toLocalDate()) {
-            today -> "today"
-            today.plusDays(1) -> "tomorrow"
-            else -> at.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("EEE"))
-        }
-        return "$day ${Days.time(o.time.hour, o.time.minute)}"
-    }
+    /** "today 9:30 PM", "tomorrow 7:00 AM", "Wed 7:00 AM", "Dec 1 7:00 AM" */
+    private fun whenText(o: Occurrence): String = CheckinText.at(o.at)
 
     /** Skip the next ring (only possible before it rings). */
     private fun skip(c: Checkin, o: Occurrence) {
@@ -198,6 +189,11 @@ class MainActivity : BaseActivity() {
                 openSettings(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
             }
         }
+        if (!Settings.canDrawOverlays(this)) {
+            items += "Allow display over other apps (brings a ringing alarm back if you leave it)" to {
+                openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            }
+        }
         if (!getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)) {
             items += "Turn off battery optimization (some phones kill alarms)" to {
                 openSettings(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
@@ -206,7 +202,7 @@ class MainActivity : BaseActivity() {
         if (items.isEmpty()) return
         val box = card(colorOf(R.color.warn_container))
         box.add(label("Finish setup", 17f, bold = true, color = colorWarn))
-        box.add(muted("So alarms ring on time and show over the lock screen.", 13f), dp(2))
+        box.add(muted("So alarms ring on time, show over the lock screen, and can't be escaped.", 13f), dp(2))
         items.forEach { (text, action) -> box.add(outlineButton(text, action), dp(8)) }
         col.add(box, dp(20))
     }
@@ -214,14 +210,7 @@ class MainActivity : BaseActivity() {
     // ---------------------------------------------------------------- actions
 
     private fun addCheckin() {
-        val c = Checkin(
-            id = Store.newId(),
-            name = "Check-in ${store.checkins.size + 1}",
-            times = listOf(AlarmTime(12, 0)),
-        )
-        store.checkins = store.checkins + c
-        AlarmScheduler.schedule(this, c)
-        startActivity(CheckinEditActivity.intent(this, c.id))
+        startActivity(LibraryActivity.intent(this))
     }
 
     // ---------------------------------------------------------------- helpers

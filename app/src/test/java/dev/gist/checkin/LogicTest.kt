@@ -243,3 +243,106 @@ class CheckinTextTest {
         assertEquals("tap Dismiss", CheckinText.steps(Checkin(id = "c", name = "Plain")))
     }
 }
+
+class RepeatTest {
+    private val ny = ZoneId.of("America/New_York")
+    private fun at(y: Int, m: Int, d: Int, h: Int, mi: Int) = ZonedDateTime.of(y, m, d, h, mi, 0, 0, ny)
+    private fun date(y: Int, m: Int, d: Int) = LocalDate.of(y, m, d)
+
+    @Test
+    fun weekdaysSkipTheWeekend() {
+        val r = Repeat.weekly(Repeat.WEEKDAYS)
+        assertTrue(r.matches(date(2026, 11, 6)))   // Friday
+        assertFalse(r.matches(date(2026, 11, 7)))  // Saturday
+        assertFalse(r.matches(date(2026, 11, 8)))  // Sunday
+        assertTrue(r.matches(date(2026, 11, 9)))   // Monday
+    }
+
+    @Test
+    fun monthlyOnTheFirstAndTheLastDay() {
+        val r = Repeat.monthly(setOf(1, Repeat.LAST_DAY))
+        assertTrue(r.matches(date(2026, 12, 1)))
+        assertTrue(r.matches(date(2026, 11, 30)))
+        assertTrue(r.matches(date(2028, 2, 29)))   // leap year
+        assertTrue(r.matches(date(2027, 2, 28)))
+        assertFalse(r.matches(date(2026, 11, 15)))
+    }
+
+    @Test
+    fun aDateAMonthDoesntHaveIsSkippedThatMonth() {
+        val r = Repeat.monthly(setOf(31))
+        assertFalse(r.matches(date(2026, 11, 30)))
+        assertTrue(r.matches(date(2026, 12, 31)))
+    }
+
+    @Test
+    fun nextRingFollowsTheRule() {
+        val weekdays = Checkin(id = "w", name = "Work", times = listOf(AlarmTime(7, 0)), repeat = Repeat.weekly(Repeat.WEEKDAYS))
+        // Friday evening → Monday morning
+        assertEquals(at(2026, 11, 9, 7, 0).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(weekdays, at(2026, 11, 6, 20, 0)))
+
+        val monthly = Checkin(id = "m", name = "Bills", times = listOf(AlarmTime(9, 0)), repeat = Repeat.monthly(setOf(1)))
+        assertEquals(at(2026, 12, 1, 9, 0).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(monthly, at(2026, 11, 8, 12, 0)))
+
+        val list = AlarmScheduler.occurrences(monthly, at(2026, 11, 8, 12, 0), count = 3)
+        assertEquals(listOf("2026-12-01", "2027-01-01", "2027-02-01"), list.map { it.day })
+    }
+
+    @Test
+    fun descriptionsReadNaturally() {
+        assertEquals("every day", Repeat.EVERY_DAY.describe())
+        assertEquals("Mon–Fri", Repeat.weekly(Repeat.WEEKDAYS).describe())
+        assertEquals("Sat & Sun", Repeat.weekly(Repeat.WEEKENDS).describe())
+        assertEquals("monthly on the 1st", Repeat.monthly(setOf(1)).describe())
+        assertEquals("monthly on the 1st, 15th and last day", Repeat.monthly(setOf(15, 1, Repeat.LAST_DAY)).describe())
+        assertEquals("monthly on the 2nd, 3rd, 11th and 22nd", Repeat.monthly(setOf(2, 3, 11, 22)).describe())
+        assertEquals("every day", Repeat.weekly((1..7).toSet()).describe())
+    }
+}
+
+class LibraryTest {
+    @Test
+    fun templatesAreWellFormed() {
+        val keys = Library.TEMPLATES.map { it.key }
+        assertEquals("unique keys", keys.size, keys.toSet().size)
+        for (t in Library.TEMPLATES) {
+            val c = t.checkin
+            assertTrue("${t.key} has a name", c.name.isNotBlank())
+            assertTrue("${t.key} has times", c.times.isNotEmpty())
+            assertEquals("${t.key} times sorted", c.times.sorted(), c.times)
+            val ids = c.questions.map { it.id }
+            assertEquals("${t.key} question ids unique", ids.size, ids.toSet().size)
+            assertTrue("${t.key} has a blurb", t.blurb.isNotBlank())
+        }
+    }
+
+    @Test
+    fun instantiateGivesANewIdAndAFreeName() {
+        val water = Library.template("water")!!
+        val first = Library.instantiate(water, emptyList(), "id1")
+        assertEquals("id1", first.id)
+        assertEquals("Water", first.name)
+        assertEquals(water.checkin.times, first.times)
+        val second = Library.instantiate(water, listOf(first), "id2")
+        assertEquals("Water 2", second.name)
+        assertEquals("Water 3", Library.instantiate(water, listOf(first, second), "id3").name)
+    }
+
+    @Test
+    fun blankIsNumbered() {
+        assertEquals("Check-in 1", Library.blank(emptyList(), "x").name)
+        assertTrue(Library.blank(emptyList(), "x").questions.isEmpty())
+    }
+}
+
+class BackgroundTest {
+    @Test
+    fun descriptions() {
+        assertEquals("none", Background().describe(0))
+        assertEquals("photo", Background(Background.PHOTO).describe(1))
+        assertEquals("slideshow · 4 photos · every 10 s", Background(Background.SLIDESHOW).describe(4))
+        assertEquals("slideshow · 1 photo · every 5 s", Background(Background.SLIDESHOW, intervalSec = 5).describe(1))
+        assertEquals("video", Background(Background.VIDEO).describe(0))
+        assertFalse(Background(caption = "hi").hasMedia)
+    }
+}

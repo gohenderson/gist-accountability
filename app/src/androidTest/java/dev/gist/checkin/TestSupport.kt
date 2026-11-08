@@ -62,6 +62,11 @@ object TestEnv {
         scanCode = scanCode, scanLabel = if (scanCode != null) "Test spot" else "",
     )
 
+    /** Grants or resets "Display over other apps" (what lets an alarm come back to the front). */
+    fun allowOverlay(allow: Boolean) {
+        shell("appops set ${ctx.packageName} SYSTEM_ALERT_WINDOW ${if (allow) "allow" else "default"}")
+    }
+
     /** Runs a shell command as the `shell` user (can grant permissions, take screenshots…). */
     fun shell(cmd: String): String {
         val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)

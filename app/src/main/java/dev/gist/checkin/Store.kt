@@ -28,7 +28,7 @@ data class AlarmTime(val hour: Int, val minute: Int) : Comparable<AlarmTime> {
 }
 
 /**
- * One alarm with its own times and steps. It rings at each of [times], every day. When it rings, the steps run in this order:
+ * One alarm with its own times and steps. It rings at each of [times] on the days [repeat] allows. When it rings, the steps run in this order:
  * [mathCount] math problems → scan [scanCode] → answer [questions]. Each step is optional.
  * [aboutYesterday]: answers are logged for the previous day (e.g. a morning check-in
  * asking about last night).
@@ -37,6 +37,7 @@ data class Checkin(
     val id: String,
     val name: String,
     val times: List<AlarmTime> = listOf(AlarmTime(12, 0)),
+    val repeat: Repeat = Repeat.EVERY_DAY,
     val enabled: Boolean = true,
     val aboutYesterday: Boolean = false,
     val questions: List<Question> = emptyList(),
@@ -46,7 +47,7 @@ data class Checkin(
     val scanLabel: String = "",    // where it is, e.g. "Bathroom sink"
     val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
     val soundTitle: String = "",   // shown in the app (and kept in backups)
-    val hasBackground: Boolean = false, // photo shown while ringing; see Backgrounds
+    val background: Background = Background(), // shown while ringing; media in Backgrounds
 ) {
     companion object {
         const val SILENT = "silent"
@@ -255,6 +256,7 @@ class Store(context: Context) {
             name = o.optString("name", "Check-in"),
             times = (0 until ts.length()).mapNotNull { AlarmTime.parse(ts.optString(it)) }
                 .distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) },
+            repeat = Repeat.fromJson(o.optJSONObject("repeat")),
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
             questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) },
@@ -264,7 +266,7 @@ class Store(context: Context) {
             scanLabel = o.optString("scanLabel", ""),
             soundUri = o.optString("soundUri", "").ifEmpty { null },
             soundTitle = o.optString("soundTitle", ""),
-            hasBackground = o.optBoolean("hasBackground", false),
+            background = Background.fromJson(o.optJSONObject("background")),
         )
     }
 
@@ -275,6 +277,7 @@ class Store(context: Context) {
             .put("id", c.id)
             .put("name", c.name)
             .put("times", JSONArray().apply { c.times.forEach { put(it.toString()) } })
+            .put("repeat", c.repeat.toJson())
             .put("enabled", c.enabled)
             .put("aboutYesterday", c.aboutYesterday)
             .put("questions", qs)
@@ -284,7 +287,7 @@ class Store(context: Context) {
             .put("scanLabel", c.scanLabel)
             .put("soundUri", c.soundUri ?: "")
             .put("soundTitle", c.soundTitle)
-            .put("hasBackground", c.hasBackground)
+            .put("background", c.background.toJson())
     }
 
     companion object {

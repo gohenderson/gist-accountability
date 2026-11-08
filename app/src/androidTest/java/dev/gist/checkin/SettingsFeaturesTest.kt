@@ -9,10 +9,14 @@ import android.media.RingtoneManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
+import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -38,32 +42,83 @@ class BackupTest {
     }
 
     @Test
-    fun exportThenImportRestoresCheckinsAnswersAndPhotos() {
+    fun exportThenImportRestoresCheckinsAnswersPhotosAndVideo() {
         val q = Question("soda", "Soda?")
-        val withPhoto = TestEnv.checkin("wake", "Starting the Day", listOf(q), mathCount = 3)
-            .copy(hasBackground = true, soundUri = Checkin.SILENT)
-        val plain = TestEnv.checkin("eve", "Evening")
-        TestEnv.reset(listOf(withPhoto, plain), entries = mapOf("2026-11-06" to mapOf("soda" to true)))
-        Backgrounds.save(TestEnv.ctx, "wake", solidPhoto(Color.RED))
+        val slideshow = TestEnv.checkin("wake", "Starting the Day", listOf(q), mathCount = 3).copy(
+            soundUri = Checkin.SILENT,
+            repeat = Repeat.weekly(Repeat.WEEKDAYS),
+            background = Background(Background.SLIDESHOW, intervalSec = 5, caption = "Up and at 'em"),
+        )
+        val withVideo = TestEnv.checkin("vid", "Video").copy(background = Background(Background.VIDEO, caption = "Go"))
+        val plain = TestEnv.checkin("eve", "Evening").copy(background = Background(caption = "Just a caption"))
+        TestEnv.reset(listOf(slideshow, withVideo, plain), entries = mapOf("2026-11-06" to mapOf("soda" to true)))
+        Backgrounds.savePhoto(TestEnv.ctx, "wake", 0, solidPhoto(Color.RED))
+        Backgrounds.savePhoto(TestEnv.ctx, "wake", 1, solidPhoto(Color.GREEN))
+        val videoBytes = testVideoBytes()
+        Backgrounds.videoFile(TestEnv.ctx, "vid").writeBytes(videoBytes)
 
         val backup = Backup.export(TestEnv.ctx)
+        assertTrue("backup should be YAML with a comment header", backup.startsWith("# Gist backup"))
+        assertTrue("block-style YAML", backup.contains("\nformat: gist-backup\n"))
+        assertTrue("caption is readable in the file", backup.contains("Up and at 'em") || backup.contains("Up and at ''em"))
 
-        // A "new phone": different data, no photos.
+        // A "new phone": different data, no media.
         Backgrounds.deleteAll(TestEnv.ctx)
         TestEnv.reset(listOf(TestEnv.checkin("other", "Something else")), listOf(Pending("other", "2026-11-07")))
 
         val contents = Backup.parse(TestEnv.ctx, backup)
-        assertEquals(2, contents.checkins.size)
+        assertEquals(3, contents.checkins.size)
         assertEquals(1, contents.days)
         Backup.restore(TestEnv.ctx, contents)
 
         val s = TestEnv.store
-        assertEquals(listOf(withPhoto, plain), s.checkins)
+        assertEquals(listOf(slideshow, withVideo, plain), s.checkins)
         assertEquals(mapOf("soda" to true), s.entry("2026-11-06"))
         assertTrue("waiting list is cleared on restore", s.pending.isEmpty())
-        val photo = BitmapFactory.decodeFile(Backgrounds.file(TestEnv.ctx, "wake").path)
-        assertNotNull("photo should be restored", photo)
-        assertEquals(64, photo.width)
+        val photos = Backgrounds.photos(TestEnv.ctx, "wake")
+        assertEquals(2, photos.size)
+        assertEquals(64, BitmapFactory.decodeFile(photos[0].path).width)
+        assertTrue("video restored", Backgrounds.videoFile(TestEnv.ctx, "vid").readBytes().contentEquals(videoBytes))
+    }
+
+    @Test
+    fun oldJsonBackupsStillImport() {
+        TestEnv.reset(emptyList())
+        val photo = java.io.ByteArrayOutputStream().also { solidPhoto(Color.BLUE).compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+        val json = """
+            {"format": "gist-backup", "version": 2, "exportedAt": "2026-11-01T00:00:00Z",
+             "checkins": [{"id": "old", "name": "Old one", "times": ["07:00"], "hasBackground": true, "questions": []}],
+             "entries": {},
+             "backgrounds": {"old": "${android.util.Base64.encodeToString(photo, android.util.Base64.NO_WRAP)}"}}
+        """.trimIndent()
+        Backup.restore(TestEnv.ctx, Backup.parse(TestEnv.ctx, json))
+        val c = TestEnv.store.checkin("old")!!
+        assertEquals(Background.PHOTO, c.background.kind)
+        assertEquals(listOf(AlarmTime(7, 0)), c.times)
+        assertEquals(1, Backgrounds.photos(TestEnv.ctx, "old").size)
+    }
+
+    @Test
+    fun handEditedYamlImports() {
+        TestEnv.reset(emptyList())
+        val yaml = """
+            # edited by hand
+            format: gist-backup
+            version: 3
+            checkins:
+              - id: walk
+                name: Walk
+                times: ["08:15", "18:00"]
+                repeat: {kind: weekly, days: [6, 7]}
+                enabled: True
+                questions:
+                  - {id: walked, text: Did you walk?, yesIsGood: true}
+        """.trimIndent()
+        Backup.restore(TestEnv.ctx, Backup.parse(TestEnv.ctx, yaml))
+        val c = TestEnv.store.checkin("walk")!!
+        assertEquals(listOf(AlarmTime(8, 15), AlarmTime(18, 0)), c.times)
+        assertEquals(Repeat.weekly(Repeat.WEEKENDS), c.repeat)
+        assertEquals("Did you walk?", c.questions.single().text)
     }
 
     @Test
@@ -82,6 +137,10 @@ class BackupTest {
         assertEquals(listOf(keep), TestEnv.store.checkins)
     }
 }
+
+/** The small MP4 in androidTest/assets. */
+fun testVideoBytes(): ByteArray =
+    TestEnv.instrumentation.context.assets.open("test-video.mp4").use { it.readBytes() }
 
 /** Light / Dark / System applies to screens. */
 @RunWith(AndroidJUnit4::class)
@@ -128,13 +187,15 @@ class SoundAndBackgroundTest {
         TestEnv.reset(emptyList())
     }
 
-    private fun ring(c: Checkin) {
+    private fun ring(c: Checkin, setup: () -> Unit = {}) {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(listOf(c))
-        if (c.hasBackground) Backgrounds.save(TestEnv.ctx, c.id, solidPhoto(Color.BLUE))
+        setup()
         AlarmScheduler.scheduleTest(TestEnv.ctx, c.id, 1_000)
         TestEnv.eventually(20_000) { assertTrue("alarm didn't start", AlarmService.running) }
     }
+
+    private fun alarmScreen() = ActivityScenario.launch<CheckinActivity>(Intent(TestEnv.ctx, CheckinActivity::class.java))
 
     @Test
     fun checkinsOwnSoundIsPlayed() {
@@ -161,25 +222,84 @@ class SoundAndBackgroundTest {
     }
 
     @Test
-    fun backgroundPhotoShowsBehindTheRingingScreen() {
-        ring(TestEnv.checkin("b", "Photo test").copy(hasBackground = true))
-        ActivityScenario.launch<CheckinActivity>(Intent(TestEnv.ctx, CheckinActivity::class.java)).use {
+    fun backgroundPhotoAndCaptionShowBehindTheRingingScreen() {
+        ring(TestEnv.checkin("b", "Photo test").copy(background = Background(Background.PHOTO, caption = "You've got this"))) {
+            Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.BLUE))
+        }
+        alarmScreen().use {
             onView(withText("Start check-in")).check(matches(isDisplayed()))
             onView(tagged("ringing-background")).check(matches(isDisplayed()))
+            onView(tagged("ringing-caption")).check(matches(withText("You've got this")))
         }
     }
 
     @Test
-    fun backgroundPhotoCanBeRemovedOnTheEditPage() {
-        TestEnv.reset(listOf(TestEnv.checkin("b", "Photo test").copy(hasBackground = true)))
-        Backgrounds.save(TestEnv.ctx, "b", solidPhoto(Color.GREEN))
+    fun captionAloneShowsWithoutAPicture() {
+        ring(TestEnv.checkin("b", "Caption test").copy(background = Background(caption = "Hydrate!")))
+        alarmScreen().use {
+            onView(tagged("ringing-caption")).check(matches(withText("Hydrate!")))
+            onView(tagged("ringing-background")).check(doesNotExist())
+        }
+    }
+
+    @Test
+    fun slideshowCyclesThroughThePhotos() {
+        ring(TestEnv.checkin("b", "Slides").copy(background = Background(Background.SLIDESHOW, intervalSec = 1))) {
+            Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.RED))
+            Backgrounds.savePhoto(TestEnv.ctx, "b", 1, solidPhoto(Color.GREEN))
+        }
+        alarmScreen().use {
+            // Every second it moves on: we should see both photos, then the first again.
+            for (n in listOf(2, 1, 2)) {
+                TestEnv.eventually(6_000) {
+                    onView(tagged("ringing-background")).check(matches(withContentDescription("Background photo $n of 2")))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun videoPlaysBehindTheRingingScreen() {
+        ring(TestEnv.checkin("v", "Video").copy(background = Background(Background.VIDEO))) {
+            Backgrounds.videoFile(TestEnv.ctx, "v").writeBytes(testVideoBytes())
+        }
+        alarmScreen().use {
+            onView(tagged("ringing-video")).check(matches(isDisplayed()))
+            TestEnv.eventually(10_000) { assertTrue("video should be playing", CheckinActivity.videoPlaying) }
+            // The alarm sound is still the one playing (the video is muted).
+            assertTrue(AlarmService.running)
+        }
+    }
+
+    @Test
+    fun backgroundCanBeSetToNoneOnTheEditPage() {
+        TestEnv.reset(listOf(TestEnv.checkin("b", "Photo test").copy(background = Background(Background.PHOTO, caption = "Keep me"))))
+        Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.GREEN))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "b")).use {
             onView(tagged("background-preview")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(withText("Background photo: change or remove")).perform(scrollTo(), click())
-            onView(withText("Remove")).inRoot(isDialog()).perform(click())
-            onView(withText("Background photo: none")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("Background: photo")).perform(scrollTo(), click())
+            onView(withText("None")).inRoot(isDialog()).perform(click())
+            onView(withText("Background: none")).perform(scrollTo()).check(matches(isDisplayed()))
         }
-        assertFalse(TestEnv.store.checkin("b")!!.hasBackground)
-        assertFalse(Backgrounds.file(TestEnv.ctx, "b").exists())
+        val bg = TestEnv.store.checkin("b")!!.background
+        assertEquals(Background.NONE, bg.kind)
+        assertEquals("caption is kept", "Keep me", bg.caption)
+        assertTrue(Backgrounds.photos(TestEnv.ctx, "b").isEmpty())
+    }
+
+    @Test
+    fun slideshowIntervalAndCaptionAreSavedFromTheEditPage() {
+        TestEnv.reset(listOf(TestEnv.checkin("b", "Slides").copy(background = Background(Background.SLIDESHOW))))
+        Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.RED))
+        Backgrounds.savePhoto(TestEnv.ctx, "b", 1, solidPhoto(Color.GREEN))
+        ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "b")).use {
+            onView(withText("Background: slideshow · 2 photos · every 10 s")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("slideshow-interval")).perform(scrollTo(), click())
+            onView(withText("30 seconds")).inRoot(isDialog()).perform(click())
+            onView(tagged("background-caption")).perform(scrollTo(), replaceText("Rise and shine"), closeSoftKeyboard())
+        }
+        val bg = TestEnv.store.checkin("b")!!.background
+        assertEquals(30, bg.intervalSec)
+        assertEquals("Rise and shine", bg.caption)
     }
 }

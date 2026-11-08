@@ -3,8 +3,12 @@ package dev.gist.checkin
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.view.Surface
+import android.view.TextureView
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -70,6 +74,9 @@ class CheckinActivity : BaseActivity() {
     // Pause countdown (see showRinging / updateBar). Separate handler so showStep's
     // removeCallbacks doesn't stop it.
     private val ticks = Handler(Looper.getMainLooper())
+    // Slideshow on the ringing screen; and the muted background video.
+    private val slides = Handler(Looper.getMainLooper())
+    private var video: MediaPlayer? = null
     private var showingRinging = false
     private var barLabel: TextView? = null
     private var barProgress: ProgressBar? = null
@@ -120,12 +127,14 @@ class CheckinActivity : BaseActivity() {
         if (!::checkin.isInitialized) return
         // You're looking at the check-in, so the "still waiting" reminder would only cover it.
         visible = true
+        timesShown++
         if (forced) Notif.clearWaiting(this)
         showStep()
         if (forced) ticks.post(ticker)
     }
 
     override fun onPause() {
+        stopBackground()
         stopScanner()
         ui.removeCallbacksAndMessages(null)
         ticks.removeCallbacksAndMessages(null)
@@ -288,6 +297,7 @@ class CheckinActivity : BaseActivity() {
         // Closing, or past the last step (a countdown tick can land right as we finish).
         if (isFinishing || stepIndex !in steps.indices) return
         stopScanner()
+        stopBackground()
         ui.removeCallbacksAndMessages(null)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
         barLabel = null
@@ -341,9 +351,9 @@ class CheckinActivity : BaseActivity() {
 
     /** The alarm is sounding: big clock, and one button pauses it and shows the steps. */
     private fun showRinging() {
-        val photo = if (checkin.hasBackground) Backgrounds.load(this, checkin.id) else null
-        val fg = if (photo != null) Color.WHITE else colorText
-        val soft = if (photo != null) 0xCCFFFFFF.toInt() else colorMuted
+        val bgView = backgroundView(checkin)
+        val fg = if (bgView != null) Color.WHITE else colorText
+        val soft = if (bgView != null) 0xCCFFFFFF.toInt() else colorMuted
 
         val col = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
         col.add(label(LocalTime.now().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)), 64f, bold = true, color = fg).apply {
@@ -351,6 +361,13 @@ class CheckinActivity : BaseActivity() {
         }, dp(48))
         col.add(label(checkin.name, 26f, bold = true, color = fg).apply { gravity = Gravity.CENTER }, dp(4))
         col.add(label("Alarm ringing · ${CheckinText.steps(checkin)}", 15f, color = soft).apply { gravity = Gravity.CENTER }, dp(6))
+        if (checkin.background.caption.isNotBlank()) {
+            col.add(label(checkin.background.caption, 22f, bold = true, color = fg).apply {
+                gravity = Gravity.CENTER
+                tag = "ringing-caption"
+                if (bgView != null) setShadowLayer(8f, 0f, 2f, Color.BLACK)
+            }, dp(28))
+        }
         if (stepIndex > 0) {
             col.add(label("Step ${stepIndex + 1} of ${steps.size} (your progress is kept)", 14f, color = soft).apply {
                 gravity = Gravity.CENTER
@@ -371,11 +388,11 @@ class CheckinActivity : BaseActivity() {
                 "if it runs out, the alarm rings again.", 13f, color = soft).apply { gravity = Gravity.CENTER },
             dp(14)
         )
-        setScreen(col, withBar = false, background = photo)
+        setScreen(col, withBar = false, background = bgView)
     }
 
     /** Scrolling content, with the countdown bar fixed above it while the alarm is paused. */
-    private fun setScreen(content: View, withBar: Boolean, background: Bitmap? = null) {
+    private fun setScreen(content: View, withBar: Boolean, background: View? = null) {
         val sv = ScrollView(this).apply {
             clipToPadding = false
             setPadding(dp(20), dp(20), dp(20), dp(28))
@@ -388,19 +405,117 @@ class CheckinActivity : BaseActivity() {
         if (background == null) {
             setContentView(root)
         } else {
-            // Photo behind everything, darkened so white text stays readable.
-            val frame = FrameLayout(this)
-            frame.addView(ImageView(this).apply {
-                setImageBitmap(background)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                tag = "ringing-background"
-            }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // Photo or video behind everything, darkened so white text stays readable.
+            val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+            frame.addView(background, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             frame.addView(View(this).apply { setBackgroundColor(0x99000000.toInt()) },
                 FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             frame.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             setContentView(frame)
         }
         updateBar()
+    }
+
+    // ------------------------------------------------------------ background
+
+    /** The check-in's photo / slideshow / video, or null for a plain screen. */
+    private fun backgroundView(c: Checkin): View? {
+        val bg = c.background
+        return when (bg.kind) {
+            Background.PHOTO, Background.SLIDESHOW -> {
+                val files = Backgrounds.photos(this, c.id).let { if (bg.kind == Background.PHOTO) it.take(1) else it }
+                val first = files.firstOrNull()?.let { Backgrounds.load(it) } ?: return null
+                val iv = ImageView(this).apply {
+                    setImageBitmap(first)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    tag = "ringing-background"
+                    contentDescription = "Background photo 1 of ${files.size}"
+                }
+                if (files.size > 1) startSlideshow(iv, files, bg.intervalSec * 1000L)
+                iv
+            }
+            Background.VIDEO -> {
+                val file = Backgrounds.videoFile(this, c.id)
+                if (!file.exists()) null else videoView(file)
+            }
+            else -> null
+        }
+    }
+
+    private fun startSlideshow(iv: ImageView, files: List<java.io.File>, everyMs: Long) {
+        var index = 0
+        val next = object : Runnable {
+            override fun run() {
+                index = (index + 1) % files.size
+                val bmp = Backgrounds.load(files[index])
+                if (bmp != null) {
+                    iv.animate().alpha(0f).setDuration(250).withEndAction {
+                        iv.setImageBitmap(bmp)
+                        iv.contentDescription = "Background photo ${index + 1} of ${files.size}"
+                        iv.animate().alpha(1f).setDuration(250).start()
+                    }.start()
+                }
+                slides.postDelayed(this, everyMs)
+            }
+        }
+        slides.postDelayed(next, everyMs)
+    }
+
+    /** Muted, looping, cropped to fill the screen. */
+    private fun videoView(file: java.io.File): View {
+        val tv = TextureView(this).apply { tag = "ringing-video" }
+        tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                releaseVideo()
+                val mp = MediaPlayer()
+                try {
+                    mp.setDataSource(file.path)
+                    mp.setSurface(Surface(st))
+                    mp.isLooping = true
+                    mp.setVolume(0f, 0f)
+                    mp.setOnVideoSizeChangedListener { _, vw, vh -> cropToFill(tv, vw, vh) }
+                    mp.setOnPreparedListener {
+                        it.start()
+                        videoPlaying = true
+                    }
+                    mp.setOnErrorListener { _, _, _ -> videoPlaying = false; true }
+                    mp.prepareAsync()
+                    video = mp
+                } catch (e: Exception) {
+                    mp.release()
+                }
+            }
+            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {
+                video?.let { cropToFill(tv, it.videoWidth, it.videoHeight) }
+            }
+            override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                releaseVideo()
+                return true
+            }
+            override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+        }
+        return tv
+    }
+
+    private fun cropToFill(tv: TextureView, vw: Int, vh: Int) {
+        val w = tv.width.toFloat()
+        val h = tv.height.toFloat()
+        if (vw <= 0 || vh <= 0 || w <= 0f || h <= 0f) return
+        val scale = maxOf(w / vw, h / vh)
+        tv.setTransform(Matrix().apply { setScale(vw * scale / w, vh * scale / h, w / 2, h / 2) })
+    }
+
+    private fun releaseVideo() {
+        val mp = video ?: return
+        video = null
+        videoPlaying = false
+        try { mp.stop() } catch (e: Exception) {}
+        mp.release()
+    }
+
+    private fun stopBackground() {
+        slides.removeCallbacksAndMessages(null)
+        releaseVideo()
     }
 
     private fun pauseBar(): View {
@@ -561,6 +676,16 @@ class CheckinActivity : BaseActivity() {
         /** True while an alarm/check-in screen is in front (the waiting reminder is then suppressed). */
         @Volatile
         var visible = false
+            private set
+
+        /** How many times the screen has come to the front (for tests). */
+        @Volatile
+        var timesShown = 0
+            private set
+
+        /** True while a background video is playing on the ringing screen (for tests). */
+        @Volatile
+        var videoPlaying = false
             private set
 
         private const val EXTRA_CHECKIN = "checkin"
