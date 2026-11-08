@@ -85,12 +85,13 @@ class CheckinEditActivity : BaseActivity() {
 
         // Schedule
         col = section(page, "Schedule")
-        val sw = styledSwitch("Ring daily").apply {
+        val sw = styledSwitch("Alarm on").apply {
             isChecked = c.enabled
             setOnCheckedChangeListener { _, on -> change { it.copy(enabled = on) } }
         }
         col.add(sw, dp(4))
-        col.add(label("Rings every day at:", 15f), dp(8))
+        col.add(button("Repeats: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(8))
+        col.add(label("Rings at:", 15f), dp(12))
         c.times.forEachIndexed { i, t ->
             val r = row()
             r.addView(
@@ -219,6 +220,67 @@ class CheckinEditActivity : BaseActivity() {
             start.minute,
             DateFormat.is24HourFormat(this)
         ).show()
+    }
+
+    // ---------------------------------------------------------------- repeat
+
+    private fun pickRepeat(c: Checkin) {
+        val options = arrayOf(
+            "Every day",
+            "Weekdays (Mon–Fri)",
+            "Weekends (Sat & Sun)",
+            "Specific days of the week…",
+            "Monthly on certain dates…",
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Repeats")
+            .setItems(options) { _, i ->
+                when (i) {
+                    0 -> change { it.copy(repeat = Repeat.EVERY_DAY) }
+                    1 -> change { it.copy(repeat = Repeat.weekly(Repeat.WEEKDAYS)) }
+                    2 -> change { it.copy(repeat = Repeat.weekly(Repeat.WEEKENDS)) }
+                    3 -> pickWeekdays(c)
+                    4 -> pickMonthDays(c)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickWeekdays(c: Checkin) {
+        val labels = (1..7).map {
+            java.time.DayOfWeek.of(it).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
+        }.toTypedArray()
+        val checked = BooleanArray(7) { i -> c.repeat.kind == Repeat.WEEKLY && (i + 1) in c.repeat.days }
+        AlertDialog.Builder(this)
+            .setTitle("Rings on")
+            .setMultiChoiceItems(labels, checked) { _, which, on -> checked[which] = on }
+            .setPositiveButton("Save") { _, _ ->
+                val days = (1..7).filter { checked[it - 1] }.toSet()
+                if (days.isEmpty()) toast("Pick at least one day.") else change { it.copy(repeat = Repeat.weekly(days)) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickMonthDays(c: Checkin) {
+        val values = (1..31).toList() + Repeat.LAST_DAY
+        val labels = ((1..31).map { Repeat.ordinal(it) } + "Last day of the month").toTypedArray()
+        val checked = BooleanArray(values.size) { i -> c.repeat.kind == Repeat.MONTHLY && values[i] in c.repeat.days }
+        AlertDialog.Builder(this)
+            .setTitle("Rings each month on")
+            .setMultiChoiceItems(labels, checked) { _, which, on -> checked[which] = on }
+            .setPositiveButton("Save") { _, _ ->
+                val days = values.filterIndexed { i, _ -> checked[i] }.toSet()
+                if (days.isEmpty()) {
+                    toast("Pick at least one date.")
+                } else {
+                    change { it.copy(repeat = Repeat.monthly(days)) }
+                    if (days.any { it in 29..31 }) toast("Months without that date are skipped; use “Last day” for month-end.")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun removeTime(index: Int) {

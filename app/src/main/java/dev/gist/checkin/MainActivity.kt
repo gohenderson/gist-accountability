@@ -154,17 +154,8 @@ class MainActivity : BaseActivity() {
         return card
     }
 
-    /** "today 9:30 PM" / "tomorrow 7:00 AM" */
-    private fun whenText(o: Occurrence): String {
-        val at = java.time.Instant.ofEpochMilli(o.at).atZone(java.time.ZoneId.systemDefault())
-        val today = java.time.LocalDate.now()
-        val day = when (at.toLocalDate()) {
-            today -> "today"
-            today.plusDays(1) -> "tomorrow"
-            else -> at.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("EEE"))
-        }
-        return "$day ${Days.time(o.time.hour, o.time.minute)}"
-    }
+    /** "today 9:30 PM", "tomorrow 7:00 AM", "Wed 7:00 AM", "Dec 1 7:00 AM" */
+    private fun whenText(o: Occurrence): String = CheckinText.at(o.at)
 
     /** Skip the next ring (only possible before it rings). */
     private fun skip(c: Checkin, o: Occurrence) {

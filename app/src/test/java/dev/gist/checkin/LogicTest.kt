@@ -243,3 +243,67 @@ class CheckinTextTest {
         assertEquals("tap Dismiss", CheckinText.steps(Checkin(id = "c", name = "Plain")))
     }
 }
+
+class RepeatTest {
+    private val ny = ZoneId.of("America/New_York")
+    private fun at(y: Int, m: Int, d: Int, h: Int, mi: Int) = ZonedDateTime.of(y, m, d, h, mi, 0, 0, ny)
+    private fun date(y: Int, m: Int, d: Int) = LocalDate.of(y, m, d)
+
+    @Test
+    fun weekdaysSkipTheWeekend() {
+        val r = Repeat.weekly(Repeat.WEEKDAYS)
+        assertTrue(r.matches(date(2026, 11, 6)))   // Friday
+        assertFalse(r.matches(date(2026, 11, 7)))  // Saturday
+        assertFalse(r.matches(date(2026, 11, 8)))  // Sunday
+        assertTrue(r.matches(date(2026, 11, 9)))   // Monday
+    }
+
+    @Test
+    fun monthlyOnTheFirstAndTheLastDay() {
+        val r = Repeat.monthly(setOf(1, Repeat.LAST_DAY))
+        assertTrue(r.matches(date(2026, 12, 1)))
+        assertTrue(r.matches(date(2026, 11, 30)))
+        assertTrue(r.matches(date(2028, 2, 29)))   // leap year
+        assertTrue(r.matches(date(2027, 2, 28)))
+        assertFalse(r.matches(date(2026, 11, 15)))
+    }
+
+    @Test
+    fun aDateAMonthDoesntHaveIsSkippedThatMonth() {
+        val r = Repeat.monthly(setOf(31))
+        assertFalse(r.matches(date(2026, 11, 30)))
+        assertTrue(r.matches(date(2026, 12, 31)))
+    }
+
+    @Test
+    fun nextRingFollowsTheRule() {
+        val weekdays = Checkin(id = "w", name = "Work", times = listOf(AlarmTime(7, 0)), repeat = Repeat.weekly(Repeat.WEEKDAYS))
+        // Friday evening → Monday morning
+        assertEquals(at(2026, 11, 9, 7, 0).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(weekdays, at(2026, 11, 6, 20, 0)))
+
+        val monthly = Checkin(id = "m", name = "Bills", times = listOf(AlarmTime(9, 0)), repeat = Repeat.monthly(setOf(1)))
+        assertEquals(at(2026, 12, 1, 9, 0).toInstant().toEpochMilli(), AlarmScheduler.nextTriggerMillis(monthly, at(2026, 11, 8, 12, 0)))
+
+        val list = AlarmScheduler.occurrences(monthly, at(2026, 11, 8, 12, 0), count = 3)
+        assertEquals(listOf("2026-12-01", "2027-01-01", "2027-02-01"), list.map { it.day })
+    }
+
+    @Test
+    fun descriptionsReadNaturally() {
+        assertEquals("every day", Repeat.EVERY_DAY.describe())
+        assertEquals("Mon–Fri", Repeat.weekly(Repeat.WEEKDAYS).describe())
+        assertEquals("Sat & Sun", Repeat.weekly(Repeat.WEEKENDS).describe())
+        assertEquals("monthly on the 1st", Repeat.monthly(setOf(1)).describe())
+        assertEquals("monthly on the 1st, 15th and last day", Repeat.monthly(setOf(15, 1, Repeat.LAST_DAY)).describe())
+        assertEquals("monthly on the 2nd, 3rd, 11th and 22nd", Repeat.monthly(setOf(2, 3, 11, 22)).describe())
+        assertEquals("every day", Repeat.weekly((1..7).toSet()).describe())
+    }
+
+    @Test
+    fun repeatSurvivesSavingAndLoading() {
+        for (r in listOf(Repeat.EVERY_DAY, Repeat.weekly(setOf(1, 3, 5)), Repeat.monthly(setOf(1, Repeat.LAST_DAY)))) {
+            assertEquals(r, Repeat.fromJson(r.toJson()))
+        }
+        assertEquals(Repeat.EVERY_DAY, Repeat.fromJson(null))
+    }
+}

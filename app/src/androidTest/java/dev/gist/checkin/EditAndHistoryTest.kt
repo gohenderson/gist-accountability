@@ -77,18 +77,18 @@ class EditCheckinTest {
     }
 
     @Test
-    fun turningRingDailyOffAndOnCancelsAndReschedulesTheAlarm() {
+    fun turningTheAlarmOffAndOnCancelsAndReschedulesTheAlarm() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Noon")))
         AlarmScheduler.schedule(TestEnv.ctx, TestEnv.store.checkin("c")!!)
         val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
         assertNotNull("alarm should be scheduled to start with", am.nextAlarmClock)
 
         open("c").use {
-            onView(withText("Ring daily")).perform(scrollTo(), click())
+            onView(withText("Alarm on")).perform(scrollTo(), click())
             assertFalse(TestEnv.store.checkin("c")!!.enabled)
             assertNull("alarm should be cancelled", am.nextAlarmClock)
 
-            onView(withText("Ring daily")).perform(scrollTo(), click())
+            onView(withText("Alarm on")).perform(scrollTo(), click())
             assertTrue(TestEnv.store.checkin("c")!!.enabled)
             val next = am.nextAlarmClock
             assertNotNull("alarm should be back", next)
@@ -106,6 +106,38 @@ class EditCheckinTest {
         assertEquals(listOf(AlarmTime(22, 0)), c.times)
         val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
         assertEquals(AlarmScheduler.nextTriggerMillis(22, 0) / 1000, am.nextAlarmClock!!.triggerTime / 1000)
+    }
+
+    @Test
+    fun choosingWeekdaysSavesTheRuleAndMovesTheAlarm() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Work")))
+        open("c").use {
+            onView(tagged("repeat")).perform(scrollTo(), click())
+            onView(withText("Weekdays (Mon–Fri)")).inRoot(isDialog()).perform(click())
+            onView(withText("Repeats: Mon–Fri")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        val c = TestEnv.store.checkin("c")!!
+        assertEquals(Repeat.weekly(Repeat.WEEKDAYS), c.repeat)
+        val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
+        assertEquals(AlarmScheduler.nextTriggerMillis(c)!! / 1000, am.nextAlarmClock!!.triggerTime / 1000)
+    }
+
+    @Test
+    fun monthlyOnTheFirstThroughTheDateList() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Bills")))
+        open("c").use {
+            onView(tagged("repeat")).perform(scrollTo(), click())
+            onView(withText("Monthly on certain dates…")).inRoot(isDialog()).perform(click())
+            onView(withText("1st")).inRoot(isDialog()).perform(click())
+            onView(withText("Save")).inRoot(isDialog()).perform(click())
+            onView(withText("Repeats: monthly on the 1st")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        val c = TestEnv.store.checkin("c")!!
+        assertEquals(Repeat.monthly(setOf(1)), c.repeat)
+        val next = java.time.Instant.ofEpochMilli(
+            TestEnv.ctx.getSystemService(AlarmManager::class.java).nextAlarmClock!!.triggerTime,
+        ).atZone(java.time.ZoneId.systemDefault())
+        assertEquals(1, next.dayOfMonth)
     }
 
     @Test

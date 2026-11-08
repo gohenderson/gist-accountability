@@ -1,6 +1,6 @@
 # Gist — an un-dismissable daily diet check-in
 
-Android alarms that ring every day and won't stop until you complete the check-in's
+Android alarms that ring on your schedule and won't stop until you complete the check-in's
 steps: **solve math problems → scan a QR code / barcode → answer yes/no questions**
 about what you ate. Each step is optional, so a check-in can be a plain hard-to-dismiss
 wake-up alarm, a diet survey, or both. You can have as many check-ins as you like. It keeps a simple log so you can see the *gist* of your
@@ -127,7 +127,7 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
 - **Unit tests** (`app/src/test`, plain JVM, seconds): with several times, the next alarm
   is the soonest one ahead and wraps to tomorrow's first; math problems always have the right
   answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
-  years); next-alarm time, including daylight-saving changes; stats; step descriptions.
+  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
   - multiple times: each time's results are saved separately; History shows ✗ for a day if
@@ -144,8 +144,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     question is answered; a wrong math answer gives a new problem; steps run in order;
     two waiting check-ins run back to back; with no camera, the scan step offers the math
     fallback; a check-in with no steps only needs Dismiss
-  - edit page: rename saves as you type; add and reorder questions; turning Ring daily
-    off/on cancels and reschedules the real alarm; delete
+  - edit page: rename saves as you type; add and reorder questions; turning the alarm
+    off/on cancels and reschedules the real alarm; Weekdays and Monthly-on-the-1st
+    rules save and move the real alarm to the right day; delete
   - History: correct stats, and fixing a day from the grid updates them
   - saving and loading, including data from the first version
   - backup: export → import on a "fresh phone" restores check-ins, answers and photos;
@@ -195,6 +196,18 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **–** if every time that day was skipped; **·** if nothing rang.
   On History, tapping a day asks which time to fix (a missed time can be filled in
   afterwards). The CSV has one row per day, check-in and time, with its status.
+- **Repeats:** Under **Schedule**, tap **Repeats** to choose which days a check-in
+  rings (applies to all its times):
+  - **Every day** (the default);
+  - **Weekdays (Mon–Fri)** or **Weekends (Sat & Sun)**;
+  - **Specific days of the week…**, e.g. Mon, Wed, Fri;
+  - **Monthly on certain dates…**, e.g. the 1st and 15th, plus **Last day of the
+    month**. A month without the chosen date (the 31st in November) is skipped, so use
+    "Last day" for month-end.
+  Days it isn't scheduled show **·** on History and don't count against you. The start
+  page shows the rule next to the times (e.g. "7:00 AM, Mon–Fri") and the real next ring
+  ("Mon 7:00 AM", "Dec 1 9:00 AM"). The **Alarm on** switch still turns the whole check-in
+  off and on.
 - **Do it now / Skip:** Each check-in card on the start page shows its next ring.
   - **Do it now** runs the same steps right away (math, scan, questions). That ring then
     stays quiet. A scan must really be scanned: the "Can't scan?" fallback isn't offered
