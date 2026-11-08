@@ -68,7 +68,8 @@ def main():
         for cls, name, msg, detail in failures:
             simple = cls.rsplit(".", 1)[-1]
             out.write(f"- **{simple} › {name}**: `{msg[:300]}`\n")
-            m = re.search(rf"\(({re.escape(simple)}\.kt):(\d+)\)", detail or "")
+            # Stack frame of the test class itself, e.g. "at dev.x.MathGenTest.foo(LogicTest.kt:41)"
+            m = re.search(rf"{re.escape(cls)}\.[^(\s]*\((\w+\.kt):(\d+)\)", detail or "")
             src = find_source(m.group(1)) if m else None
             loc = f"file={src},line={m.group(2)}," if src else ""
             safe = msg.replace("%", "%25").replace("\r", "").replace("\n", " ")[:500]
