@@ -28,7 +28,7 @@ set +e
 gradle "$@" \
   --stacktrace \
   --console=plain \
-  --warning-mode=all \
+  --warning-mode=summary \
   2>&1 | tee "$LOG"
 status=${PIPESTATUS[0]}
 set -e

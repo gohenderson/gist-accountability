@@ -50,6 +50,20 @@ jobs:
       - name: Lint (report only)
         run: bash .github/scripts/run-gradle.sh lintDebug
 
+      - name: Show lint findings
+        if: always()
+        run: |
+          report=app/build/reports/lint-results-debug.txt
+          if [[ ! -f "$report" ]]; then echo "No lint text report."; exit 0; fi
+          cat "$report"
+          {
+            echo "### Lint"
+            echo '```'
+            grep -E ': (Error|Warning): ' "$report" | sed -E 's/.*: (Error|Warning): .* \[([A-Za-z0-9]+)\]$/\1 \2/' | sort | uniq -c | sort -rn || true
+            tail -n 1 "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v5
         with:

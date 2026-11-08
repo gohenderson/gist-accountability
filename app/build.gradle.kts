@@ -51,9 +51,9 @@ android {
         checkReleaseBuilds = false
         // Play Store target-SDK deadlines don't apply to a sideloaded app.
         disable += "ExpiredTargetSdkVersion"
-        // Also print findings into the build log (visible on the Actions run page).
+        // Plain-text report; CI prints it into the build log.
         textReport = true
-        textOutput = file("stdout")
+        textOutput = file("build/reports/lint-results-debug.txt")
     }
 }
 
