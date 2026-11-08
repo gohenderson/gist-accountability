@@ -20,6 +20,7 @@ android {
         // CI passes these (-PversionCode=… -PversionName=…); local builds use the defaults.
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "dev"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -45,6 +46,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        animationsDisabled = true
+        unitTests.isReturnDefaultValues = true
+    }
+
     lint {
         // Lint runs as its own CI step and its report is uploaded; it doesn't block builds.
         abortOnError = false
@@ -67,4 +73,13 @@ dependencies {
     // The only dependency: ZXing's pure-Java barcode decoder (Apache-2.0,
     // https://github.com/zxing/zxing). No network access, no Google Play services.
     implementation("com.google.zxing:core:3.5.3")
+
+    // Test-only libraries: used to build and run the tests, never included in the app APK.
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }

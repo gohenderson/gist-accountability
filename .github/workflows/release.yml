@@ -5,7 +5,8 @@ name: Release
 #     exist yet, it's created on the commit you run from (normally main's latest).
 #   - Or push a tag yourself: git tag v1.0.0 && git push origin v1.0.0
 # Requires the signing secrets in the "release" environment (README.md → Releases);
-# each run waits for approval under Actions before it can use them.
+# each run waits for approval under Actions before it can use them. The full test suite
+# (Build workflow) runs first; the approval request only appears once it passes.
 
 on:
   push:
@@ -28,8 +29,16 @@ env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  checks:
+    name: Tests
+    # Build, unit tests, lint and UI tests must all pass before anything is released.
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+
   release:
     name: Signed release APK
+    needs: checks
     # Signing secrets live in the "release" environment, which requires the repo
     # owner's approval before any run can read them.
     environment: release

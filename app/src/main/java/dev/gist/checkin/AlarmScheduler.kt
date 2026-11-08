@@ -10,8 +10,7 @@ import java.time.ZonedDateTime
 object AlarmScheduler {
     const val EXTRA_CHECKIN = "checkinId"
 
-    fun nextTriggerMillis(hour: Int, minute: Int): Long {
-        val now = ZonedDateTime.now()
+    fun nextTriggerMillis(hour: Int, minute: Int, now: ZonedDateTime = ZonedDateTime.now()): Long {
         var t = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
         if (!t.isAfter(now)) t = t.plusDays(1)
         return t.toInstant().toEpochMilli()

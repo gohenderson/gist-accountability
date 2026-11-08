@@ -13,15 +13,15 @@ object Days {
     fun today(): String = LocalDate.now().toString()
 
     /** The day a check-in ringing right now is about. */
-    fun forAlarmNow(aboutYesterday: Boolean): String {
-        val now = LocalDateTime.now()
+    fun forAlarmNow(aboutYesterday: Boolean, now: LocalDateTime = LocalDateTime.now()): String {
         var day = if (now.hour < ROLLOVER_HOUR) now.toLocalDate().minusDays(1) else now.toLocalDate()
         if (aboutYesterday) day = day.minusDays(1)
         return day.toString()
     }
 
     /** Most recent first. */
-    fun lastN(n: Int): List<String> = (0 until n).map { LocalDate.now().minusDays(it.toLong()).toString() }
+    fun lastN(n: Int, today: LocalDate = LocalDate.now()): List<String> =
+        (0 until n).map { today.minusDays(it.toLong()).toString() }
 
     fun pretty(day: String): String =
         LocalDate.parse(day).format(DateTimeFormatter.ofPattern("EEEE, MMM d"))

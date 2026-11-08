@@ -61,6 +61,7 @@ class CheckinEditActivity : Activity() {
         val name = EditText(this).apply {
             setText(c.name)
             hint = "e.g. Starting the Day"
+            tag = "checkin-name"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}

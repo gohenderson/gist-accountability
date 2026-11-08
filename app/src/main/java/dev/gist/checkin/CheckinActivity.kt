@@ -216,13 +216,14 @@ class CheckinActivity : Activity() {
     private fun mathUi(col: LinearLayout, step: Step.Math) {
         val p = problem ?: MathGen.make(step.level).also { problem = it }
         col.add(label("Problem ${solved + 1} of ${step.count}", 15f), dp(24))
-        col.add(label("${p.text} = ?", 34f, bold = true), dp(12))
+        col.add(label("${p.text} = ?", 34f, bold = true).apply { tag = "math-problem" }, dp(12))
 
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             textSize = 28f
             hint = "Answer"
             imeOptions = EditorInfo.IME_ACTION_DONE
+            tag = "math-answer"
         }
         val check = {
             val entered = input.text.toString().trim()
@@ -263,6 +264,7 @@ class CheckinActivity : Activity() {
             showStep()
         }
         fallback.visibility = View.GONE
+        fallback.tag = "scan-fallback"
         col.add(fallback, dp(12))
         ui.postDelayed({ fallback.visibility = View.VISIBLE }, FALLBACK_DELAY_MS)
 
@@ -298,8 +300,8 @@ class CheckinActivity : Activity() {
         for (q in qs) {
             col.add(label(q.text, 19f), dp(28))
             val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-            val yes = RadioButton(this).apply { id = View.generateViewId(); text = "Yes"; textSize = 18f }
-            val no = RadioButton(this).apply { id = View.generateViewId(); text = "No"; textSize = 18f }
+            val yes = RadioButton(this).apply { id = View.generateViewId(); text = "Yes"; textSize = 18f; tag = "q:${q.id}:yes" }
+            val no = RadioButton(this).apply { id = View.generateViewId(); text = "No"; textSize = 18f; tag = "q:${q.id}:no" }
             group.addView(yes, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             group.addView(no, RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             answers[q.id]?.let { (if (it) yes else no).isChecked = true }

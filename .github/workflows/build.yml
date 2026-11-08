@@ -5,12 +5,13 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:   # the Release workflow runs this first and only releases if it passes
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: ${{ github.workflow }}-build-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -18,7 +19,7 @@ env:
 
 jobs:
   build:
-    name: Debug build + lint
+    name: Build, unit tests, lint
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -46,6 +47,13 @@ jobs:
 
       - name: Build debug APK
         run: bash .github/scripts/run-gradle.sh assembleDebug
+
+      - name: Unit tests
+        run: bash .github/scripts/run-gradle.sh testDebugUnitTest
+
+      - name: Unit test summary
+        if: always()
+        run: python3 .github/scripts/test-summary.py "Unit tests" app/build/test-results
 
       - name: Lint (report only)
         run: bash .github/scripts/run-gradle.sh lintDebug
@@ -80,8 +88,8 @@ jobs:
           path: |
             build-logs/
             app/build/reports/
+            app/build/test-results/
             build/reports/
-            app/build/intermediates/lint_intermediate_text_report/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -93,8 +101,76 @@ jobs:
             echo
             echo "Failed run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
-            echo "If the failure was in a Gradle step, the error details are above."
-            echo "Otherwise, open the failed step's log on the run page."
+            echo "Compile errors and failing tests are annotated above and on the code."
             echo "Logs and reports: the **build-logs** artifact."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error title=Build failed::See the job summary and the build-logs artifact."
+
+  ui-tests:
+    name: UI tests (emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Build app and test APKs
+        run: bash .github/scripts/run-gradle.sh assembleDebug assembleDebugAndroidTest
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run UI tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-snapshot
+          # One command only: the action runs each script line as a separate shell.
+          script: bash .github/scripts/ui-tests.sh
+
+      - name: UI test summary
+        if: always()
+        run: python3 .github/scripts/test-summary.py "UI tests" app/build/outputs/androidTest-results
+
+      - name: Upload logs, reports and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ui-test-logs
+          path: |
+            build-logs/
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report failure
+        if: failure()
+        run: |
+          {
+            echo "### UI tests failed"
+            echo
+            echo "Failing tests are listed above. The **ui-test-logs** artifact has the HTML report,"
+            echo "a screenshot of each failed test's screen, and the emulator's full log."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=UI tests failed::See the job summary and the ui-test-logs artifact."
