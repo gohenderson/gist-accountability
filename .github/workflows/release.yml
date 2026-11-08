@@ -154,6 +154,8 @@ jobs:
           echo "### ✅ Released [$TAG](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload logs and reports
+
+        continue-on-error: true   # a storage hiccup shouldn't fail the run
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
