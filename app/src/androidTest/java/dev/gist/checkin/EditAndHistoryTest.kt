@@ -10,6 +10,7 @@ import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isCompletelyDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withHint
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -135,6 +136,16 @@ class StartPageTest {
 
     @After
     fun tearDown() = TestEnv.reset(emptyList())
+
+    @Test
+    fun cardsAreOnlyAsTallAsTheirContentSoSeveralFitOnScreen() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "First check-in"), TestEnv.checkin("b", "Second check-in")))
+        ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
+            // No scrolling: both should be on screen right away.
+            onView(withText("First check-in")).check(matches(isCompletelyDisplayed()))
+            onView(withText("Second check-in")).check(matches(isCompletelyDisplayed()))
+        }
+    }
 
     @Test
     fun switchOnTheNameRowTurnsTheAlarmOffAndOn() {

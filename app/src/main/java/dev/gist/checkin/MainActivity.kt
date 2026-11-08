@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -142,8 +143,9 @@ class MainActivity : BaseActivity() {
             }
         }
 
-        val actions = row()
-        actions.addWeighted(View(this))
+        // Right-aligned with gravity. (An empty spacer view here would grab all the height
+        // it's offered, which stretched the card to fill the screen.)
+        val actions = row().apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         if (c.questions.isNotEmpty()) {
             actions.addWrapped(textButton("History") { startActivity(HistoryActivity.intent(this, c.id)) })
         }
