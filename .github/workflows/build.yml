@@ -73,7 +73,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: gist-debug-apk
           path: app/build/outputs/apk/debug/*.apk
@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload logs and reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: |
@@ -154,7 +154,7 @@ jobs:
 
       - name: Upload logs, reports and failure screenshots
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ui-test-logs
           path: |
