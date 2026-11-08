@@ -90,24 +90,57 @@ class CheckinEditActivity : BaseActivity() {
             setOnCheckedChangeListener { _, on -> change { it.copy(enabled = on) } }
         }
         col.add(sw, dp(4))
-        col.add(button("Repeats: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(8))
-        col.add(label("Rings at:", 15f), dp(12))
-        c.times.forEachIndexed { i, t ->
-            val r = row()
-            r.addView(
-                button(Days.time(t.hour, t.minute)) { pickTime(c, i) }.apply { tag = "time:$i" },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            )
-            if (c.times.size > 1) {
-                r.addView(button("✕") { removeTime(i) }.apply {
-                    tag = "remove-time:$i"
-                    contentDescription = "Remove ${Days.time(t.hour, t.minute)}"
-                })
-            }
-            col.add(r, dp(4))
+        val t = c.trigger
+        val kindText = when (t.kind) {
+            Trigger.ARRIVE -> "when I arrive at a place"
+            Trigger.LEAVE -> "when I leave a place"
+            else -> "at set times"
         }
-        col.add(button("+ Add time") { pickTime(c, null) }, dp(4))
-        col.add(label(if (c.enabled) "Next: ${CheckinText.next(c)}" else "Alarm is off", 14f), dp(4))
+        col.add(button("Rings $kindText") { pickTriggerKind(c) }.apply { tag = "trigger-kind" }, dp(8))
+        if (t.isPlace) {
+            col.add(placeButton(t.place) { pickPlace { p -> setTrigger { it.copy(place = p) } } }, dp(4))
+            col.add(label("Only when all of these hold:", 15f), dp(12))
+            col.add(button("Days: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(4))
+            val window = Trigger.windowText(t) { Days.time(it.hour, it.minute) }.ifEmpty { "any time of day" }
+            col.add(button("Time: $window") { pickWindow(c) }.apply { tag = "trigger-window" }, dp(4))
+            col.add(styledSwitch("At most once a day").apply {
+                isChecked = t.oncePerDay
+                tag = "trigger-once"
+                setOnCheckedChangeListener { _, on -> setTrigger { it.copy(oncePerDay = on) } }
+            }, dp(8))
+            col.add(label(if (c.enabled) "Rings ${CheckinText.whenText(c)}" else "Alarm is off", 14f).apply {
+                tag = "trigger-summary"
+            }, dp(6))
+        } else {
+            col.add(button("Repeats: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(8))
+            col.add(label("Rings at:", 15f), dp(12))
+            c.times.forEachIndexed { i, tm ->
+                val r = row()
+                r.addView(
+                    button(Days.time(tm.hour, tm.minute)) { pickTime(c, i) }.apply { tag = "time:$i" },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                if (c.times.size > 1) {
+                    r.addView(button("✕") { removeTime(i) }.apply {
+                        tag = "remove-time:$i"
+                        contentDescription = "Remove ${Days.time(tm.hour, tm.minute)}"
+                    })
+                }
+                col.add(r, dp(4))
+            }
+            col.add(button("+ Add time") { pickTime(c, null) }, dp(4))
+            val whereText = if (t.where == Trigger.ANYWHERE || t.place == null) "anywhere" else Trigger.describe(t)
+            col.add(button("Where: $whereText") { pickWhere(c) }.apply { tag = "trigger-where" }, dp(8))
+            if (t.where != Trigger.ANYWHERE) {
+                col.add(placeButton(t.place) { pickPlace { p -> setTrigger { it.copy(place = p) } } }, dp(4))
+            }
+            col.add(label(if (c.enabled) "Next: ${CheckinText.next(c)}" else "Alarm is off", 14f), dp(4))
+        }
+        if (c.enabled && t.usesLocation && !LocationTriggers.hasBackground(this)) {
+            col.add(label("Location must be allowed \"all the time\" for this to work while Gist is closed.", 14f,
+                color = colorWarn), dp(10))
+            col.add(outlineButton("Allow location") { askLocation(background = true) }.apply { tag = "allow-location" }, dp(4))
+        }
         val yesterday = CheckBox(this).apply {
             text = "Answers count for the previous day (e.g. a morning check-in about last night)"
             isChecked = c.aboutYesterday
@@ -261,6 +294,199 @@ class CheckinEditActivity : BaseActivity() {
             start.minute,
             DateFormat.is24HourFormat(this)
         ).show()
+    }
+
+    // ---------------------------------------------------------------- triggers
+
+    private fun setTrigger(f: (Trigger) -> Trigger) = change { it.copy(trigger = f(it.trigger)) }
+
+    private fun placeButton(p: Place?, onClick: () -> Unit) =
+        button(if (p == null) "Place: choose…" else "Place: ${p.name} · ${p.radiusM} m") { onClick() }.apply {
+            tag = "trigger-place"
+        }
+
+    private fun pickTriggerKind(c: Checkin) {
+        val kinds = listOf(Trigger.TIME, Trigger.ARRIVE, Trigger.LEAVE)
+        val labels = arrayOf("At set times", "When I arrive at a place", "When I leave a place")
+        AlertDialog.Builder(this)
+            .setTitle("Rings")
+            .setSingleChoiceItems(labels, kinds.indexOf(c.trigger.kind)) { d, i ->
+                d.dismiss()
+                val kind = kinds[i]
+                setTrigger { it.copy(kind = kind) }
+                if (kind != Trigger.TIME) afterLocationChoice()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickWhere(c: Checkin) {
+        val values = listOf(Trigger.ANYWHERE, Trigger.AT, Trigger.AWAY)
+        val labels = arrayOf("Anywhere", "Only when I'm at a place", "Only when I'm away from a place")
+        AlertDialog.Builder(this)
+            .setTitle("Ring only when")
+            .setSingleChoiceItems(labels, values.indexOf(c.trigger.where)) { d, i ->
+                d.dismiss()
+                setTrigger { it.copy(where = values[i]) }
+                if (values[i] != Trigger.ANYWHERE) afterLocationChoice()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** After choosing something that needs a place: pick one if none, then ask for location access. */
+    private fun afterLocationChoice() {
+        val c = store.checkin(checkinId) ?: return
+        if (c.trigger.place == null) {
+            pickPlace { p -> setTrigger { it.copy(place = p) }; askLocation(background = true) }
+        } else {
+            askLocation(background = true)
+        }
+    }
+
+    private fun pickWindow(c: Checkin) {
+        AlertDialog.Builder(this)
+            .setTitle("Time of day")
+            .setItems(arrayOf("Any time of day", "Only between…")) { _, i ->
+                if (i == 0) {
+                    setTrigger { it.copy(windowStart = null, windowEnd = null) }
+                } else {
+                    val s0 = c.trigger.windowStart ?: AlarmTime(6, 0)
+                    val e0 = c.trigger.windowEnd ?: AlarmTime(10, 0)
+                    TimePickerDialog(this, { _, h, m ->
+                        TimePickerDialog(this, { _, h2, m2 ->
+                            setTrigger { it.copy(windowStart = AlarmTime(h, m), windowEnd = AlarmTime(h2, m2)) }
+                        }, e0.hour, e0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("…and") }.show()
+                    }, s0.hour, s0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("From") }.show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Places already used by any check-in, then "here" and typed coordinates. */
+    private fun pickPlace(onPicked: (Place) -> Unit) {
+        val known = store.checkins.mapNotNull { it.trigger.place }.distinctBy { Triple(it.name, it.lat, it.lon) }
+        val labels = known.map { "${it.name} · ${it.radiusM} m" } + listOf("Use my current location…", "Enter coordinates…")
+        AlertDialog.Builder(this)
+            .setTitle("Place")
+            .setItems(labels.toTypedArray()) { _, i ->
+                when {
+                    i < known.size -> onPicked(known[i])
+                    i == known.size -> useCurrentLocation(onPicked)
+                    else -> enterCoordinates(onPicked)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private var afterLocationGranted: (() -> Unit)? = null
+
+    private fun useCurrentLocation(onPicked: (Place) -> Unit) {
+        if (!LocationTriggers.hasLocation(this)) {
+            afterLocationGranted = { useCurrentLocation(onPicked) }
+            askLocation(background = false)
+            return
+        }
+        toast("Finding your location…")
+        LocationTriggers.locate(this, timeoutMs = 20_000) { loc ->
+            if (isFinishing) return@locate
+            if (loc == null) {
+                toast("Couldn't get a location fix. Try near a window, or enter coordinates.")
+            } else {
+                namePlace(loc.latitude, loc.longitude, onPicked)
+            }
+        }
+    }
+
+    private fun enterCoordinates(onPicked: (Place) -> Unit) {
+        val input = EditText(this).apply {
+            hint = "e.g. 40.7128, -74.0060"
+            tag = "place-coords"
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        box.add(muted("In a maps app, long-press the spot and copy its coordinates.", 13f))
+        box.add(input, dp(8))
+        AlertDialog.Builder(this)
+            .setTitle("Coordinates")
+            .setView(box)
+            .setPositiveButton("Next") { _, _ ->
+                val ll = Place.parseCoordinates(input.text.toString())
+                if (ll == null) toast("Those don't look like coordinates (latitude, longitude).") else namePlace(ll.first, ll.second, onPicked)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun namePlace(lat: Double, lon: Double, onPicked: (Place) -> Unit) {
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        val name = EditText(this).apply {
+            hint = "Name, e.g. Home, Gym, Work"
+            tag = "place-name"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        }
+        box.add(muted(Trigger.coordinates(Place("", lat, lon)), 13f))
+        box.add(name, dp(6))
+        box.add(label("How close counts as there?", 15f), dp(12))
+        val group = RadioGroup(this)
+        val ids = Place.RADII.associateBy {
+            val rb = RadioButton(this).apply {
+                id = View.generateViewId()
+                text = if (it < 1000) "$it m" else "${it / 1000} km"
+                tag = "radius:$it"
+                isChecked = it == Place.DEFAULT_RADIUS
+            }
+            group.addView(rb)
+            rb.id
+        }
+        box.add(group, dp(2))
+        box.add(muted("Phones place you within about 50–200 m, so very small circles can miss.", 12f), dp(4))
+        AlertDialog.Builder(this)
+            .setTitle("Name this place")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Save") { _, _ ->
+                val radius = ids[group.checkedRadioButtonId] ?: Place.DEFAULT_RADIUS
+                onPicked(Place(name.text.toString().trim().ifEmpty { "Place" }, lat, lon, radius))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Asks for location access: first "while using the app", then (if [background]) "all the
+     * time", which Android grants on a settings screen.
+     */
+    private fun askLocation(background: Boolean) {
+        if (!LocationTriggers.hasLocation(this)) {
+            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+            return
+        }
+        if (background && !LocationTriggers.hasBackground(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("Allow location all the time")
+                .setMessage("To notice when you arrive or leave, or check where you are when the alarm is due, Gist " +
+                    "needs location while it's closed. On the next screen choose \"Allow all the time\". " +
+                    "Your location stays on this phone.")
+                .setPositiveButton("Continue") { _, _ ->
+                    requestPermissions(arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_BACKGROUND)
+                }
+                .setNegativeButton("Not now", null)
+                .show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        store.checkin(checkinId)?.let { AlarmScheduler.schedule(this, it) } // start watching its place
+        render()
+        if (requestCode == REQ_LOCATION && LocationTriggers.hasLocation(this)) {
+            val next = afterLocationGranted
+            afterLocationGranted = null
+            if (next != null) next() else askLocation(background = true)
+        }
     }
 
     // ---------------------------------------------------------------- repeat
@@ -481,6 +707,8 @@ class CheckinEditActivity : BaseActivity() {
         private const val REQ_IMAGE = 6
         private const val REQ_IMAGES = 7
         private const val REQ_VIDEO = 8
+        private const val REQ_LOCATION = 9
+        private const val REQ_BACKGROUND = 10
 
         fun intent(context: Context, checkinId: String): Intent =
             Intent(context, CheckinEditActivity::class.java).putExtra(EXTRA_ID, checkinId)

@@ -403,3 +403,85 @@ class LinksTest {
         assertEquals(Links.REPO + "#donate", Links.DONATE)
     }
 }
+
+class TriggerTest {
+    private val home = Place("Home", 40.7128, -74.0060, 200)
+    private fun at(h: Int, m: Int, day: Int = 9) = LocalDateTime.of(2026, 11, day, h, m) // Nov 9 2026 = Monday
+
+    @Test
+    fun distanceIsAboutRight() {
+        // One degree of latitude ≈ 111.2 km.
+        val d = Trigger.distanceM(40.0, -74.0, 41.0, -74.0)
+        assertTrue("got $d", d in 111_000.0..111_400.0)
+        assertTrue(home.contains(40.7129, -74.0061))
+        assertFalse(home.contains(40.7228, -74.0060)) // ~1.1 km north
+    }
+
+    @Test
+    fun windowsIncludingOnesAcrossMidnight() {
+        val morning = Trigger(windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0))
+        assertTrue(Trigger.inWindow(morning, java.time.LocalTime.of(6, 0)))
+        assertTrue(Trigger.inWindow(morning, java.time.LocalTime.of(9, 0)))
+        assertFalse(Trigger.inWindow(morning, java.time.LocalTime.of(9, 1)))
+        val night = Trigger(windowStart = AlarmTime(22, 0), windowEnd = AlarmTime(2, 0))
+        assertTrue(Trigger.inWindow(night, java.time.LocalTime.of(23, 30)))
+        assertTrue(Trigger.inWindow(night, java.time.LocalTime.of(1, 0)))
+        assertFalse(Trigger.inWindow(night, java.time.LocalTime.of(12, 0)))
+        assertTrue(Trigger.inWindow(Trigger(), java.time.LocalTime.of(3, 0)))
+    }
+
+    @Test
+    fun arrivingRingsOnlyWhenEveryConditionHolds() {
+        val c = Checkin(
+            id = "g", name = "Gym",
+            trigger = Trigger(Trigger.ARRIVE, home, windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
+            repeat = Repeat.weekly(Repeat.WEEKDAYS),
+        )
+        assertTrue(Trigger.placeEventRings(c, entering = true, now = at(7, 0), rangToday = false))
+        assertFalse("leaving isn't arriving", Trigger.placeEventRings(c, entering = false, now = at(7, 0), rangToday = false))
+        assertFalse("outside the window", Trigger.placeEventRings(c, true, at(10, 0), false))
+        assertFalse("not a weekday", Trigger.placeEventRings(c, true, at(7, 0, day = 8), false))
+        assertFalse("once a day", Trigger.placeEventRings(c, true, at(7, 0), rangToday = true))
+        assertTrue("unless allowed more", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(oncePerDay = false)), true, at(7, 0), true))
+        assertFalse("off", Trigger.placeEventRings(c.copy(enabled = false), true, at(7, 0), false))
+        assertFalse("no place set", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(place = null)), true, at(7, 0), false))
+        val leave = c.copy(trigger = c.trigger.copy(kind = Trigger.LEAVE))
+        assertTrue(Trigger.placeEventRings(leave, entering = false, now = at(8, 0), rangToday = false))
+    }
+
+    @Test
+    fun timedCheckinsCanRequireBeingAtOrAwayFromAPlace() {
+        val atHome = Trigger(where = Trigger.AT, place = home)
+        assertTrue(Trigger.locationAllows(atHome, 50.0))
+        assertFalse(Trigger.locationAllows(atHome, 5_000.0))
+        assertTrue("unknown location still rings", Trigger.locationAllows(atHome, null))
+        val away = Trigger(where = Trigger.AWAY, place = home)
+        assertTrue(Trigger.locationAllows(away, 5_000.0))
+        assertFalse(Trigger.locationAllows(away, 50.0))
+        assertTrue(Trigger.locationAllows(Trigger(), 5_000.0))
+    }
+
+    @Test
+    fun coordinatesParseFromMapsApps() {
+        assertEquals(40.7128 to -74.006, Place.parseCoordinates("40.7128, -74.0060"))
+        assertEquals(51.5 to -0.12, Place.parseCoordinates("(51.5,-0.12)"))
+        assertEquals(1.0 to 2.0, Place.parseCoordinates("1 2"))
+        assertEquals(null, Place.parseCoordinates("91, 0"))
+        assertEquals(null, Place.parseCoordinates("Main Street"))
+        assertEquals(null, Place.parseCoordinates("1, 2, 3"))
+    }
+
+    @Test
+    fun descriptions() {
+        val c = Checkin(
+            id = "g", name = "Gym", repeat = Repeat.weekly(setOf(1, 3, 5)),
+            trigger = Trigger(Trigger.ARRIVE, Place("Gym", 1.0, 2.0), windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
+        )
+        val text = CheckinText.whenText(c)
+        assertTrue(text, text.startsWith("when you arrive at Gym, Mon, Wed, Fri, between "))
+        assertTrue(text, text.endsWith(", once a day"))
+        assertEquals("when you leave Work", Trigger.describe(Trigger(Trigger.LEAVE, Place("Work", 1.0, 2.0))))
+        assertEquals("only when away from Home", Trigger.describe(Trigger(where = Trigger.AWAY, place = home)))
+        assertTrue("no set times for place triggers", AlarmScheduler.occurrences(c).isEmpty())
+    }
+}

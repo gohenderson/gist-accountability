@@ -117,6 +117,15 @@ object Library {
             ),
         ),
         Template(
+            "gym", "Fitness",
+            "Rings when you arrive at the gym (on work-out days), with a quick question. Pick your gym after adding it.",
+            Checkin(
+                id = "", name = "At the gym", trigger = Trigger(kind = Trigger.ARRIVE, oncePerDay = true),
+                repeat = Repeat.weekly(setOf(1, 3, 5)),
+                questions = listOf(q("warmup", "Did you plan today's workout before you started?", true)),
+            ),
+        ),
+        Template(
             "weigh-in", "Fitness",
             "Sunday mornings.",
             Checkin(

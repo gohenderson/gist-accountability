@@ -50,6 +50,7 @@ data class Checkin(
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
     val steps: List<String> = emptyList(), // order of Steps kinds; see Steps.order
+    val trigger: Trigger = Trigger.DEFAULT, // what makes it ring (times, or arriving/leaving a place)
 ) {
     companion object {
         const val SILENT = "silent"
@@ -306,6 +307,7 @@ class Store(context: Context) {
             soundUri = o.optString("soundUri", "").ifEmpty { null },
             soundTitle = o.optString("soundTitle", ""),
             background = Background.fromJson(o.optJSONObject("background")),
+            trigger = Trigger.fromJson(o.optJSONObject("trigger")),
             steps = o.optJSONArray("steps")?.let { a -> (0 until a.length()).map { a.optString(it) } }
                 ?.filter { it in Steps.ALL }?.distinct().orEmpty(),
         )
@@ -330,6 +332,7 @@ class Store(context: Context) {
             .put("soundTitle", c.soundTitle)
             .put("background", c.background.toJson())
             .put("steps", JSONArray(c.steps))
+            .put("trigger", c.trigger.toJson())
     }
 
     companion object {

@@ -46,6 +46,7 @@ class MainActivity : BaseActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        if (requestCode == REQ_LOCATION) AlarmScheduler.scheduleAll(this) // start watching places
         render()
     }
 
@@ -143,6 +144,16 @@ class MainActivity : BaseActivity() {
                 r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
                 box.add(r)
                 card.add(box, dp(10))
+            } else if (c.trigger.isPlace) {
+                val box = column().apply {
+                    background = rounded(colorOf(R.color.surface_variant), 14)
+                    setPadding(dp(14), dp(10), dp(10), dp(10))
+                }
+                box.add(label("📍 Rings ${CheckinText.whenText(c)}", 15f).apply { tag = "next:${c.id}" })
+                if (!LocationTriggers.hasBackground(this)) {
+                    box.add(label("Needs location \"all the time\" (see Finish setup)", 13f, color = colorWarn), dp(2))
+                }
+                card.add(box, dp(10))
             }
         }
 
@@ -192,6 +203,15 @@ class MainActivity : BaseActivity() {
                 openSettings(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
             }
         }
+        if (LocationTriggers.anyUseLocation(this) && !LocationTriggers.hasBackground(this)) {
+            items += "Allow location all the time (for place-based check-ins)" to {
+                if (!LocationTriggers.hasLocation(this)) {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+                } else {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_LOCATION)
+                }
+            }
+        }
         if (!Settings.canDrawOverlays(this)) {
             items += "Allow display over other apps (brings a ringing alarm back if you leave it)" to {
                 openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
@@ -236,5 +256,6 @@ class MainActivity : BaseActivity() {
 
     companion object {
         private const val REQ_NOTIF = 1
+        private const val REQ_LOCATION = 2
     }
 }

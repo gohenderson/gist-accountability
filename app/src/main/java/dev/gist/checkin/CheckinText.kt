@@ -20,6 +20,7 @@ object CheckinText {
 
     /** e.g. "tomorrow at 7:00 AM" */
     fun next(c: Checkin): String {
+        if (c.trigger.isPlace) return whenText(c)
         val millis = AlarmScheduler.nextTriggerMillis(c) ?: return "not scheduled"
         return at(millis)
     }
@@ -42,8 +43,27 @@ object CheckinText {
     fun times(c: Checkin): String = c.times.joinToString(", ") { Days.time(it.hour, it.minute) }
 
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
-    fun oneLine(c: Checkin): String =
-        if (c.enabled) "${times(c)}${repeatSuffix(c)} · ${steps(c)}" else "Off · ${steps(c)}"
+    fun oneLine(c: Checkin): String = when {
+        !c.enabled -> "Off · ${steps(c)}"
+        c.trigger.isPlace -> "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
+        c.trigger.where != Trigger.ANYWHERE && c.trigger.place != null ->
+            "${times(c)}${repeatSuffix(c)}, ${Trigger.describe(c.trigger)} · ${steps(c)}"
+        else -> "${times(c)}${repeatSuffix(c)} · ${steps(c)}"
+    }
+
+    /**
+     * For place triggers, everything that must hold, e.g. "when you arrive at Gym, Mon–Fri,
+     * between 6:00 AM and 9:00 AM, once a day".
+     */
+    fun whenText(c: Checkin): String {
+        val t = c.trigger
+        if (!t.isPlace) return times(c) + repeatSuffix(c)
+        val parts = mutableListOf(Trigger.describe(t))
+        if (c.repeat.kind != Repeat.DAILY) parts += c.repeat.describe()
+        Trigger.windowText(t) { Days.time(it.hour, it.minute) }.takeIf { it.isNotEmpty() }?.let { parts += it }
+        if (t.oncePerDay) parts += "once a day"
+        return parts.joinToString(", ")
+    }
 
     private fun repeatSuffix(c: Checkin): String =
         if (c.repeat.kind == Repeat.DAILY) "" else ", ${c.repeat.describe()}"
