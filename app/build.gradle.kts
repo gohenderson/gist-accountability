@@ -72,7 +72,7 @@ kotlin {
 dependencies {
     // The only dependency: ZXing's pure-Java barcode decoder (Apache-2.0,
     // https://github.com/zxing/zxing). No network access, no Google Play services.
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // Test-only libraries: used to build and run the tests, never included in the app APK.
     testImplementation("junit:junit:4.13.2")
