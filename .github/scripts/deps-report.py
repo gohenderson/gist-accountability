@@ -112,11 +112,13 @@ def check_build_tools(findings, rows):
 def check_actions(findings, rows):
     seen = {}
     for f in sorted(glob.glob(".github/workflows/*.yml")):
-        for m in re.finditer(r"uses:\s*([\w.\-]+/[\w.\-]+)(/[\w./\-]+)?@([\w.\-]+)", read(f)):
-            repo, sub, ref = m.group(1), m.group(2) or "", m.group(3)
-            seen[(repo, sub, ref)] = True
-    for repo, sub, ref in seen:
-        name = f"{repo}{sub}@{ref}"
+        # "uses: owner/repo@<sha> # v7" (pinned) or "uses: owner/repo@v7"
+        for m in re.finditer(r"uses:\s*([\w.\-]+/[\w.\-]+)(/[\w./\-]+)?@([\w.\-]+)(?:\s*#\s*(v[\w.\-]+))?", read(f)):
+            repo, sub, ref, label = m.group(1), m.group(2) or "", m.group(3), m.group(4)
+            seen[(repo, sub, ref, label)] = True
+    for repo, sub, ref, label in seen:
+        version = label or ref
+        name = f"{repo}{sub}@{version}" + (" (pinned)" if label else "")
         latest = None
         try:
             latest = gh_api(f"/repos/{repo}/releases/latest")["tag_name"]
@@ -130,7 +132,7 @@ def check_actions(findings, rows):
         except Exception:
             pass
         notes = []
-        cur_major = re.match(r"v?(\d+)", ref)
+        cur_major = re.match(r"v?(\d+)", version)
         new_major = re.match(r"v?(\d+)", latest or "")
         if cur_major and new_major and int(new_major.group(1)) > int(cur_major.group(1)):
             notes.append(f"⬆ newer major: {latest}")
@@ -182,9 +184,14 @@ def check_osv(findings, files):
             results = json.loads(r.read())["results"]
         for (g, a, v), res in zip(chunk, results):
             for vuln in res.get("vulns", []) or []:
-                where = "app / tests" if (g, a, v) in in_app else "build tools only (not in the APK)"
+                ships = (g, a, v) in in_app
+                where = "app / tests" if ships else "build tools only (not in the APK)"
                 vulns.append((f"{g}:{a}:{v}", vuln["id"], where))
-                findings.append(f"Vulnerability {vuln['id']} in {g}:{a}:{v}")
+                # Build-tool-only issues can't be fixed here (they come with the Android Gradle
+                # Plugin and are fixed by updating it, which the outdated check reports), so
+                # they're listed for information but don't count as findings.
+                if ships:
+                    findings.append(f"Vulnerability {vuln['id']} in {g}:{a}:{v}")
     return vulns, len(coords)
 
 

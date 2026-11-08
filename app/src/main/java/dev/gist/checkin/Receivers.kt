@@ -37,7 +37,18 @@ class AlarmReceiver : BroadcastReceiver() {
 /** Re-arms alarms after reboot, app update, or clock/time-zone changes. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        // This receiver is exported (system broadcasts need that): act only on the system
+        // events it's registered for, never on arbitrary intents from other apps.
+        if (intent.action !in SYSTEM_ACTIONS) return
         AlarmScheduler.scheduleAll(context)
         if (Store(context).pending.isNotEmpty()) Notif.showWaiting(context)
     }
 }
+
+private val SYSTEM_ACTIONS = setOf(
+    Intent.ACTION_BOOT_COMPLETED,
+    Intent.ACTION_MY_PACKAGE_REPLACED,
+    Intent.ACTION_TIME_CHANGED,
+    Intent.ACTION_TIMEZONE_CHANGED,
+    "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED",
+)

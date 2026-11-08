@@ -171,6 +171,12 @@ class SettingsActivity : BaseActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
+        // Only accept documents from the system file picker (content:// from another app's
+        // provider), never a file path or one of this app's own providers.
+        if (uri.scheme != "content" || uri.authority.orEmpty().startsWith(packageName)) {
+            toast("That file location isn't supported.")
+            return
+        }
         try {
             when (requestCode) {
                 REQ_EXPORT_BACKUP -> {
