@@ -75,7 +75,7 @@ dependencies {
     // and SnakeYAML Engine (Apache-2.0, https://bitbucket.org/snakeyaml/snakeyaml-engine),
     // a YAML 1.2 parser/emitter for backup files. It stays on 2.x: 3.x targets Java 11,
     // whose library methods older Android versions (this app supports 10+) don't have.
-    implementation("org.snakeyaml:snakeyaml-engine:2.8")
+    implementation("org.snakeyaml:snakeyaml-engine:2.10")
 
     // Test-only libraries: used to build and run the tests, never included in the app APK.
     testImplementation("junit:junit:4.13.2")
