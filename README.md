@@ -12,7 +12,8 @@ diet without counting calories.
   for backup files. Everything else (camera, UI, storage, video) uses Android's built-in
   APIs. There's no AndroidX and no Google Play services. SnakeYAML Engine stays on 2.x
   on purpose: 3.x needs Java 11 library methods that Android 10–12 don't have.
-- **No internet permission.** Nothing ever leaves your phone. Answers live in the app's
+- **No internet permission.** Nothing ever leaves your phone (that includes your location,
+  if you use place triggers). Answers live in the app's
   private storage, and the only way out is the **Export CSV** button.
 - About 4,900 lines of Kotlin in 28 files, with no generated code.
 
@@ -129,7 +130,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
 - **Unit tests** (`app/src/test`, plain JVM, seconds): with several times, the next alarm
   is the soonest one ahead and wraps to tomorrow's first; math problems always have the right
   answer; date rules (before-4 AM rollover, "previous day" check-ins across months and
-  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions; the check-in library templates are well formed and copies get free names; background descriptions.
+  years); next-alarm time, including daylight-saving changes; stats; step descriptions; repeat rules (weekdays skip the weekend, monthly on the 1st/last day incl. February and leap years, missing dates skipped, next ring Friday evening → Monday) and their descriptions; place-trigger conditions (time windows across midnight, days, once
+  a day, at/away, unknown location), distances, and parsing coordinates; the check-in library templates are well formed and copies get free names; background descriptions.
 - **UI tests** (`app/src/androidTest`, Espresso + UI Automator on an Android 15
   emulator, a few minutes):
   - multiple times: each time's results are saved separately; History shows ✗ for a day if
@@ -173,6 +175,10 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     after Start check-in
   - a test ring from the edit page is marked as a test, logs nothing, and leaves the next
     real ring alone
+  - place triggers: arriving rings (once a day); leaving or outside the time window doesn't;
+    "only when at" skips when elsewhere and rings when there; "only when away" rings when
+    elsewhere; the place is watched while on and not when off; choosing "arrive" and typing
+    coordinates on the edit page saves the place and starts watching it
   - About opens from the start page and shows the version, Donate and the source link
   - **end to end:** a real alarm fires while the screen is off, the alarm screen takes
     over, the alarm rings until the question is answered, and the answer is saved
@@ -227,7 +233,24 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   page shows the rule next to the times (e.g. "7:00 AM, Mon–Fri") and the real next ring
   ("Mon 7:00 AM", "Dec 1 9:00 AM"). The **Alarm on** switch still turns the whole check-in
   off and on.
-- **Do it now / Skip:** Each check-in card on the start page shows its next ring.
+- **Place triggers (optional):** under **Schedule**, **Rings** can be:
+  - **At set times** (the classic alarm), optionally with **Where: only when I'm at** or
+    **away from** a place. At ring time Gist checks where the phone is; if the condition
+    doesn't hold, that time is marked skipped (–) instead of ringing. If the location
+    can't be found, it rings anyway.
+  - **When I arrive at a place** or **When I leave a place**, combined with conditions
+    that must *all* hold: **Days** (any repeat rule, e.g. Mon–Fri), **Time** (any time,
+    or only between two times, which can cross midnight), and **At most once a day**.
+    E.g. "when I arrive at the gym, Mon/Wed/Fri, 6–9 AM, once a day". Results are saved
+    under the time it rang.
+  Pick a place by **Use my current location**, **Enter coordinates** (long-press a spot in
+  any maps app and copy them), or one you've already used, and choose how close counts
+  (100 m to 1 km). Gist uses Android's own location service: no Google Play services,
+  no internet, and your location never leaves the phone. Android needs location allowed
+  **all the time** to notice an arrival while Gist is closed; the edit page and the
+  start page's "Finish setup" card ask for it. Accuracy is typically 50–200 m and an
+  arrival can take a few minutes to register, so a 200 m circle is a good start.
+ Each check-in card on the start page shows its next ring.
   - **Do it now** runs the same steps right away (math, scan, questions). That ring then
     stays quiet. A scan must really be scanned: the "Can't scan?" fallback isn't offered
     early.
@@ -349,6 +372,8 @@ app/src/main/java/dev/gist/checkin/
   AlarmService.kt    plays sound/vibration, guards volume, brings the alarm back to the front, 60-min safety stop
   AboutActivity.kt   About page: version, privacy, source code, Donate
   Links.kt           the web pages the app opens (repository, donate, issues)
+  Trigger.kt         what makes a check-in ring (times / arriving / leaving) and its conditions
+  LocationTriggers.kt  place watching (Android proximity alerts) and "where am I?" checks
   AlarmScheduler.kt  schedules each check-in's alarm with AlarmManager.setAlarmClock
   Receivers.kt       alarm fired → start ringing; reboot/time change → reschedule
   Notif.kt           notification channels + full-screen alarm notification
@@ -365,8 +390,9 @@ change all of it in the app.
 Gist is free, has no ads, and never will. If it's helped you stick to a habit and you'd
 like to say thanks, a donation keeps it maintained:
 
-<!-- Owner: replace the line below with your donation link, e.g. GitHub Sponsors,
-     Ko-fi or PayPal. The app's About → Donate button opens this section. -->
-- **Donation link coming soon.**
+<!-- The app's About → Donate button opens this section. -->
+<a href="https://www.paypal.com/donate/?hosted_button_id=YEHLZ2VY8DH74"><img src="https://img.shields.io/badge/Donate-PayPal-0070ba?logo=paypal&logoColor=white" alt="Donate with PayPal"></a>
+
+[**Donate with PayPal**](https://www.paypal.com/donate/?hosted_button_id=YEHLZ2VY8DH74), any amount.
 
 Not into donating? A ⭐ on the repository, a bug report, or telling a friend helps too.
