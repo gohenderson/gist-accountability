@@ -78,6 +78,7 @@ class CheckinActivity : BaseActivity() {
     private val slides = Handler(Looper.getMainLooper())
     private var video: MediaPlayer? = null
     private var showingRinging = false
+    private var seenChanges = 0 // SoftAlarm.changes when last checked
     private var barLabel: TextView? = null
     private var barProgress: ProgressBar? = null
     private val ticker = object : Runnable {
@@ -117,7 +118,13 @@ class CheckinActivity : BaseActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
-            ) { if (!forced) finish() else if (target.practice) endTest() }
+            ) {
+                when {
+                    !forced -> finish()
+                    target.practice -> endTest()
+                    checkin.soft -> finish() // a soft alarm can be left; its notification has Snooze / Dismiss
+                }
+            }
         }
         // The UI is built in onResume (so the camera restarts properly too).
     }
@@ -125,6 +132,9 @@ class CheckinActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         if (!::checkin.isInitialized) return
+        // Snoozed or dismissed from the notification while this screen was away: move on.
+        if (forced && target !in store.pending && !moveOn()) return
+        seenChanges = SoftAlarm.changes
         // You're looking at the check-in, so the "still waiting" reminder would only cover it.
         visible = true
         timesShown++
@@ -163,6 +173,13 @@ class CheckinActivity : BaseActivity() {
     private fun quietNow() = forced && AlarmService.running && AlarmService.isPaused
 
     private fun tick() {
+        if (seenChanges != SoftAlarm.changes) {
+            seenChanges = SoftAlarm.changes
+            if (target !in store.pending) {
+                if (moveOn()) showStep()
+                return
+            }
+        }
         if (ringingNow() != showingRinging || (barLabel != null && !quietNow())) {
             showStep() // paused ↔ ringing changed (countdown ran out, or alarm stopped)
             return
@@ -201,6 +218,7 @@ class CheckinActivity : BaseActivity() {
         when {
             !forced -> super.onBackPressed()
             target.practice -> endTest() // a test can be left at any point
+            checkin.soft -> super.onBackPressed() // so can a soft alarm (it keeps ringing until snoozed or dismissed)
             else -> {} // no escaping the alarm
         }
     }
@@ -213,6 +231,7 @@ class CheckinActivity : BaseActivity() {
         val next = store.pending.firstOrNull()
         if (next != null && load(next)) {
             answers.clear()
+            AlarmService.refreshNotification(this)
             showStep()
             ticks.post(ticker)
             return
@@ -220,6 +239,40 @@ class CheckinActivity : BaseActivity() {
         stopIfNothingPending()
         finish()
     }
+
+    /** A soft alarm: snooze it, or dismiss it without the steps. */
+    private fun snoozeSoft() {
+        val at = SoftAlarm.snooze(this, target) ?: return
+        seenChanges = SoftAlarm.changes
+        toast("Snoozed until ${CheckinText.at(at)}")
+        if (moveOn()) showStep()
+    }
+
+    private fun dismissSoft() {
+        SoftAlarm.dismiss(this, target)
+        seenChanges = SoftAlarm.changes
+        if (moveOn()) showStep()
+    }
+
+    /**
+     * The check-in on screen is no longer waiting: show the next one that is (true), or close
+     * (false). SoftAlarm has already stopped the ringing if nothing is left.
+     */
+    private fun moveOn(): Boolean {
+        store.prunePending()
+        val next = store.pending.firstOrNull()
+        if (next != null && load(next)) {
+            answers.clear()
+            return true
+        }
+        ticks.removeCallbacksAndMessages(null)
+        finish()
+        return false
+    }
+
+    private fun snoozeButton(): Button = outlineButton("Snooze ${checkin.snoozeMinutes} min") { snoozeSoft() }.apply { tag = "snooze" }
+
+    private fun dismissButton(): Button = textButton("Dismiss without the check-in") { dismissSoft() }.apply { tag = "dismiss-alarm" }
 
     private fun endTestButton(): View = outlineButton("End test") { endTest() }.apply { tag = "end-test" }
 
@@ -301,6 +354,7 @@ class CheckinActivity : BaseActivity() {
         val next = store.pending.firstOrNull()
         if (forced && next != null && load(next)) {
             answers.clear()
+            AlarmService.refreshNotification(this) // Snooze / Dismiss buttons if the next one is soft
             showStep()
             ticks.post(ticker)
             return
@@ -352,6 +406,14 @@ class CheckinActivity : BaseActivity() {
                 tag = "practice-chip"
             }, dp(12))
             col.add(endTestButton(), dp(8))
+        }
+        if (forced && checkin.soft && steps[stepIndex] !is Step.Dismiss) {
+            // Soft: the steps are optional.
+            val r = row().apply { gravity = Gravity.CENTER_VERTICAL }
+            r.addWeighted(muted("Soft alarm · the steps are optional", 13f))
+            r.addWrapped(textButton("Snooze") { snoozeSoft() }.apply { tag = "snooze" })
+            r.addWrapped(textButton("Dismiss") { dismissSoft() }.apply { tag = "dismiss-alarm" }, dp(4))
+            col.add(r, dp(10))
         }
         if (early) {
             col.add(chip("Done now, this time's alarm won't ring", colorOf(R.color.on_primary_container), colorOf(R.color.primary_container)), dp(12))
@@ -408,23 +470,41 @@ class CheckinActivity : BaseActivity() {
         col.addView(View(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
             topMargin = dp(32) // the picture shows through here
         })
-        col.add(
-            primaryButton("Start check-in") {
-                AlarmService.instance?.pauseFor()
-                showStep()
-            }.apply {
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-                minHeight = dp(88)
-                tag = "start-checkin"
-            },
-            0
-        )
+        val softAlarm = checkin.soft
+        val hasSteps = steps.any { it !is Step.Dismiss }
+        if (!softAlarm || hasSteps) {
+            col.add(
+                primaryButton("Start check-in") {
+                    AlarmService.instance?.pauseFor()
+                    showStep()
+                }.apply {
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                    minHeight = dp(88)
+                    tag = "start-checkin"
+                },
+                0
+            )
+        }
+        if (softAlarm) {
+            // Soft: snooze or dismiss right here; the steps are optional.
+            col.add(snoozeButton().apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                minHeight = dp(if (hasSteps) 64 else 88)
+            }, if (hasSteps) dp(12) else 0)
+            val dismiss = if (hasSteps) dismissButton() else primaryButton("Dismiss") { dismissSoft() }.apply {
+                tag = "dismiss-alarm"
+                minHeight = dp(64)
+            }
+            col.add(dismiss, dp(12))
+        }
         if (target.practice) col.add(endTestButton(), dp(12))
-        col.add(
-            label("Pauses the alarm for ${AlarmService.pauseMs(this) / 1000} seconds. Every tap restarts the countdown; " +
-                "if it runs out, the alarm rings again.", 13f, color = soft).apply { gravity = Gravity.CENTER },
-            dp(14)
-        )
+        val hint = if (softAlarm) {
+            "Soft alarm: snooze rings again in ${checkin.snoozeMinutes} minutes. Not counted in your stats."
+        } else {
+            "Pauses the alarm for ${AlarmService.pauseMs(this) / 1000} seconds. Every tap restarts the countdown; " +
+                "if it runs out, the alarm rings again."
+        }
+        col.add(label(hint, 13f, color = soft).apply { gravity = Gravity.CENTER; tag = "ringing-hint" }, dp(14))
         setScreen(col, withBar = false, background = bgView, fill = true)
     }
 

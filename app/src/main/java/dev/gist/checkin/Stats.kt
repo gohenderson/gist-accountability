@@ -43,6 +43,7 @@ object Stats {
     fun describe(c: Checkin, r: SlotResult?): String = when {
         r == null -> "didn't ring"
         r.status == SlotResult.SKIPPED -> "– skipped"
+        r.status == SlotResult.DISMISSED -> "dismissed (soft)"
         r.status == SlotResult.RANG -> "✗ missed"
         r.status == SlotResult.DONE -> "✓ done" + if (r.early) " early" else ""
         c.questions.all { q -> r.answers[q.id]?.let { q.isGood(it) } != false } -> "✓ on track" + if (r.early) " (early)" else ""

@@ -61,7 +61,26 @@ data class Checkin(
     val background: Background = Background(), // shown while ringing; media in Backgrounds
     val events: List<Trigger> = emptyList(), // event triggers: arriving / leaving a place, running
     val category: String = "",               // for grouping on the start page; "" = none
+    /**
+     * How hard it holds you to it:
+     *  - [STRICT] (default): the steps are the only way to stop it; counted in the stats.
+     *  - [SOFT]: can be snoozed or dismissed without the steps, doesn't pull itself back to
+     *    the front, and is left out of every stat (score, history, averages, CSV).
+     *  - [VOICE]: no alarm at all: it speaks [voiceText] (or plays its recorded clip) through
+     *    your headphones, e.g. encouragement 30 minutes into a run. Not in the stats either.
+     */
+    val commitment: String = STRICT,
+    val snoozeMinutes: Int = DEFAULT_SNOOZE, // soft alarms only
+    val voiceSource: String = VOICE_TEXT,    // voice only: VOICE_TEXT (spoken) or VOICE_CLIP (recorded)
+    val voiceText: String = "",
+    val voiceHeadphonesOnly: Boolean = true, // voice only: stay quiet when nothing's plugged in / paired
 ) {
+    val soft: Boolean get() = commitment == SOFT
+    val voice: Boolean get() = commitment == VOICE
+
+    /** Only strict check-ins count in the stats. */
+    val counted: Boolean get() = commitment == STRICT
+
     /** The days [t] rings on: its own, or the check-in's repeat rule. */
     fun daysFor(t: AlarmTime): Repeat = t.days ?: repeat
 
@@ -85,6 +104,17 @@ data class Checkin(
 
     companion object {
         const val SILENT = "silent"
+
+        const val STRICT = "strict"
+        const val SOFT = "soft"
+        const val VOICE = "voice"
+        val COMMITMENTS = listOf(STRICT, SOFT, VOICE)
+        const val VOICE_TEXT = "text"
+        const val VOICE_CLIP = "clip"
+
+        /** Snooze lengths a soft alarm can use, in minutes. */
+        val SNOOZE_CHOICES = listOf(5, 10, 15, 20, 30)
+        const val DEFAULT_SNOOZE = 10
     }
 }
 
@@ -105,7 +135,12 @@ typealias Answers = Map<String, Boolean>
  * DONE (finished a check-in without questions), SKIPPED (skipped before it rang).
  * [early]: finished before the alarm time.
  */
-data class SlotResult(val status: String, val answers: Answers = emptyMap(), val early: Boolean = false) {
+data class SlotResult(
+    val status: String,
+    val answers: Answers = emptyMap(),
+    val early: Boolean = false,
+    val soft: Boolean = false, // logged by a soft or voice check-in: kept for scheduling, left out of stats
+) {
     /** Finished or skipped: the alarm for this time no longer needs to ring. */
     val closed: Boolean get() = status != RANG
 
@@ -114,6 +149,7 @@ data class SlotResult(val status: String, val answers: Answers = emptyMap(), val
         const val ANSWERED = "answered"
         const val DONE = "done"
         const val SKIPPED = "skipped"
+        const val DISMISSED = "dismissed" // a soft alarm dismissed without its steps
     }
 }
 
@@ -187,12 +223,20 @@ class Store(context: Context) {
     fun results(day: String, checkinId: String): Map<String, SlotResult> =
         entriesJson().optJSONObject(day)?.optJSONObject(checkinId)?.toResults() ?: emptyMap()
 
-    /** One check-in's results for every day, oldest first: day → time → result. */
-    fun allResults(checkinId: String): Map<String, Map<String, SlotResult>> {
+    /**
+     * One check-in's results for every day, oldest first: day → time → result. This is what
+     * the stats read, so soft and voice results are left out (unless [includeSoft]); a check-in
+     * that isn't strict right now has no stats at all.
+     */
+    fun allResults(checkinId: String, includeSoft: Boolean = false): Map<String, Map<String, SlotResult>> {
+        if (!includeSoft && checkin(checkinId)?.counted == false) return emptyMap()
         val all = entriesJson()
         val out = sortedMapOf<String, Map<String, SlotResult>>()
         all.keys().forEach { day ->
-            all.optJSONObject(day)?.optJSONObject(checkinId)?.let { out[day] = it.toResults() }
+            all.optJSONObject(day)?.optJSONObject(checkinId)?.let { o ->
+                val r = o.toResults().filterValues { includeSoft || !it.soft }
+                if (r.isNotEmpty()) out[day] = r
+            }
         }
         return out
     }
@@ -220,6 +264,13 @@ class Store(context: Context) {
     fun markSkipped(day: String, checkinId: String, time: String) =
         put(day, checkinId, time, SlotResult(SlotResult.SKIPPED))
 
+    /** A soft alarm was dismissed without doing its steps. */
+    fun markDismissed(day: String, checkinId: String, time: String) =
+        put(day, checkinId, time, SlotResult(SlotResult.DISMISSED))
+
+    /** Is [p]'s check-in a soft alarm? */
+    fun isSoft(p: Pending): Boolean = checkin(p.checkinId)?.soft == true
+
     /** Forget a time's result (e.g. undo a skip). */
     fun clearResult(day: String, checkinId: String, time: String) {
         val all = entriesJson()
@@ -238,13 +289,15 @@ class Store(context: Context) {
         return merged.ifEmpty { null }
     }
 
+    /** Results logged while a check-in isn't strict are marked soft (see [allResults]). */
     private fun put(day: String, checkinId: String, time: String, r: SlotResult) {
+        val soft = r.soft || checkin(checkinId)?.counted == false
         val all = entriesJson()
         val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
         val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
         val a = JSONObject()
         r.answers.forEach { (k, v) -> a.put(k, v) }
-        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early))
+        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply { if (soft) put("soft", true) })
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
     }
 
@@ -255,7 +308,7 @@ class Store(context: Context) {
             val a = o.optJSONObject("a")
             val answers = mutableMapOf<String, Boolean>()
             a?.keys()?.forEach { k -> answers[k] = a.optBoolean(k) }
-            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false))
+            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false), o.optBoolean("soft", false))
         }
         return out
     }
@@ -413,6 +466,12 @@ class Store(context: Context) {
                 (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Trigger.fromJson(it) }.filter { it.isEvent }
             },
             category = o.optString("category", "").trim(),
+            commitment = o.optString("commitment", "").takeIf { it in Checkin.COMMITMENTS }
+                ?: if (o.optBoolean("soft", false)) Checkin.SOFT else Checkin.STRICT,
+            voiceSource = if (o.optString("voiceSource") == Checkin.VOICE_CLIP) Checkin.VOICE_CLIP else Checkin.VOICE_TEXT,
+            voiceText = o.optString("voiceText", ""),
+            voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
+            snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
         )
         // Saved before a check-in could have several kinds of trigger: one "trigger" applied
         // to the whole check-in. An event replaced the times; a place condition applied to all.
@@ -451,6 +510,11 @@ class Store(context: Context) {
             .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
             .put("events", JSONArray().apply { c.events.forEach { put(it.toJson()) } })
             .put("category", c.category)
+            .put("commitment", c.commitment)
+            .put("voiceSource", c.voiceSource)
+            .put("voiceText", c.voiceText)
+            .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
+            .put("snoozeMinutes", c.snoozeMinutes)
     }
 
     companion object {

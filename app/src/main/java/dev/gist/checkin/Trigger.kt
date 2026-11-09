@@ -48,6 +48,7 @@ data class Place(val name: String, val lat: Double, val lon: Double, val radiusM
  *  - [ARRIVE] / [LEAVE]: when you enter or leave [place];
  *  - [RUN_START] / [RUN_END]: when you start running, or finish a run of at least
  *    [minRunMinutes] (from the phone's step sensor, see [RunDetector]);
+ *  - [RUN_FOR]: once [minRunMinutes] into a run (e.g. a voice cheering you on at 30 minutes);
  * and, for those events, only on the days the repeat rule allows, only between
  * [windowStart] and [windowEnd] (if set), and at most once a day if [oncePerDay].
  * Location and steps are read on the phone; nothing is sent anywhere.
@@ -59,11 +60,11 @@ data class Trigger(
     val windowStart: AlarmTime? = null,    // ARRIVE / LEAVE only
     val windowEnd: AlarmTime? = null,
     val oncePerDay: Boolean = true,
-    val minRunMinutes: Int = 0,            // RUN_END only
+    val minRunMinutes: Int = 0,            // RUN_END: the shortest run that counts; RUN_FOR: how far in
     val days: Repeat = Repeat.EVERY_DAY,   // the days this event trigger is active
 ) {
     val isPlace: Boolean get() = kind == ARRIVE || kind == LEAVE
-    val isMovement: Boolean get() = kind == RUN_START || kind == RUN_END
+    val isMovement: Boolean get() = kind == RUN_START || kind == RUN_END || kind == RUN_FOR
 
     /** Rings on an event (place or movement) rather than at set times. */
     val isEvent: Boolean get() = isPlace || isMovement
@@ -89,7 +90,11 @@ data class Trigger(
         const val LEAVE = "leave"
         const val RUN_START = "run-start"
         const val RUN_END = "run-end"
-        val KINDS = setOf(TIME, ARRIVE, LEAVE, RUN_START, RUN_END)
+        const val RUN_FOR = "run-for"
+        val KINDS = setOf(TIME, ARRIVE, LEAVE, RUN_START, RUN_END, RUN_FOR)
+
+        /** A new "after N minutes of running" trigger starts at this. */
+        const val DEFAULT_RUN_FOR = 30
         const val ANYWHERE = "anywhere"
         const val AT = "at"
         const val AWAY = "away"
@@ -154,6 +159,15 @@ data class Trigger(
             return conditionsHold(t, now, rangToday)
         }
 
+        /**
+         * Should [c] ring now that the current run has lasted [minutes]? Each milestone fires once
+         * per run: MovementWatch remembers which already did.
+         */
+        fun runProgressRings(c: Checkin, t: Trigger, minutes: Int, now: LocalDateTime, rangToday: Boolean): Boolean {
+            if (!c.enabled || t.kind != RUN_FOR || minutes < t.minRunMinutes.coerceAtLeast(1)) return false
+            return conditionsHold(t, now, rangToday)
+        }
+
         /** Days, time window and once a day: shared by all event triggers. */
         fun conditionsHold(t: Trigger, now: LocalDateTime, rangToday: Boolean): Boolean {
             if (!t.days.matches(now.toLocalDate())) return false
@@ -191,6 +205,7 @@ data class Trigger(
                 LEAVE -> "when you leave $name"
                 RUN_START -> "when you start running"
                 RUN_END -> if (t.minRunMinutes > 0) "when you finish a run of ${t.minRunMinutes}+ min" else "when you finish running"
+                RUN_FOR -> "${runForText(t.minRunMinutes)} into a run"
                 else -> when (t.where) {
                     AT -> "only when at $name"
                     AWAY -> "only when away from $name"
@@ -204,6 +219,19 @@ data class Trigger(
             val s = t.windowStart ?: return ""
             val e = t.windowEnd ?: return ""
             return "between ${timeText(s)} and ${timeText(e)}"
+        }
+
+        /** "15 minutes", "1 hour", "1 hour 30 minutes" */
+        fun runForText(minutes: Int): String {
+            val m = minutes.coerceAtLeast(1)
+            val h = m / 60
+            val r = m % 60
+            fun unit(n: Int, w: String) = "$n $w${if (n == 1) "" else "s"}"
+            return when {
+                h == 0 -> unit(r, "minute")
+                r == 0 -> unit(h, "hour")
+                else -> "${unit(h, "hour")} ${unit(r, "minute")}"
+            }
         }
 
         /** "40.71280, -74.00600" */

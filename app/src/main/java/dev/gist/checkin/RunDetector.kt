@@ -26,6 +26,9 @@ class RunDetector(
     private val samples = ArrayDeque<Pair<Long, Long>>() // (time, total steps)
     var running = false
         private set
+
+    /** When the current run started (wall-clock ms), or null when not running. */
+    val runStartedAt: Long? get() = if (running) runStart else null
     private var fastSince: Long? = null
     private var runStart = 0L
     private var lastFast = 0L

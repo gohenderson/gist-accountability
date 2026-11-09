@@ -39,13 +39,40 @@ object Notif {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+    /**
+     * The waiting check-in, if it's a soft alarm: its notifications get Snooze and Dismiss
+     * buttons. Strict alarms get none (only their steps stop them).
+     */
+    private fun softPending(context: Context): Pending? {
+        val store = Store(context)
+        return store.pending.firstOrNull()?.takeIf { store.isSoft(it) }
+    }
+
+    private fun Notification.Builder.softActions(context: Context, p: Pending?): Notification.Builder {
+        if (p == null) return this
+        val c = Store(context).checkin(p.checkinId) ?: return this
+        fun action(label: String, action: String, code: Int): Notification.Action {
+            val pi = PendingIntent.getBroadcast(
+                context, code, SoftAlarmReceiver.intent(context, action, p),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            return Notification.Action.Builder(null as android.graphics.drawable.Icon?, label, pi).build()
+        }
+        addAction(action("Snooze ${c.snoozeMinutes} min", SoftAlarmReceiver.ACTION_SNOOZE, 20))
+        addAction(action("Dismiss", SoftAlarmReceiver.ACTION_DISMISS, 21))
+        return this
+    }
+
     fun alarm(context: Context): Notification {
         ensureChannels(context)
         val pi = surveyIntent(context)
+        val soft = softPending(context)
+        val name = soft?.let { Store(context).checkin(it.checkinId)?.name }
         val b = Notification.Builder(context, CH_ALARM)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Daily check-in")
-            .setContentText("Answer the questions to silence the alarm.")
+            .setContentTitle(name ?: "Daily check-in")
+            .setContentText(if (soft != null) "Snooze, dismiss, or tap to check in." else "Answer the questions to silence the alarm.")
+            .softActions(context, soft)
             .setCategory(Notification.CATEGORY_ALARM)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)
@@ -66,6 +93,7 @@ object Notif {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Check-in still waiting")
             .setContentText("Tap to answer your check-in.")
+            .softActions(context, softPending(context))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)

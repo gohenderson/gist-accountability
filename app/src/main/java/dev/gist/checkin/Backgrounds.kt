@@ -13,7 +13,8 @@ import java.io.File
  * media is copied into the app's private storage (photos downscaled and upright), so it
  * keeps working even if the original is deleted, and it can go into backups.
  *
- * Layout: files/backgrounds/<checkinId>/photo-0.jpg, photo-1.jpg, … and video.mp4
+ * Layout: files/backgrounds/<checkinId>/photo-0.jpg, photo-1.jpg, … and video.mp4; and a
+ * voice check-in's recorded clip, voice.m4a (or whatever audio was picked, kept as is).
  */
 object Backgrounds {
     private const val MAX_SIDE = 1600
@@ -36,6 +37,63 @@ object Backgrounds {
             .map { it.second }
 
     fun hasVideo(context: Context, checkinId: String): Boolean = videoFile(context, checkinId).exists()
+
+    const val MAX_CLIP_BYTES = 10L * 1024 * 1024
+
+    /** A voice check-in's clip (recorded in the app, or a picked audio file). */
+    fun voiceFile(context: Context, checkinId: String): File = File(dir(context, checkinId), "voice.m4a")
+
+    fun hasVoice(context: Context, checkinId: String): Boolean = voiceFile(context, checkinId).let { it.exists() && it.length() > 0 }
+
+    /** The clip's length in seconds, or null if there isn't one (or it can't be read). */
+    fun voiceSeconds(context: Context, checkinId: String): Int? {
+        val f = voiceFile(context, checkinId)
+        if (!f.exists()) return null
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(f.path)
+            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let { ((it + 500) / 1000).toInt() }
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { r.release() } catch (e: Exception) {}
+        }
+    }
+
+    /** Copies the audio file at [uri] as the voice clip. Slow: call off the main thread. */
+    fun setVoiceFromUri(context: Context, checkinId: String, uri: Uri) {
+        val tmp = File(dir(context, checkinId), "voice.tmp")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > MAX_CLIP_BYTES) {
+                        tmp.delete()
+                        throw IllegalArgumentException("That clip is too big (max ${MAX_CLIP_BYTES / 1024 / 1024} MB). Try a shorter one.")
+                    }
+                    out.write(buf, 0, n)
+                }
+            }
+        } ?: throw IllegalArgumentException("Couldn't read that file.")
+        val r = MediaMetadataRetriever()
+        val ok = try {
+            r.setDataSource(tmp.path)
+            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+        } catch (e: Exception) {
+            false
+        } finally {
+            try { r.release() } catch (e: Exception) {}
+        }
+        if (!ok) {
+            tmp.delete()
+            throw IllegalArgumentException("That file doesn't look like audio this phone can play.")
+        }
+        tmp.renameTo(voiceFile(context, checkinId))
+    }
 
     /** Replaces the photos with the ones at [uris]. Slow: call off the main thread. */
     fun setPhotosFromUris(context: Context, checkinId: String, uris: List<Uri>) {

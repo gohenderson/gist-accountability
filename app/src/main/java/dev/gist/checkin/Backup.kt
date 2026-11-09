@@ -23,6 +23,7 @@ import java.time.Instant
  *     <checkinId>:
  *       photos: [<base64 JPEG>, …]
  *       video: <base64 MP4>
+ *       voice: <base64 audio>     # a voice check-in's recorded clip
  *
  * Importing is selective too (see [ImportChoice]): pick check-ins, and for one you already
  * have, update it, replace it, or add it as a copy. Alarm sounds are references to sounds
@@ -32,7 +33,7 @@ object Backup {
     const val FORMAT = "gist-backup"
     const val VERSION = 3
 
-    class Media(val photos: List<ByteArray>, val video: ByteArray?)
+    class Media(val photos: List<ByteArray>, val video: ByteArray?, val voice: ByteArray? = null)
 
     class Contents(
         val checkins: List<Checkin>,
@@ -100,6 +101,7 @@ object Backup {
                 val f = Backgrounds.videoFile(context, c.id)
                 if (f.exists()) m.put("video", b64(f.readBytes()))
             }
+            if (c.voice && Backgrounds.hasVoice(context, c.id)) m.put("voice", b64(Backgrounds.voiceFile(context, c.id).readBytes()))
             if (m.length() > 0) media.put(c.id, m)
         }
         val root = JSONObject()
@@ -147,7 +149,8 @@ object Backup {
                 val m = mj.getJSONObject(id)
                 val photos = m.optJSONArray("photos")?.let { a -> (0 until a.length()).map { unb64(a.getString(it)) } }
                 val video = m.optString("video", "").ifEmpty { null }?.let { unb64(it) }
-                media[id] = Media(photos.orEmpty(), video)
+                val voice = m.optString("voice", "").ifEmpty { null }?.let { unb64(it) }
+                media[id] = Media(photos.orEmpty(), video, voice)
             }
             return Contents(checkins, entries, media)
         } catch (e: JSONException) {
@@ -192,6 +195,7 @@ object Backup {
                     Backgrounds.photoFile(context, target.id, i).writeBytes(bytes)
                 }
                 m.video?.let { Backgrounds.videoFile(context, target.id).writeBytes(it) }
+                m.voice?.let { Backgrounds.voiceFile(context, target.id).writeBytes(it) }
             }
             var final = target
             if (target.background.hasMedia && !Backgrounds.ready(context, target.id, target.background)) {

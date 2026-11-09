@@ -81,7 +81,9 @@ class AlarmService : Service() {
         if (CheckinActivity.visible) return
         if (!Settings.canDrawOverlays(this)) return
         if (!getSystemService(PowerManager::class.java).isInteractive) return // screen off: the lock screen shows it
-        if (Store(this).pending.none { !it.practice }) return // a test ring can be left
+        // A test ring can be left, and so can a soft alarm (it has Snooze / Dismiss instead).
+        val store = Store(this)
+        if (store.pending.none { !it.practice && !store.isSoft(it) }) return
         try {
             startActivity(CheckinActivity.alarmIntent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         } catch (e: Exception) {
@@ -268,6 +270,12 @@ class AlarmService : Service() {
             private set
 
         const val EXTRA_CHECKIN = "checkinId"
+
+        /** Redraw the alarm notification (e.g. the waiting check-in changed). */
+        fun refreshNotification(context: Context) {
+            if (!running) return
+            context.getSystemService(android.app.NotificationManager::class.java).notify(Notif.ID_ALARM, Notif.alarm(context))
+        }
 
         /** What's playing: a sound URI, Checkin.SILENT, or null. For tests and diagnostics. */
         @Volatile

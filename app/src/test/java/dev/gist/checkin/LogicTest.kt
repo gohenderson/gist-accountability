@@ -2,6 +2,7 @@ package dev.gist.checkin
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -514,6 +515,9 @@ class RunDetectorTest {
         return t to steps
     }
 
+    /** Two minutes of running from scratch. */
+    fun RunDetector.feedSteps(events: MutableList<RunDetector.Event>) { feed(0, 1000, 120, 165, events) }
+
     private fun RunDetector.idle(t0: Long, seconds: Int, events: MutableList<RunDetector.Event>): Long {
         var t = t0
         repeat(seconds / 15) { t += 15_000; tick(t)?.let { events += it } }
@@ -577,6 +581,58 @@ class RunDetectorTest {
         assertFalse("Monday", Trigger.runEventRings(c, end.copy(days = Repeat.weekly(Repeat.WEEKENDS)), 30, now, false))
         assertEquals("when you finish a run of 10+ min", Trigger.describe(end))
         assertTrue("no set times", AlarmScheduler.occurrences(c.copy(events = listOf(end))).isEmpty())
+    }
+
+    @Test
+    fun partwayIntoARunRingsOnceItsTimeIsReached() {
+        val now = LocalDateTime.of(2026, 11, 9, 7, 0)
+        val c = Checkin(id = "a", name = "A", times = emptyList())
+        val at30 = Trigger(Trigger.RUN_FOR, minRunMinutes = 30, oncePerDay = false)
+        assertTrue(at30.isMovement)
+        assertFalse("not yet", Trigger.runProgressRings(c, at30, 29, now, false))
+        assertTrue(Trigger.runProgressRings(c, at30, 30, now, false))
+        assertTrue("a little late is fine", Trigger.runProgressRings(c, at30, 31, now, false))
+        assertTrue("not once a day: every run", Trigger.runProgressRings(c, at30, 30, now, true))
+        assertFalse("once a day", Trigger.runProgressRings(c, at30.copy(oncePerDay = true), 30, now, true))
+        assertFalse("off", Trigger.runProgressRings(c.copy(enabled = false), at30, 30, now, false))
+        assertFalse("start / finish don't use it", Trigger.runEventRings(c, at30, null, now, false) || Trigger.runEventRings(c, at30, 40, now, false))
+        assertFalse("other kinds don't", Trigger.runProgressRings(c, Trigger(Trigger.RUN_START), 30, now, false))
+        assertEquals("30 minutes into a run", Trigger.describe(at30))
+        assertEquals("1 hour into a run", Trigger.describe(at30.copy(minRunMinutes = 60)))
+        assertEquals("2 hours 30 minutes", Trigger.runForText(150))
+        assertEquals("1 minute", Trigger.runForText(1))
+    }
+
+    @Test
+    fun theDetectorKnowsWhenTheRunStarted() {
+        val d = RunDetector()
+        assertNull(d.runStartedAt)
+        val ev = mutableListOf<RunDetector.Event>()
+        RunDetectorTest().run { d.feedSteps(ev) }
+        val started = ev.filterIsInstance<RunDetector.Event.Started>().single()
+        assertEquals(started.at, d.runStartedAt)
+    }
+}
+
+class CommitmentTest {
+    @Test
+    fun onlyStrictCheckinsCount() {
+        val c = Checkin(id = "a", name = "Cheer")
+        assertTrue(c.counted)
+        assertFalse(c.soft || c.voice)
+        assertTrue(c.copy(commitment = Checkin.SOFT).soft)
+        assertFalse(c.copy(commitment = Checkin.SOFT).counted)
+        assertTrue(c.copy(commitment = Checkin.VOICE).voice)
+        assertFalse(c.copy(commitment = Checkin.VOICE).counted)
+    }
+
+    @Test
+    fun aVoiceSaysItsLineOrItsName() {
+        val c = Checkin(id = "a", name = "30 minutes in", commitment = Checkin.VOICE)
+        assertEquals("30 minutes in", VoiceService.spokenText(c))
+        assertEquals("Is that Forrest Gump?", VoiceService.spokenText(c.copy(voiceText = "  Is that Forrest Gump? ")))
+        assertEquals("speaks a line", CheckinText.steps(c))
+        assertEquals("plays your clip", CheckinText.steps(c.copy(voiceSource = Checkin.VOICE_CLIP)))
     }
 }
 
