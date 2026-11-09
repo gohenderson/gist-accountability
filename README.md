@@ -161,6 +161,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - a test ring can be stopped part-way with End test, logging nothing
   - the first ring starts soft and ramps to full volume; after a pause it resumes at full
     volume
+  - start page: dragging a group moves it (your order first, then A–Z, "Other" last);
+    a group collapses and expands; Collapse all / Expand all; the Compact layout shows one
+    line each and opens the check-in when tapped
   - start page: grouped view shows a section per category with "Other" last; the View
     menu switches it; dragging a card moves it; a category is set on the edit page
   - the pause after each tap defaults to 45 s and can be changed in Settings; on the
@@ -366,7 +369,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     **Grouped by category** (a section per category, A–Z, with uncategorized ones under
     "Other"). Set a check-in's **Category** on its page: pick one you've used or type a new
     one. Check-ins added from the library get the library's category (Food, Fitness…).
-    Dragging works within a section.
+    Dragging works within a section. Drag a **group** by the ≡ on its header to move it
+    above or below the others (e.g. Morning above Evening); tap a header to **collapse**
+    or expand it, or use **Collapse all / Expand all**.
+  - **Layout:** **Cards** (everything: next ring, Skip / Do it now, stats, History / Edit)
+    or **Compact** (one line each: name, next ring and the on/off switch; tap a line to
+    open the check-in). Next to the View menu.
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
     sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
     The **test ring** is a practice run: it rings and runs every step, but nothing is

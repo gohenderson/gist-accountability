@@ -6,6 +6,7 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -13,6 +14,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -34,6 +36,9 @@ class GroupingTest {
     fun tearDown() {
         TestEnv.allowOverlay(false)
         TestEnv.store.view = Grouping.UNGROUPED
+        TestEnv.store.style = Grouping.CARDS
+        TestEnv.store.groupOrder = emptyList()
+        TestEnv.store.collapsed = emptySet()
         TestEnv.reset(emptyList())
     }
 
@@ -88,5 +93,75 @@ class GroupingTest {
             onView(withText("Category: Health")).perform(scrollTo()).check(matches(isDisplayed()))
         }
         assertEquals("Health", TestEnv.store.checkin("a")!!.category)
+    }
+
+    private fun threeGroups() {
+        TestEnv.reset(listOf(
+            TestEnv.checkin("m", "Wake").copy(category = "Morning"),
+            TestEnv.checkin("e", "Wind down").copy(category = "Evening"),
+            TestEnv.checkin("f", "Run").copy(category = "Fitness"),
+        ))
+        TestEnv.store.view = Grouping.BY_CATEGORY
+        TestEnv.store.groupOrder = emptyList()
+        TestEnv.store.collapsed = emptySet()
+    }
+
+    private fun shownGroups() = Grouping.byCategory(TestEnv.store.checkins, TestEnv.store.groupOrder).map { it.first }
+
+    @Test
+    fun draggingAGroupMovesIt() {
+        threeGroups()
+        assertEquals(listOf("Evening", "Fitness", "Morning"), shownGroups()) // A–Z to start
+        main().use {
+            onView(tagged("drag-group:Morning")).perform(scrollTo())
+            onView(tagged("drag-group:Evening")).perform(scrollTo())
+            val handle = TestEnv.boundsOf("drag-group:Morning")
+            val target = TestEnv.boundsOf("drag-group:Evening")
+            TestEnv.dragVertically(handle.centerX(), handle.centerY(), target.top - 40)
+            TestEnv.eventually { assertEquals(listOf("Morning", "Evening", "Fitness"), shownGroups()) }
+        }
+    }
+
+    @Test
+    fun groupsCollapseAndExpand() {
+        threeGroups()
+        main().use {
+            onView(tagged("toggle:m")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("group-header:Morning")).perform(scrollTo(), click())
+            onView(tagged("toggle:m")).check(doesNotExist())
+            onView(tagged("group-chevron:Morning")).check(matches(withText("▸")))
+            onView(tagged("toggle:e")).perform(scrollTo()).check(matches(isDisplayed())) // others stay open
+            onView(tagged("group-header:Morning")).perform(scrollTo(), click())
+            onView(tagged("toggle:m")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertTrue(TestEnv.store.collapsed.isEmpty())
+    }
+
+    @Test
+    fun collapseAllAndExpandAll() {
+        threeGroups()
+        main().use {
+            onView(tagged("toggle-all-groups")).perform(scrollTo()).check(matches(withText("Collapse all")))
+            onView(tagged("toggle-all-groups")).perform(click())
+            for (id in listOf("m", "e", "f")) onView(tagged("toggle:$id")).check(doesNotExist())
+            onView(tagged("toggle-all-groups")).perform(scrollTo()).check(matches(withText("Expand all")))
+            onView(tagged("toggle-all-groups")).perform(click())
+            for (id in listOf("m", "e", "f")) onView(tagged("toggle:$id")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+    }
+
+    @Test
+    fun compactLayoutShowsOneLineEach() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        main().use {
+            onView(tagged("style-mode")).perform(scrollTo(), click())
+            onView(tagged("style:compact")).inRoot(isDialog()).perform(click())
+            onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("next-line:a")).check(matches(withText(org.hamcrest.Matchers.startsWith("Next: "))))
+            onView(withText("History")).check(doesNotExist()) // card-only actions are gone
+            onView(tagged("row:b")).perform(scrollTo(), click())
+            onView(tagged("checkin-name")).check(matches(withText("Beta"))) // tapping opens its page
+        }
+        assertEquals(Grouping.COMPACT, TestEnv.store.style)
     }
 }

@@ -64,8 +64,8 @@ adb shell am broadcast -a com.android.systemui.demo -e command notifications -e 
 echo "::endgroup::"
 
 seed() {
-  local pending=$1 theme=${2:-system}
-  python3 "$SCRIPTS/seed_prefs.py" --pending "$pending" --theme "$theme" > "$LOGS/gist-$pending.xml"
+  local pending=$1 theme=${2:-system} view=${3:-ungrouped}
+  python3 "$SCRIPTS/seed_prefs.py" --pending "$pending" --theme "$theme" --view "$view" > "$LOGS/gist-$pending.xml"
   adb shell am force-stop "$PKG"
   adb push "$LOGS/gist-$pending.xml" /data/local/tmp/gist.xml > /dev/null
   adb shell chmod 644 /data/local/tmp/gist.xml
@@ -154,7 +154,7 @@ shot 06-settings
 echo "::endgroup::"
 
 echo "::group::Step page"
-launch .StepEditActivity --es checkinId start --es kind math
+launch .StepEditActivity --es checkinId start --es step start-math
 shot 09-step-math
 echo "::endgroup::"
 
@@ -167,6 +167,12 @@ echo "::group::Library"
 seed none
 launch .LibraryActivity
 shot 08-library
+echo "::endgroup::"
+
+echo "::group::Grouped by category"
+seed none system category
+launch .MainActivity
+shot 11-start-grouped
 echo "::endgroup::"
 
 echo "::group::Dark mode"
