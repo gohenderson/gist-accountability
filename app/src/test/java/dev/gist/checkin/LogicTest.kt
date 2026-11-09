@@ -311,7 +311,7 @@ class LibraryTest {
         for (t in Library.TEMPLATES) {
             val c = t.checkin
             assertTrue("${t.key} has a name", c.name.isNotBlank())
-            assertTrue("${t.key} has times", c.times.isNotEmpty())
+            assertTrue("${t.key} has triggers", c.times.isNotEmpty() || c.events.isNotEmpty())
             assertEquals("${t.key} times sorted", c.times.sorted(), c.times)
             val ids = c.questions.map { it.id }
             assertEquals("${t.key} question ids unique", ids.size, ids.toSet().size)
@@ -443,21 +443,18 @@ class TriggerTest {
 
     @Test
     fun arrivingRingsOnlyWhenEveryConditionHolds() {
-        val c = Checkin(
-            id = "g", name = "Gym",
-            trigger = Trigger(Trigger.ARRIVE, home, windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
-            repeat = Repeat.weekly(Repeat.WEEKDAYS),
-        )
-        assertTrue(Trigger.placeEventRings(c, entering = true, now = at(7, 0), rangToday = false))
-        assertFalse("leaving isn't arriving", Trigger.placeEventRings(c, entering = false, now = at(7, 0), rangToday = false))
-        assertFalse("outside the window", Trigger.placeEventRings(c, true, at(10, 0), false))
-        assertFalse("not a weekday", Trigger.placeEventRings(c, true, at(7, 0, day = 8), false))
-        assertFalse("once a day", Trigger.placeEventRings(c, true, at(7, 0), rangToday = true))
-        assertTrue("unless allowed more", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(oncePerDay = false)), true, at(7, 0), true))
-        assertFalse("off", Trigger.placeEventRings(c.copy(enabled = false), true, at(7, 0), false))
-        assertFalse("no place set", Trigger.placeEventRings(c.copy(trigger = c.trigger.copy(place = null)), true, at(7, 0), false))
-        val leave = c.copy(trigger = c.trigger.copy(kind = Trigger.LEAVE))
-        assertTrue(Trigger.placeEventRings(leave, entering = false, now = at(8, 0), rangToday = false))
+        val t = Trigger(Trigger.ARRIVE, home, windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0),
+            days = Repeat.weekly(Repeat.WEEKDAYS))
+        val c = Checkin(id = "g", name = "Gym", times = emptyList(), events = listOf(t))
+        assertTrue(Trigger.placeEventRings(c, t, entering = true, now = at(7, 0), rangToday = false))
+        assertFalse("leaving isn't arriving", Trigger.placeEventRings(c, t, entering = false, now = at(7, 0), rangToday = false))
+        assertFalse("outside the window", Trigger.placeEventRings(c, t, true, at(10, 0), false))
+        assertFalse("not a weekday", Trigger.placeEventRings(c, t, true, at(7, 0, day = 8), false))
+        assertFalse("once a day", Trigger.placeEventRings(c, t, true, at(7, 0), rangToday = true))
+        assertTrue("unless allowed more", Trigger.placeEventRings(c, t.copy(oncePerDay = false), true, at(7, 0), true))
+        assertFalse("off", Trigger.placeEventRings(c.copy(enabled = false), t, true, at(7, 0), false))
+        assertFalse("no place set", Trigger.placeEventRings(c, t.copy(place = null), true, at(7, 0), false))
+        assertTrue(Trigger.placeEventRings(c, t.copy(kind = Trigger.LEAVE), entering = false, now = at(8, 0), rangToday = false))
     }
 
     @Test
@@ -470,6 +467,8 @@ class TriggerTest {
         assertTrue(Trigger.locationAllows(away, 5_000.0))
         assertFalse(Trigger.locationAllows(away, 50.0))
         assertTrue(Trigger.locationAllows(Trigger(), 5_000.0))
+        assertFalse("a timed trigger's own where", Trigger.locationAllows(Trigger.AT, home, 5_000.0))
+        assertEquals("at Home", Trigger.whereText(Trigger.AT, home))
     }
 
     @Test
@@ -485,12 +484,17 @@ class TriggerTest {
     @Test
     fun descriptions() {
         val c = Checkin(
-            id = "g", name = "Gym", repeat = Repeat.weekly(setOf(1, 3, 5)),
-            trigger = Trigger(Trigger.ARRIVE, Place("Gym", 1.0, 2.0), windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0)),
+            id = "g", name = "Gym", times = emptyList(),
+            events = listOf(Trigger(Trigger.ARRIVE, Place("Gym", 1.0, 2.0), windowStart = AlarmTime(6, 0), windowEnd = AlarmTime(9, 0),
+                days = Repeat.weekly(setOf(1, 3, 5)))),
         )
         val text = CheckinText.whenText(c)
         assertTrue(text, text.startsWith("when you arrive at Gym, Mon, Wed, Fri, between "))
         assertTrue(text, text.endsWith(", once a day"))
+        // Any mix: a time with a where, plus an event.
+        val mixed = c.copy(times = listOf(AlarmTime(5, 0, Repeat.weekly(setOf(2)), Trigger.AWAY, home)))
+        val m = CheckinText.whenText(mixed).replace('\u202F', ' ')
+        assertTrue(m, m.startsWith("5:00 AM Tue, only when away from Home; when you arrive at Gym"))
         assertEquals("when you leave Work", Trigger.describe(Trigger(Trigger.LEAVE, Place("Work", 1.0, 2.0))))
         assertEquals("only when away from Home", Trigger.describe(Trigger(where = Trigger.AWAY, place = home)))
         assertTrue("no set times for place triggers", AlarmScheduler.occurrences(c).isEmpty())
@@ -561,18 +565,18 @@ class RunDetectorTest {
     @Test
     fun runTriggersFollowTheirConditions() {
         val now = LocalDateTime.of(2026, 11, 9, 7, 0)
-        val start = Checkin(id = "a", name = "A", trigger = Trigger(Trigger.RUN_START))
-        assertTrue(Trigger.runEventRings(start, null, now, false))
-        assertFalse(Trigger.runEventRings(start, 20, now, false))
-        assertFalse("once a day", Trigger.runEventRings(start, null, now, true))
-        val end = Checkin(id = "b", name = "B", trigger = Trigger(Trigger.RUN_END, minRunMinutes = 10))
-        assertFalse(Trigger.runEventRings(end, null, now, false))
-        assertFalse("too short", Trigger.runEventRings(end, 9, now, false))
-        assertTrue(Trigger.runEventRings(end, 10, now, false))
-        val weekends = end.copy(repeat = Repeat.weekly(Repeat.WEEKENDS))
-        assertFalse("Monday", Trigger.runEventRings(weekends, 30, now, false))
-        assertEquals("when you finish a run of 10+ min", Trigger.describe(end.trigger))
-        assertTrue("no set times", AlarmScheduler.occurrences(end).isEmpty())
+        val c = Checkin(id = "a", name = "A", times = emptyList())
+        val start = Trigger(Trigger.RUN_START)
+        assertTrue(Trigger.runEventRings(c, start, null, now, false))
+        assertFalse(Trigger.runEventRings(c, start, 20, now, false))
+        assertFalse("once a day", Trigger.runEventRings(c, start, null, now, true))
+        val end = Trigger(Trigger.RUN_END, minRunMinutes = 10)
+        assertFalse(Trigger.runEventRings(c, end, null, now, false))
+        assertFalse("too short", Trigger.runEventRings(c, end, 9, now, false))
+        assertTrue(Trigger.runEventRings(c, end, 10, now, false))
+        assertFalse("Monday", Trigger.runEventRings(c, end.copy(days = Repeat.weekly(Repeat.WEEKENDS)), 30, now, false))
+        assertEquals("when you finish a run of 10+ min", Trigger.describe(end))
+        assertTrue("no set times", AlarmScheduler.occurrences(c.copy(events = listOf(end))).isEmpty())
     }
 }
 

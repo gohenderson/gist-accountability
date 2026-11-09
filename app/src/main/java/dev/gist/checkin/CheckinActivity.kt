@@ -236,7 +236,7 @@ class CheckinActivity : BaseActivity() {
 
     /** The time ("HH:mm") these answers are saved under; the first time if unknown. */
     private val slot: String
-        get() = target.time.ifEmpty { checkin.times.first().toString() }
+        get() = target.time.ifEmpty { AlarmScheduler.nearestTime(checkin).toString() }
 
     /** Point the screen at [t]. Returns false if its check-in no longer exists. */
     private fun load(t: Pending): Boolean {

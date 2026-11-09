@@ -37,54 +37,66 @@ object LocationTriggers {
     fun hasBackground(context: Context): Boolean = hasLocation(context) &&
         context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    fun anyUseLocation(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.trigger.usesLocation }
+    fun anyUseLocation(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.usesLocation }
 
     // ------------------------------------------------------------ arrive / leave
 
-    private fun pendingIntent(context: Context, checkinId: String, flags: Int): PendingIntent? {
-        val intent = Intent(context, ProximityReceiver::class.java).putExtra(AlarmScheduler.EXTRA_CHECKIN, checkinId)
+    /** A check-in can watch up to this many places (one per arrive / leave trigger). */
+    const val MAX_PLACES = 10
+    const val EXTRA_INDEX = "placeIndex"
+
+    private fun pendingIntent(context: Context, checkinId: String, index: Int, flags: Int): PendingIntent? {
+        val intent = Intent(context, ProximityReceiver::class.java)
+            .putExtra(AlarmScheduler.EXTRA_CHECKIN, checkinId)
+            .putExtra(EXTRA_INDEX, index)
         // Mutable: Android adds KEY_PROXIMITY_ENTERING to it. The intent is explicit (this
         // app's own non-exported receiver), so nothing else can be substituted.
-        return PendingIntent.getBroadcast(context, requestCode(checkinId), intent, flags or PendingIntent.FLAG_MUTABLE)
+        return PendingIntent.getBroadcast(context, requestCode(checkinId, index), intent, flags or PendingIntent.FLAG_MUTABLE)
     }
 
-    private fun requestCode(id: String) = 0x40000000 + (id.hashCode() and 0x0FFFFFFF)
+    private fun requestCode(id: String, index: Int = 0) = 0x40000000 + ((id.hashCode() * 31 + index) and 0x07FFFFFF)
 
     private fun signature(c: Checkin): String =
-        c.trigger.place?.let { "${c.trigger.kind}:${it.lat}:${it.lon}:${it.radiusM}" } ?: ""
+        c.placeEvents.joinToString("|") { t -> t.place?.let { "${t.kind}:${it.lat}:${it.lon}:${it.radiusM}" } ?: "-" }
 
-    /** Is [checkinId]'s place being watched right now? */
+    /** Is any of [checkinId]'s places being watched right now? */
     fun isRegistered(context: Context, checkinId: String): Boolean =
-        pendingIntent(context, checkinId, PendingIntent.FLAG_NO_CREATE) != null
+        (0 until MAX_PLACES).any { pendingIntent(context, checkinId, it, PendingIntent.FLAG_NO_CREATE) != null }
 
     /**
-     * Starts (or stops) watching [c]'s place to match its settings. Does nothing if it's
-     * already watched with the same place, so calling it often is fine.
+     * Starts (or stops) watching [c]'s places to match its arrive / leave triggers. Does
+     * nothing if they're already watched, so calling it often is fine.
      */
     @SuppressLint("MissingPermission")
     fun sync(context: Context, c: Checkin) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val want = c.enabled && c.trigger.isPlace && c.trigger.place != null && hasLocation(context)
-        val lm = context.getSystemService(LocationManager::class.java)
+        val places = c.placeEvents.take(MAX_PLACES)
+        val want = c.enabled && places.any { it.place != null } && hasLocation(context)
         if (!want) {
             remove(context, c.id)
             return
         }
-        if (isRegistered(context, c.id) && prefs.getString(c.id, null) == signature(c)) return
-        remove(context, c.id)
-        val p = c.trigger.place!!
-        val pi = pendingIntent(context, c.id, PendingIntent.FLAG_UPDATE_CURRENT) ?: return
-        try {
-            lm.addProximityAlert(p.lat, p.lon, p.radiusM.toFloat(), -1, pi)
-            prefs.edit().putString(c.id, signature(c)).putLong("${c.id}@", System.currentTimeMillis()).apply()
-        } catch (e: SecurityException) {
-            pi.cancel()
+        val watched = places.indices.all { i ->
+            places[i].place == null || pendingIntent(context, c.id, i, PendingIntent.FLAG_NO_CREATE) != null
         }
+        if (watched && prefs.getString(c.id, null) == signature(c)) return
+        remove(context, c.id)
+        val lm = context.getSystemService(LocationManager::class.java)
+        places.forEachIndexed { i, t ->
+            val p = t.place ?: return@forEachIndexed
+            val pi = pendingIntent(context, c.id, i, PendingIntent.FLAG_UPDATE_CURRENT) ?: return@forEachIndexed
+            try {
+                lm.addProximityAlert(p.lat, p.lon, p.radiusM.toFloat(), -1, pi)
+            } catch (e: SecurityException) {
+                pi.cancel()
+            }
+        }
+        prefs.edit().putString(c.id, signature(c)).putLong("${c.id}@", System.currentTimeMillis()).apply()
     }
 
     fun remove(context: Context, checkinId: String) {
-        val pi = pendingIntent(context, checkinId, PendingIntent.FLAG_NO_CREATE)
-        if (pi != null) {
+        for (i in 0 until MAX_PLACES) {
+            val pi = pendingIntent(context, checkinId, i, PendingIntent.FLAG_NO_CREATE) ?: continue
             try {
                 context.getSystemService(LocationManager::class.java).removeProximityAlert(pi)
             } catch (e: SecurityException) {
@@ -162,7 +174,7 @@ object LocationTriggers {
             .putExtra(AlarmScheduler.EXTRA_DAY, day)
             .putExtra(AlarmReceiver.EXTRA_PLACE, true)
         val pi = PendingIntent.getBroadcast(
-            context, requestCode(c.id) + 0x08000000 and 0x7FFFFFFF, intent,
+            context, 0x38000000 + (c.id.hashCode() and 0x07FFFFFF), intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val am = context.getSystemService(AlarmManager::class.java)
@@ -184,10 +196,11 @@ class ProximityReceiver : BroadcastReceiver() {
         val store = Store(context)
         val c = store.checkin(id) ?: run { LocationTriggers.remove(context, id); return }
         if (LocationTriggers.settling(context, id)) return
+        val t = c.placeEvents.getOrNull(intent.getIntExtra(LocationTriggers.EXTRA_INDEX, 0)) ?: return
         val now = LocalDateTime.now()
         val day = Days.forAlarmNow(c.aboutYesterday, now)
         val rangToday = store.results(day, id).values.any { it.status != SlotResult.SKIPPED } ||
             store.pending.any { it.checkinId == id && !it.practice }
-        if (Trigger.placeEventRings(c, entering, now, rangToday)) LocationTriggers.ringNow(context, c)
+        if (Trigger.placeEventRings(c, t, entering, now, rangToday)) LocationTriggers.ringNow(context, c)
     }
 }

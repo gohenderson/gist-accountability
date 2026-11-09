@@ -42,21 +42,20 @@ class PerTimeDaysTest {
         TestEnv.reset(listOf(TestEnv.checkin("t", "Wake").copy(times = listOf(AlarmTime(4, 0), AlarmTime(4, 45)))))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "t")).use {
             // 4:00 AM → Tuesdays only.
-            onView(tagged("time-days:0")).perform(scrollTo(), click())
+            onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Specific days of the week…")).inRoot(isDialog()).perform(click())
             for (d in listOf("Monday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")) {
                 onView(tagged("check:$d")).inRoot(isDialog()).perform(click()) // untick (all start ticked)
             }
             onView(withText("Save")).inRoot(isDialog()).perform(click())
             // 4:45 AM → every day but Tuesday.
-            onView(tagged("time-days:1")).perform(scrollTo(), click())
+            onView(tagged("trigger-days:1")).perform(scrollTo(), click())
             onView(withText("Specific days of the week…")).inRoot(isDialog()).perform(click())
             onView(tagged("check:Tuesday")).inRoot(isDialog()).perform(click())
             onView(withText("Save")).inRoot(isDialog()).perform(click())
 
-            onView(tagged("time-days:0")).perform(scrollTo()).check(matches(withText("Tue")))
-            onView(tagged("time-days:1")).check(matches(withText("every day but Tue")))
-            onView(tagged("repeat")).check(doesNotExist()) // per-time days replace the shared rule
+            onView(tagged("trigger-days:0")).perform(scrollTo()).check(matches(withText("Tue")))
+            onView(tagged("trigger-days:1")).perform(scrollTo()).check(matches(withText("every day but Tue")))
         }
         val c = TestEnv.store.checkin("t")!!
         assertEquals(Repeat.weekly(setOf(2)), c.times[0].days)

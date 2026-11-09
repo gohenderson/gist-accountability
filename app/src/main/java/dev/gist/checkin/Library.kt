@@ -121,8 +121,8 @@ object Library {
             "gym", "Fitness",
             "Rings when you arrive at the gym (on work-out days), with a quick question. Pick your gym after adding it.",
             Checkin(
-                id = "", name = "At the gym", trigger = Trigger(kind = Trigger.ARRIVE, oncePerDay = true),
-                repeat = Repeat.weekly(setOf(1, 3, 5)),
+                id = "", name = "At the gym", times = emptyList(),
+                events = listOf(Trigger(kind = Trigger.ARRIVE, oncePerDay = true, days = Repeat.weekly(setOf(1, 3, 5)))),
                 steps = qsteps(q("warmup", "Did you plan today's workout before you started?", true)),
             ),
         ),
@@ -130,7 +130,8 @@ object Library {
             "after-run", "Fitness",
             "Rings when you finish a run of 10 minutes or more (noticed from your steps): a cool-down check.",
             Checkin(
-                id = "", name = "After my run", trigger = Trigger(kind = Trigger.RUN_END, minRunMinutes = 10, oncePerDay = true),
+                id = "", name = "After my run", times = emptyList(),
+                events = listOf(Trigger(kind = Trigger.RUN_END, minRunMinutes = 10, oncePerDay = true)),
                 steps = qsteps(
                     q("stretch-after", "Did you stretch after your run?", true),
                     q("water-after", "Did you drink water after your run?", true),

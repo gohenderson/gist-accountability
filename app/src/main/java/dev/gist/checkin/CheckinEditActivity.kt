@@ -91,88 +91,32 @@ class CheckinEditActivity : BaseActivity() {
             setOnCheckedChangeListener { _, on -> change { it.copy(enabled = on) } }
         }
         col.add(sw, dp(4))
-        val t = c.trigger
-        val kindText = when (t.kind) {
-            Trigger.ARRIVE -> "when I arrive at a place"
-            Trigger.LEAVE -> "when I leave a place"
-            Trigger.RUN_START -> "when I start running"
-            Trigger.RUN_END -> "when I finish running"
-            else -> "at set times"
+        // Triggers: each is one way this check-in rings, with its own conditions.
+        val total = c.times.size + c.events.size
+        if (total == 0) {
+            col.add(label("No triggers: it never rings on its own. Add one below.", 15f, color = colorWarn), dp(10))
         }
-        col.add(button("Rings $kindText") { pickTriggerKind(c) }.apply { tag = "trigger-kind" }, dp(8))
-        if (t.isEvent) {
-            if (t.isPlace) col.add(placeButton(t.place) { pickPlace { p -> setTrigger { it.copy(place = p) } } }, dp(4))
-            if (t.kind == Trigger.RUN_END) {
-                val min = if (t.minRunMinutes == 0) "any length" else "at least ${t.minRunMinutes} min"
-                col.add(button("Run: $min") { pickMinRun(c) }.apply { tag = "trigger-min-run" }, dp(4))
-            }
-            if (t.isMovement) {
-                col.add(muted("Noticed from your step rate (running is about 140+ steps a minute), so it works " +
-                    "with the phone in a pocket or armband, and on a treadmill. A run counts after about a " +
-                    "minute, and ends about 1½ minutes after you stop or slow to a walk.", 13f), dp(6))
-                if (!MovementWatch.canWatch(this)) {
-                    col.add(label(MovementWatch.problem(this), 14f, color = colorWarn), dp(6))
-                    if (MovementWatch.hasSensor(this)) {
-                        col.add(outlineButton("Allow physical activity") { askActivity() }.apply { tag = "allow-activity" }, dp(4))
-                    }
+        c.times.forEachIndexed { i, tm -> col.add(timeTriggerCard(c, i, tm, i), dp(10)) }
+        c.events.forEachIndexed { j, ev -> col.add(eventTriggerCard(c, j, ev, c.times.size + j), dp(10)) }
+        col.add(button("+ Add trigger") { addTrigger(c) }.apply { tag = "add-trigger" }, dp(10))
+        if (c.enabled && total > 0) {
+            col.add(label("Rings ${CheckinText.whenText(c)}", 14f).apply { tag = "trigger-summary" }, dp(8))
+            if (c.times.isNotEmpty()) col.add(label("Next: ${CheckinText.next(c)}", 14f).apply { tag = "next-ring" }, dp(2))
+        } else if (!c.enabled) {
+            col.add(label("Alarm is off", 14f), dp(8))
+        }
+        if (c.events.any { it.isMovement }) {
+            col.add(muted("Runs are noticed from your step rate (running is about 140+ steps a minute), so it works " +
+                "with the phone in a pocket or armband, and on a treadmill. A run counts after about a " +
+                "minute, and ends about 1½ minutes after you stop or slow to a walk.", 13f), dp(6))
+            if (!MovementWatch.canWatch(this)) {
+                col.add(label(MovementWatch.problem(this), 14f, color = colorWarn), dp(6))
+                if (MovementWatch.hasSensor(this)) {
+                    col.add(outlineButton("Allow physical activity") { askActivity() }.apply { tag = "allow-activity" }, dp(4))
                 }
             }
-            col.add(label("Only when all of these hold:", 15f), dp(12))
-            col.add(button("Days: ${c.repeat.describe()}") {
-                pickRepeat(c.repeat) { r -> change { it.copy(repeat = r) } }
-            }.apply { tag = "repeat" }, dp(4))
-            val window = Trigger.windowText(t) { Days.time(it.hour, it.minute) }.ifEmpty { "any time of day" }
-            col.add(button("Time: $window") { pickWindow(c) }.apply { tag = "trigger-window" }, dp(4))
-            col.add(styledSwitch("At most once a day").apply {
-                isChecked = t.oncePerDay
-                tag = "trigger-once"
-                setOnCheckedChangeListener { _, on -> setTrigger { it.copy(oncePerDay = on) } }
-            }, dp(8))
-            col.add(label(if (c.enabled) "Rings ${CheckinText.whenText(c)}" else "Alarm is off", 14f).apply {
-                tag = "trigger-summary"
-            }, dp(6))
-        } else {
-            if (!c.perTimeDays) {
-                col.add(button("Repeats: ${c.repeat.describe()}") {
-                    pickRepeat(c.repeat) { r -> change { it.copy(repeat = r) } }
-                }.apply { tag = "repeat" }, dp(8))
-            }
-            col.add(label("Rings at:", 15f), dp(12))
-            col.add(muted("Tap a time's days to give it its own (e.g. earlier on one day of the week).", 13f), dp(2))
-            c.times.forEachIndexed { i, tm ->
-                val r = row()
-                r.addView(
-                    button(Days.time(tm.hour, tm.minute)) { pickTime(c, i) }.apply { tag = "time:$i" },
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                )
-                // Each time can ring on its own days (e.g. 4:00 AM on Tuesdays, 4:45 AM the rest).
-                r.addView(
-                    outlineButton(c.daysFor(tm).describe()) {
-                        pickRepeat(c.daysFor(tm)) { rule -> setTimeDays(i, rule) }
-                    }.apply {
-                        tag = "time-days:$i"
-                        contentDescription = "Days for ${Days.time(tm.hour, tm.minute)}"
-                        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
-                    },
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.3f).apply { marginStart = dp(6) }
-                )
-                if (c.times.size > 1) {
-                    r.addView(button("✕") { removeTime(i) }.apply {
-                        tag = "remove-time:$i"
-                        contentDescription = "Remove ${Days.time(tm.hour, tm.minute)}"
-                    })
-                }
-                col.add(r, dp(4))
-            }
-            col.add(button("+ Add time") { pickTime(c, null) }, dp(4))
-            val whereText = if (t.where == Trigger.ANYWHERE || t.place == null) "anywhere" else Trigger.describe(t)
-            col.add(button("Where: $whereText") { pickWhere(c) }.apply { tag = "trigger-where" }, dp(8))
-            if (t.where != Trigger.ANYWHERE) {
-                col.add(placeButton(t.place) { pickPlace { p -> setTrigger { it.copy(place = p) } } }, dp(4))
-            }
-            col.add(label(if (c.enabled) "Next: ${CheckinText.next(c)}" else "Alarm is off", 14f), dp(4))
         }
-        if (c.enabled && t.usesLocation && !LocationTriggers.hasBackground(this)) {
+        if (c.enabled && c.usesLocation && !LocationTriggers.hasBackground(this)) {
             col.add(label("Location must be allowed \"all the time\" for this to work while Gist is closed.", 14f,
                 color = colorWarn), dp(10))
             col.add(outlineButton("Allow location") { askLocation(background = true) }.apply { tag = "allow-location" }, dp(4))
@@ -314,7 +258,7 @@ class CheckinEditActivity : BaseActivity() {
 
     /** Change the time at [index], or add a new one when [index] is null. */
     private fun pickTime(c: Checkin, index: Int?) {
-        val start = index?.let { c.times[it] } ?: AlarmTime((c.times.last().hour + 1) % 24, 0)
+        val start = index?.let { c.times.getOrNull(it) } ?: AlarmTime(((c.times.lastOrNull()?.hour ?: 6) + 1) % 24, 0)
         TimePickerDialog(
             this,
             { _, h, m ->
@@ -330,6 +274,199 @@ class CheckinEditActivity : BaseActivity() {
             start.minute,
             DateFormat.is24HourFormat(this)
         ).show()
+    }
+
+    // ---------------------------------------------------------------- triggers
+
+    private val kinds = listOf(Trigger.TIME, Trigger.ARRIVE, Trigger.LEAVE, Trigger.RUN_START, Trigger.RUN_END)
+
+    private fun kindText(kind: String) = when (kind) {
+        Trigger.ARRIVE -> "When I arrive"
+        Trigger.LEAVE -> "When I leave"
+        Trigger.RUN_START -> "When I start running"
+        Trigger.RUN_END -> "When I finish running"
+        else -> "At a set time"
+    }
+
+    /** One "Name: value" line of a trigger card; tap the value to change it. */
+    private fun field(card: LinearLayout, name: String, value: String, tag: String, onClick: () -> Unit) {
+        val r = row()
+        r.addView(label(name, 14f, color = colorMuted), LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT))
+        r.addWeighted(outlineButton(value) { onClick() }.apply {
+            this.tag = tag
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
+        })
+        card.add(r, dp(4))
+    }
+
+    /** The card's title line: "Trigger 2" and its ✕. */
+    private fun triggerHeader(card: LinearLayout, n: Int, onRemove: () -> Unit) {
+        val r = row()
+        r.addWeighted(label("Trigger ${n + 1}", 14f, bold = true, color = colorMuted))
+        r.addWrapped(textButton("✕", colorMuted) { onRemove() }.apply {
+            tag = "trigger-remove:$n"
+            contentDescription = "Remove trigger ${n + 1}"
+        })
+        card.add(r)
+    }
+
+    private fun timeTriggerCard(c: Checkin, i: Int, tm: AlarmTime, n: Int): LinearLayout {
+        val card = dialogCard().apply { tag = "trigger:$n" }
+        triggerHeader(card, n) { change { cur -> cur.copy(times = cur.times.filterIndexed { k, _ -> k != i }) } }
+        field(card, "When", kindText(Trigger.TIME), "trigger-when:$n") { pickKind(c, n) }
+        field(card, "Time", Days.time(tm.hour, tm.minute), "trigger-time:$n") { pickTime(c, i) }
+        field(card, "Days", c.daysFor(tm).describe(), "trigger-days:$n") {
+            pickRepeat(c.daysFor(tm)) { rule -> setTime(i) { it.copy(days = rule) } }
+        }
+        field(card, "Where", Trigger.whereText(tm.where, tm.place).replaceFirstChar { it.uppercase() }, "trigger-where:$n") {
+            pickWhere(tm) { where ->
+                if (where == Trigger.ANYWHERE) {
+                    setTime(i) { it.copy(where = where) }
+                } else if (tm.place != null) {
+                    setTime(i) { it.copy(where = where) }
+                    askLocation(background = true)
+                } else {
+                    pickPlace { p -> setTime(i) { it.copy(where = where, place = p) }; askLocation(background = true) }
+                }
+            }
+        }
+        if (tm.usesLocation) {
+            field(card, "Place", placeText(tm.place), "trigger-place:$n") {
+                pickPlace { p -> setTime(i) { it.copy(place = p) } }
+            }
+        }
+        return card
+    }
+
+    private fun eventTriggerCard(c: Checkin, j: Int, ev: Trigger, n: Int): LinearLayout {
+        val card = dialogCard().apply { tag = "trigger:$n" }
+        triggerHeader(card, n) { change { cur -> cur.copy(events = cur.events.filterIndexed { k, _ -> k != j }) } }
+        field(card, "When", kindText(ev.kind), "trigger-when:$n") { pickKind(c, n) }
+        if (ev.isPlace) {
+            field(card, "Where", placeText(ev.place), "trigger-place:$n") {
+                pickPlace { p -> setEvent(j) { it.copy(place = p) }; askLocation(background = true) }
+            }
+        }
+        if (ev.kind == Trigger.RUN_END) {
+            val min = if (ev.minRunMinutes == 0) "Any length" else "At least ${ev.minRunMinutes} min"
+            field(card, "Run", min, "trigger-min-run:$n") { pickMinRun(j, ev) }
+        }
+        val window = Trigger.windowText(ev) { Days.time(it.hour, it.minute) }.ifEmpty { "Anytime" }.replaceFirstChar { it.uppercase() }
+        field(card, "Time", window, "trigger-time:$n") { pickWindow(j, ev) }
+        field(card, "Days", ev.days.describe(), "trigger-days:$n") {
+            pickRepeat(ev.days) { rule -> setEvent(j) { it.copy(days = rule) } }
+        }
+        card.add(styledSwitch("At most once a day").apply {
+            isChecked = ev.oncePerDay
+            tag = "trigger-once:$n"
+            setOnCheckedChangeListener { _, on -> setEvent(j) { it.copy(oncePerDay = on) } }
+        }, dp(6))
+        return card
+    }
+
+    private fun placeText(p: Place?) = if (p == null) "Choose a place…" else "${p.name} · ${p.radiusM} m"
+
+    private fun setTime(i: Int, f: (AlarmTime) -> AlarmTime) = change { cur ->
+        if (i !in cur.times.indices) cur
+        else cur.copy(times = cur.times.toMutableList().apply { this[i] = f(this[i]) }.distinct().sorted())
+    }
+
+    private fun setEvent(j: Int, f: (Trigger) -> Trigger) = change { cur ->
+        if (j !in cur.events.indices) cur else cur.copy(events = cur.events.toMutableList().apply { this[j] = f(this[j]) })
+    }
+
+    /** A new trigger: a time an hour after the last one, every day (change anything after). */
+    private fun addTrigger(c: Checkin) {
+        val last = c.times.lastOrNull()
+        val t = AlarmTime(((last?.hour ?: 7) + if (last == null) 0 else 1) % 24, 0, days = c.repeat)
+        change { cur -> cur.copy(times = (cur.times + t).distinct().sorted(), enabled = true) }
+    }
+
+    /** Changes trigger [n]'s kind, keeping its days (a time becomes an event or back). */
+    private fun pickKind(c: Checkin, n: Int) {
+        val isTime = n < c.times.size
+        val current = if (isTime) Trigger.TIME else c.events[n - c.times.size].kind
+        val options = listOf(
+            DialogOption("At a set time", "Like an alarm clock", "kind:time"),
+            DialogOption("When I arrive at a place", "Uses the phone's location", "kind:arrive"),
+            DialogOption("When I leave a place", "Uses the phone's location", "kind:leave"),
+            DialogOption("When I start running", "Uses the phone's step sensor", "kind:run-start"),
+            DialogOption("When I finish running", "Uses the phone's step sensor", "kind:run-end"),
+        )
+        pickDialog("Trigger ${n + 1}", options, kinds.indexOf(current)) { k ->
+            val kind = kinds[k]
+            if (kind == current) return@pickDialog
+            var eventIndex = -1
+            change { cur ->
+                when {
+                    isTime && kind != Trigger.TIME -> {
+                        val tm = cur.times[n]
+                        eventIndex = cur.events.size
+                        cur.copy(
+                            times = cur.times.filterIndexed { k2, _ -> k2 != n },
+                            events = cur.events + Trigger(kind = kind, days = cur.daysFor(tm),
+                                place = if (kind == Trigger.ARRIVE || kind == Trigger.LEAVE) tm.place else null),
+                        )
+                    }
+                    !isTime && kind == Trigger.TIME -> {
+                        val j = n - cur.times.size
+                        val ev = cur.events[j]
+                        val t = AlarmTime(ev.windowStart?.hour ?: 7, ev.windowStart?.minute ?: 0, days = ev.days)
+                        cur.copy(times = (cur.times + t).distinct().sorted(), events = cur.events.filterIndexed { k2, _ -> k2 != j })
+                    }
+                    else -> {
+                        val j = n - cur.times.size
+                        eventIndex = j
+                        cur.copy(events = cur.events.toMutableList().apply { this[j] = this[j].copy(kind = kind) })
+                    }
+                }
+            }
+            val now = store.checkin(checkinId) ?: return@pickDialog
+            val ev = now.events.getOrNull(eventIndex)
+            when {
+                ev != null && ev.isPlace && ev.place == null ->
+                    pickPlace { p -> setEvent(eventIndex) { it.copy(place = p) }; askLocation(background = true) }
+                ev != null && ev.isPlace -> askLocation(background = true)
+                ev != null && ev.isMovement -> askActivity()
+            }
+        }
+    }
+
+    private fun pickWhere(tm: AlarmTime, onPick: (String) -> Unit) {
+        val values = listOf(Trigger.ANYWHERE, Trigger.AT, Trigger.AWAY)
+        val name = tm.place?.name
+        val options = listOf(
+            DialogOption("Anywhere"),
+            DialogOption(if (name != null) "Only when I'm at $name" else "Only when I'm at a place…",
+                "Checked when it's due; elsewhere, that time is skipped"),
+            DialogOption(if (name != null) "Only when I'm away from $name" else "Only when I'm away from a place…",
+                "Checked when it's due; there, that time is skipped"),
+        )
+        pickDialog("Ring only when", options, values.indexOf(tm.where)) { i -> onPick(values[i]) }
+    }
+
+    private fun pickMinRun(j: Int, ev: Trigger) {
+        val values = listOf(0, 5, 10, 20, 30, 45, 60)
+        pickDialog("Only after a run of", values.map { DialogOption(if (it == 0) "Any length" else "At least $it minutes") },
+            values.indexOf(ev.minRunMinutes)) { i -> setEvent(j) { it.copy(minRunMinutes = values[i]) } }
+    }
+
+    private fun pickWindow(j: Int, ev: Trigger) {
+        val any = ev.windowStart == null
+        pickDialog("Time of day", listOf(DialogOption("Anytime"), DialogOption("Only between…", "Pick a start and an end time")),
+            if (any) 0 else 1) { i ->
+            if (i == 0) {
+                setEvent(j) { it.copy(windowStart = null, windowEnd = null) }
+            } else {
+                val s0 = ev.windowStart ?: AlarmTime(6, 0)
+                val e0 = ev.windowEnd ?: AlarmTime(10, 0)
+                TimePickerDialog(this, { _, h, m ->
+                    TimePickerDialog(this, { _, h2, m2 ->
+                        setEvent(j) { it.copy(windowStart = AlarmTime(h, m), windowEnd = AlarmTime(h2, m2)) }
+                    }, e0.hour, e0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("…and") }.show()
+                }, s0.hour, s0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("From") }.show()
+            }
+        }
     }
 
     // ---------------------------------------------------------------- category
@@ -371,14 +508,6 @@ class CheckinEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- triggers
 
-    private fun setTrigger(f: (Trigger) -> Trigger) = change { it.copy(trigger = f(it.trigger)) }
-
-    private fun pickMinRun(c: Checkin) {
-        val values = listOf(0, 5, 10, 20, 30, 45, 60)
-        pickDialog("Only after a run of", values.map { DialogOption(if (it == 0) "Any length" else "At least $it minutes") },
-            values.indexOf(c.trigger.minRunMinutes)) { i -> setTrigger { it.copy(minRunMinutes = values[i]) } }
-    }
-
     /** Asks for "physical activity" (the step counter), for running triggers. */
     private fun askActivity() {
         if (!MovementWatch.hasPermission(this)) {
@@ -388,74 +517,10 @@ class CheckinEditActivity : BaseActivity() {
         }
     }
 
-    private fun placeButton(p: Place?, onClick: () -> Unit) =
-        button(if (p == null) "Place: choose…" else "Place: ${p.name} · ${p.radiusM} m") { onClick() }.apply {
-            tag = "trigger-place"
-        }
-
-    private fun pickTriggerKind(c: Checkin) {
-        val kinds = listOf(Trigger.TIME, Trigger.ARRIVE, Trigger.LEAVE, Trigger.RUN_START, Trigger.RUN_END)
-        val options = listOf(
-            DialogOption("At set times", "Like an alarm clock, on the days you choose", "kind:time"),
-            DialogOption("When I arrive at a place", "Uses the phone's location", "kind:arrive"),
-            DialogOption("When I leave a place", "Uses the phone's location", "kind:leave"),
-            DialogOption("When I start running", "Uses the phone's step sensor", "kind:run-start"),
-            DialogOption("When I finish running", "Uses the phone's step sensor", "kind:run-end"),
-        )
-        pickDialog("Rings", options, kinds.indexOf(c.trigger.kind)) { i ->
-            val kind = kinds[i]
-            setTrigger { it.copy(kind = kind) }
-            when {
-                kind == Trigger.ARRIVE || kind == Trigger.LEAVE -> afterLocationChoice()
-                kind == Trigger.RUN_START || kind == Trigger.RUN_END -> askActivity()
-            }
-        }
-    }
-
-    private fun pickWhere(c: Checkin) {
-        val values = listOf(Trigger.ANYWHERE, Trigger.AT, Trigger.AWAY)
-        val options = listOf(
-            DialogOption("Anywhere"),
-            DialogOption("Only when I'm at a place", "Checked when it's due; elsewhere, that time is skipped"),
-            DialogOption("Only when I'm away from a place", "Checked when it's due; there, that time is skipped"),
-        )
-        pickDialog("Ring only when", options, values.indexOf(c.trigger.where)) { i ->
-            setTrigger { it.copy(where = values[i]) }
-            if (values[i] != Trigger.ANYWHERE) afterLocationChoice()
-        }
-    }
-
-    /** After choosing something that needs a place: pick one if none, then ask for location access. */
-    private fun afterLocationChoice() {
-        val c = store.checkin(checkinId) ?: return
-        if (c.trigger.place == null) {
-            pickPlace { p -> setTrigger { it.copy(place = p) }; askLocation(background = true) }
-        } else {
-            askLocation(background = true)
-        }
-    }
-
-    private fun pickWindow(c: Checkin) {
-        val any = c.trigger.windowStart == null
-        pickDialog("Time of day", listOf(DialogOption("Any time of day"), DialogOption("Only between…", "Pick a start and an end time")),
-            if (any) 0 else 1) { i ->
-            if (i == 0) {
-                setTrigger { it.copy(windowStart = null, windowEnd = null) }
-            } else {
-                val s0 = c.trigger.windowStart ?: AlarmTime(6, 0)
-                val e0 = c.trigger.windowEnd ?: AlarmTime(10, 0)
-                TimePickerDialog(this, { _, h, m ->
-                    TimePickerDialog(this, { _, h2, m2 ->
-                        setTrigger { it.copy(windowStart = AlarmTime(h, m), windowEnd = AlarmTime(h2, m2)) }
-                    }, e0.hour, e0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("…and") }.show()
-                }, s0.hour, s0.minute, DateFormat.is24HourFormat(this)).apply { setTitle("From") }.show()
-            }
-        }
-    }
-
     /** Places already used by any check-in, then "here" and typed coordinates. */
     private fun pickPlace(onPicked: (Place) -> Unit) {
-        val known = store.checkins.mapNotNull { it.trigger.place }.distinctBy { Triple(it.name, it.lat, it.lon) }
+        val known = store.checkins.flatMap { c -> c.times.mapNotNull { it.place } + c.events.mapNotNull { it.place } }
+            .distinctBy { Triple(it.name, it.lat, it.lon) }
         val options = known.map { DialogOption(it.name, "${Trigger.coordinates(it)} · ${it.radiusM} m") } + listOf(
             DialogOption("Use my current location…", "Stand where the place is"),
             DialogOption("Enter coordinates…", "Copy them from any maps app"),
@@ -627,19 +692,6 @@ class CheckinEditActivity : BaseActivity() {
             message = "Months without a date you pick are skipped; \"Last day\" always rings.") { ticked ->
             val days = values.filterIndexed { i, _ -> ticked[i] }.toSet()
             if (days.isEmpty()) toast("Pick at least one date.") else onPick(Repeat.monthly(days))
-        }
-    }
-
-    /** Gives the time at [index] its own days. */
-    private fun setTimeDays(index: Int, rule: Repeat) = change { cur ->
-        if (index !in cur.times.indices) return@change cur
-        cur.copy(times = cur.times.toMutableList().apply { this[index] = this[index].copy(days = rule) })
-    }
-
-    private fun removeTime(index: Int) {
-        change { cur ->
-            if (cur.times.size <= 1 || index !in cur.times.indices) cur
-            else cur.copy(times = cur.times.filterIndexed { i, _ -> i != index })
         }
     }
 

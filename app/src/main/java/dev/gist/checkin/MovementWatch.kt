@@ -42,7 +42,7 @@ object MovementWatch {
         else -> ""
     }
 
-    fun anyUse(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.trigger.isMovement }
+    fun anyUse(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.runEvents.isNotEmpty() }
 
     /** Runs the watcher while any check-in needs it (and it can work), stops it otherwise. */
     fun sync(context: Context) {
@@ -63,11 +63,11 @@ object MovementWatch {
     fun onRun(context: Context, finishedMinutes: Int?, now: LocalDateTime = LocalDateTime.now()) {
         val store = Store(context)
         for (c in store.checkins) {
-            if (!c.trigger.isMovement) continue
+            if (c.runEvents.isEmpty()) continue
             val day = Days.forAlarmNow(c.aboutYesterday, now)
             val rangToday = store.results(day, c.id).values.any { it.status != SlotResult.SKIPPED } ||
                 store.pending.any { it.checkinId == c.id && !it.practice }
-            if (Trigger.runEventRings(c, finishedMinutes, now, rangToday)) LocationTriggers.ringNow(context, c)
+            if (c.runEvents.any { Trigger.runEventRings(c, it, finishedMinutes, now, rangToday) }) LocationTriggers.ringNow(context, c)
         }
     }
 }

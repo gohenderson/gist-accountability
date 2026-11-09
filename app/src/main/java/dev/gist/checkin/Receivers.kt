@@ -22,14 +22,18 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmScheduler.schedule(context, c)
             return
         }
-        val t = c.trigger
-        if (!test && !fromPlace && t.kind == Trigger.TIME && t.where != Trigger.ANYWHERE && t.place != null) {
+        // Timed triggers at this time, on this day, that care where you are.
+        val date = java.time.LocalDate.now()
+        val due = c.times.filter { it.toString() == time && c.daysFor(it).matches(date) }
+        if (!test && !fromPlace && due.isNotEmpty() && due.all { it.usesLocation }) {
             // "Only when at / away from a place": find out where the phone is first.
             val result: PendingResult? = goAsync() // null when called directly (tests)
             LocationTriggers.locate(context) { loc ->
                 try {
-                    val distance = loc?.let { LocationTriggers.distanceTo(t.place, it) }
-                    if (Trigger.locationAllows(t, distance)) {
+                    val ok = due.any { t ->
+                        Trigger.locationAllows(t.where, t.place, loc?.let { LocationTriggers.distanceTo(t.place!!, it) })
+                    }
+                    if (ok) {
                         ring(context, c, day, time, test = false)
                     } else {
                         Store(context).markSkipped(day, c.id, time) // History shows "–": not there, so no ring

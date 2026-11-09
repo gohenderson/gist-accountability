@@ -51,7 +51,8 @@ class PlaceTriggerTest {
     }
 
     private fun arriveCheckin(window: Pair<AlarmTime, AlarmTime>? = null) = TestEnv.checkin("g", "Gym").copy(
-        trigger = Trigger(Trigger.ARRIVE, gym, windowStart = window?.first, windowEnd = window?.second),
+        times = emptyList(),
+        events = listOf(Trigger(Trigger.ARRIVE, gym, windowStart = window?.first, windowEnd = window?.second)),
     )
 
     private fun proximity(entering: Boolean) = ProximityReceiver().onReceive(
@@ -111,7 +112,7 @@ class PlaceTriggerTest {
 
     @Test
     fun onlyWhenAtAPlace_skipsWhenYoureElsewhere() {
-        val c = TestEnv.checkin("h", "At home").copy(trigger = Trigger(where = Trigger.AT, place = gym))
+        val c = TestEnv.checkin("h", "At home").copy(times = listOf(AlarmTime(12, 0, where = Trigger.AT, place = gym)))
         TestEnv.reset(listOf(c))
         locatedAt(41.0, -74.0) // ~32 km away
         alarmFires(c)
@@ -121,7 +122,7 @@ class PlaceTriggerTest {
 
     @Test
     fun onlyWhenAtAPlace_ringsWhenYoureThere() {
-        val c = TestEnv.checkin("h", "At home").copy(trigger = Trigger(where = Trigger.AT, place = gym))
+        val c = TestEnv.checkin("h", "At home").copy(times = listOf(AlarmTime(12, 0, where = Trigger.AT, place = gym)))
         TestEnv.reset(listOf(c))
         locatedAt(40.7129, -74.0061)
         alarmFires(c)
@@ -130,7 +131,7 @@ class PlaceTriggerTest {
 
     @Test
     fun onlyWhenAway_ringsWhenYoureElsewhere() {
-        val c = TestEnv.checkin("h", "Away").copy(trigger = Trigger(where = Trigger.AWAY, place = gym))
+        val c = TestEnv.checkin("h", "Away").copy(times = listOf(AlarmTime(12, 0, where = Trigger.AWAY, place = gym)))
         TestEnv.reset(listOf(c))
         locatedAt(41.0, -74.0)
         alarmFires(c)
@@ -153,7 +154,7 @@ class PlaceTriggerTest {
     fun choosingArriveAndTypingCoordinatesOnTheEditPage() {
         TestEnv.reset(listOf(TestEnv.checkin("g", "Gym")))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "g")).use {
-            onView(tagged("trigger-kind")).perform(scrollTo(), click())
+            onView(tagged("trigger-when:0")).perform(scrollTo(), click())
             onView(withText("When I arrive at a place")).inRoot(isDialog()).perform(click())
             onView(withText("Enter coordinates…")).inRoot(isDialog()).perform(click())
             onView(tagged("place-coords")).inRoot(isDialog()).perform(replaceText("40.7128, -74.0060"))
@@ -161,13 +162,41 @@ class PlaceTriggerTest {
             onView(tagged("place-name")).inRoot(isDialog()).perform(replaceText("Gym"))
             onView(tagged("radius:500")).inRoot(isDialog()).perform(click())
             onView(withText("Save")).inRoot(isDialog()).perform(click())
-            onView(withText("Place: Gym · 500 m")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("trigger-place:0")).perform(scrollTo()).check(matches(withText("Gym · 500 m")))
             onView(tagged("trigger-summary")).perform(scrollTo())
                 .check(matches(withText(containsString("when you arrive at Gym"))))
         }
-        val t = TestEnv.store.checkin("g")!!.trigger
+        val t = TestEnv.store.checkin("g")!!.events.single()
         assertEquals(Trigger.ARRIVE, t.kind)
         assertEquals(Place("Gym", 40.7128, -74.006, 500), t.place)
         assertTrue("watching it", LocationTriggers.isRegistered(TestEnv.ctx, "g"))
+    }
+
+    @Test
+    fun twoPlacesOnOneCheckinAreBothWatched() {
+        val home = Place("Home", 40.70, -74.00, 200)
+        val c = TestEnv.checkin("g", "Two").copy(times = emptyList(), events = listOf(
+            Trigger(Trigger.ARRIVE, gym), Trigger(Trigger.LEAVE, home),
+        ))
+        TestEnv.reset(listOf(c))
+        AlarmScheduler.schedule(TestEnv.ctx, c)
+        assertTrue(LocationTriggers.isRegistered(TestEnv.ctx, "g"))
+        // Leaving home (the second trigger) rings.
+        ProximityReceiver().onReceive(TestEnv.ctx, Intent()
+            .putExtra(AlarmScheduler.EXTRA_CHECKIN, "g").putExtra(LocationTriggers.EXTRA_INDEX, 1)
+            .putExtra(LocationManager.KEY_PROXIMITY_ENTERING, false))
+        TestEnv.eventually(15_000) { assertTrue("leaving home should ring", AlarmService.running) }
+    }
+
+    @Test
+    fun anOldSingleTriggerCheckinIsConverted() {
+        TestEnv.reset(emptyList())
+        val legacy = """[{"id":"old","name":"Gym","times":["12:00"],"repeat":{"kind":"weekly","days":[1,3,5]},
+            "trigger":{"kind":"arrive","place":{"name":"Gym","lat":40.7128,"lon":-74.006,"radiusM":200},"oncePerDay":true}}]"""
+        TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE).edit().putString("checkins", legacy).commit()
+        val c = Store(TestEnv.ctx).checkin("old")!!
+        assertTrue("an event replaced the times", c.times.isEmpty())
+        assertEquals(Trigger.ARRIVE, c.events.single().kind)
+        assertEquals(Repeat.weekly(setOf(1, 3, 5)), c.events.single().days)
     }
 }

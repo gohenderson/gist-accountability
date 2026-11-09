@@ -302,17 +302,22 @@ class MainActivity : BaseActivity() {
                 r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
                 box.add(r)
                 card.add(box, dp(10))
-            } else if (c.trigger.isEvent) {
+            }
+            if (c.events.isNotEmpty()) {
                 val box = column().apply {
                     background = rounded(colorOf(R.color.surface_variant), 14)
                     setPadding(dp(14), dp(10), dp(10), dp(10))
                 }
-                val icon = if (c.trigger.isPlace) "📍" else "🏃"
-                box.add(label("$icon Rings ${CheckinText.whenText(c)}", 15f).apply { tag = "next:${c.id}" })
-                if (c.trigger.isPlace && !LocationTriggers.hasBackground(this)) {
+                c.events.forEachIndexed { i, t ->
+                    val icon = if (t.isPlace) "📍" else "🏃"
+                    box.add(label("$icon Rings ${CheckinText.event(t)}", 15f).apply {
+                        tag = if (i == 0 && next == null) "next:${c.id}" else "event:${c.id}:$i"
+                    }, if (i == 0) 0 else dp(4))
+                }
+                if (c.placeEvents.isNotEmpty() && !LocationTriggers.hasBackground(this)) {
                     box.add(label("Needs location \"all the time\" (see Finish setup)", 13f, color = colorWarn), dp(2))
                 }
-                if (c.trigger.isMovement && !MovementWatch.canWatch(this)) {
+                if (c.runEvents.isNotEmpty() && !MovementWatch.canWatch(this)) {
                     box.add(label(MovementWatch.problem(this), 13f, color = colorWarn), dp(2))
                 }
                 card.add(box, dp(10))
