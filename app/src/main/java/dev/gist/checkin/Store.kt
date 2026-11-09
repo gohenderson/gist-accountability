@@ -272,10 +272,17 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
-    /** Start page: Grouping.CARDS or Grouping.COMPACT. */
-    var style: String
-        get() = prefs.getString(K_STYLE, Grouping.CARDS) ?: Grouping.CARDS
-        set(v) { prefs.edit().putString(K_STYLE, v).commit() }
+    /**
+     * Check-ins folded to one line on the start page (ids); the rest show their full card.
+     * Anyone who had picked the old "Compact" layout starts with all of them folded.
+     */
+    var collapsedCheckins: Set<String>
+        get() = if (!prefs.contains(K_COLLAPSED_CHECKINS) && prefs.getString(K_STYLE, null) == "compact") {
+            checkins.map { it.id }.toSet()
+        } else {
+            prefs.getStringSet(K_COLLAPSED_CHECKINS, emptySet())!!.toSet()
+        }
+        set(v) { prefs.edit().putStringSet(K_COLLAPSED_CHECKINS, v.toSet()).remove(K_STYLE).commit() }
 
     /** The order of category groups (Grouping.key of each), as you've dragged them. */
     var groupOrder: List<String>
@@ -453,7 +460,9 @@ class Store(context: Context) {
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
+        /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
+        private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"
         private const val K_GROUP_ORDER = "groupOrder"
         private const val K_COLLAPSED = "collapsedGroups"
 

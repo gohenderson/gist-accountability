@@ -10,9 +10,12 @@ object Grouping {
     const val BY_CATEGORY = "category"
     const val OTHER = "Other"
 
-    /** How each check-in is drawn: a full card, or one compact line. */
-    const val CARDS = "cards"
-    const val COMPACT = "compact"
+    /**
+     * Expand all / Collapse all: everything is folded when every group in [groups] and every
+     * check-in in [ids] is. Then the button expands them all; otherwise it folds them all.
+     */
+    fun allFolded(groups: Set<String>, foldedGroups: Set<String>, ids: Set<String>, foldedIds: Set<String>): Boolean =
+        foldedGroups.containsAll(groups) && foldedIds.containsAll(ids)
 
     /** The key for remembering a group's position and collapsed state ("Health" = "health "). */
     fun key(category: String): String = category.trim().lowercase()
