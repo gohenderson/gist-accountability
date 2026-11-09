@@ -65,19 +65,62 @@ class MainActivity : BaseActivity() {
         bar.addWeighted(sectionTitle("Check-ins"))
         bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
         col.add(bar, dp(28))
+        val grouped = store.view == Grouping.BY_CATEGORY
+        val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (checkins.size > 1) {
-            val grouped = store.view == Grouping.BY_CATEGORY
-            col.add(textButton("View: ${if (grouped) "grouped by category" else "ungrouped"} ▾") { pickView() }.apply {
+            // View options: grouping, layout, and (when grouped) expand / collapse all.
+            val controls = row()
+            controls.addWrapped(textButton("${if (grouped) "Grouped by category" else "Ungrouped"} ▾") { pickView() }.apply {
                 tag = "view-mode"
-            }, dp(4))
-        }
-        if (store.view == Grouping.BY_CATEGORY) {
-            for ((category, members) in Grouping.byCategory(checkins)) {
-                col.add(label("$category · ${members.size}", 15f, bold = true, color = colorPrimary).apply {
-                    tag = "group:$category"
-                }, dp(20))
-                col.add(checkinList(checkins, members), dp(8))
+            })
+            controls.addWrapped(textButton("${if (store.style == Grouping.COMPACT) "Compact" else "Cards"} ▾") { pickStyle() }.apply {
+                tag = "style-mode"
+            })
+            if (grouped && groups.size > 1) {
+                val keys = groups.map { Grouping.key(it.first) }.toSet()
+                val allCollapsed = keys.all { it in store.collapsed }
+                controls.addWrapped(textButton(if (allCollapsed) "Expand all" else "Collapse all") {
+                    store.collapsed = if (allCollapsed) store.collapsed - keys else store.collapsed + keys
+                    render()
+                }.apply { tag = "toggle-all-groups" })
             }
+            col.add(controls, dp(4))
+        }
+        if (grouped) {
+            // Each group can be dragged above / below the others by its ≡, and tapped to fold.
+            val outer = ReorderList(this) { from, to ->
+                store.groupOrder = Grouping.moveGroup(groups.map { it.first }, from, to)
+                render()
+            }
+            for ((category, members) in groups) {
+                val key = Grouping.key(category)
+                val folded = key in store.collapsed
+                val section = column()
+                val head = row().apply {
+                    isClickable = true
+                    tag = "group-header:$category"
+                    contentDescription = "$category, ${if (folded) "collapsed" else "expanded"}"
+                    setPadding(0, dp(6), 0, dp(6))
+                    setOnClickListener {
+                        store.collapsed = if (folded) store.collapsed - key else store.collapsed + key
+                        render()
+                    }
+                }
+                val handle = label("≡", 22f, color = colorMuted).apply {
+                    setPadding(0, 0, dp(12), 0)
+                    tag = "drag-group:$category"
+                    contentDescription = "Drag to reorder the $category group"
+                }
+                if (groups.size > 1) head.addWrapped(handle)
+                head.addWeighted(label("$category · ${members.size}", 15f, bold = true, color = colorPrimary).apply {
+                    tag = "group:$category"
+                })
+                head.addWrapped(label(if (folded) "▸" else "▾", 18f, color = colorPrimary).apply { tag = "group-chevron:$category" })
+                section.add(head)
+                if (!folded) section.add(checkinList(checkins, members), dp(6))
+                outer.addRow(section, handle, dp(18))
+            }
+            col.add(outer, dp(10))
         } else if (checkins.isNotEmpty()) {
             col.add(checkinList(checkins, checkins), dp(12))
         }
@@ -114,7 +157,12 @@ class MainActivity : BaseActivity() {
                 tag = "drag-checkin:${c.id}"
                 contentDescription = "Drag to reorder ${c.name}"
             }
-            list.addRow(checkinCard(c, if (members.size > 1) handle else null), handle, dp(12))
+            val h = if (members.size > 1) handle else null
+            if (store.style == Grouping.COMPACT) {
+                list.addRow(checkinRow(c, h), handle, dp(6))
+            } else {
+                list.addRow(checkinCard(c, h), handle, dp(12))
+            }
         }
         return list
     }
@@ -131,22 +179,52 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private fun pickStyle() {
+        val values = listOf(Grouping.CARDS, Grouping.COMPACT)
+        val options = listOf(
+            DialogOption("Cards", "Everything at a glance: next ring, Skip / Do it now, stats", "style:cards"),
+            DialogOption("Compact", "One line each: name, next ring and on / off. Tap to open", "style:compact"),
+        )
+        pickDialog("Layout", options, values.indexOf(store.style)) { i ->
+            store.style = values[i]
+            render()
+        }
+    }
+
+    private fun alarmSwitch(c: Checkin) = styledSwitch().apply {
+        isChecked = c.enabled
+        tag = "toggle:${c.id}"
+        contentDescription = "${c.name} alarm on"
+        setOnCheckedChangeListener { _, on ->
+            store.updateCheckin(c.id) { it.copy(enabled = on) }
+            store.checkin(c.id)?.let { AlarmScheduler.schedule(this@MainActivity, it) }
+            render()
+        }
+    }
+
+    /** The compact layout: one line per check-in. Tap it to open the check-in's page. */
+    private fun checkinRow(c: Checkin, handle: View?): LinearLayout = row().apply {
+        background = rounded(colorOf(R.color.surface_variant), 14)
+        setPadding(dp(14), dp(10), dp(10), dp(10))
+        isClickable = true
+        tag = "row:${c.id}"
+        setOnClickListener { startActivity(CheckinEditActivity.intent(this@MainActivity, c.id)) }
+        handle?.let { addWrapped(it) }
+        val text = column()
+        text.add(label(c.name, 16f, bold = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+        val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
+        text.add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" }, dp(2))
+        addWeighted(text)
+        addWrapped(alarmSwitch(c))
+    }
+
     private fun checkinCard(c: Checkin, handle: View? = null): LinearLayout {
         val card = card()
 
         val titleRow = row()
         handle?.let { titleRow.addWrapped(it) }
         titleRow.addWeighted(label(c.name, 20f, bold = true))
-        titleRow.addWrapped(styledSwitch().apply {
-            isChecked = c.enabled
-            tag = "toggle:${c.id}"
-            contentDescription = "${c.name} alarm on"
-            setOnCheckedChangeListener { _, on ->
-                store.updateCheckin(c.id) { it.copy(enabled = on) }
-                store.checkin(c.id)?.let { AlarmScheduler.schedule(this@MainActivity, it) }
-                render()
-            }
-        })
+        titleRow.addWrapped(alarmSwitch(c))
         card.add(titleRow)
         card.add(muted(CheckinText.oneLine(c)), dp(2))
 

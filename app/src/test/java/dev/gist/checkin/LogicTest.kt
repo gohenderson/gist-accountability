@@ -596,3 +596,25 @@ class GroupingLogicTest {
         assertEquals(all, Grouping.reorderWithin(all, listOf("a", "b"), 0, 5))
     }
 }
+
+class GroupOrderTest {
+    private fun c(id: String, cat: String = "") = Checkin(id = id, name = id, category = cat)
+    private val list = listOf(c("e", "Evening"), c("m", "Morning"), c("f", "Fitness"), c("x"))
+
+    @Test
+    fun yourOrderFirstThenAToZThenOther() {
+        assertEquals(listOf("Evening", "Fitness", "Morning", "Other"), Grouping.byCategory(list).map { it.first })
+        assertEquals(listOf("Morning", "Evening", "Fitness", "Other"),
+            Grouping.byCategory(list, listOf("morning", "evening")).map { it.first })
+        assertEquals("Other can be placed too", listOf("Other", "Evening", "Fitness", "Morning"),
+            Grouping.byCategory(list, listOf("other")).map { it.first })
+    }
+
+    @Test
+    fun movingAGroupGivesTheNewOrder() {
+        assertEquals(listOf("morning", "evening", "fitness", "other"),
+            Grouping.moveGroup(listOf("Evening", "Fitness", "Morning", "Other"), 2, 0))
+        assertEquals(listOf("evening"), Grouping.moveGroup(listOf("Evening"), 0, 3))
+        assertEquals("health", Grouping.key(" Health "))
+    }
+}

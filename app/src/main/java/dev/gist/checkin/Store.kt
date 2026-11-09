@@ -240,6 +240,21 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
+    /** Start page: Grouping.CARDS or Grouping.COMPACT. */
+    var style: String
+        get() = prefs.getString(K_STYLE, Grouping.CARDS) ?: Grouping.CARDS
+        set(v) { prefs.edit().putString(K_STYLE, v).commit() }
+
+    /** The order of category groups (Grouping.key of each), as you've dragged them. */
+    var groupOrder: List<String>
+        get() = prefs.getString(K_GROUP_ORDER, "")!!.split('\n').filter { it.isNotEmpty() }
+        set(v) { prefs.edit().putString(K_GROUP_ORDER, v.joinToString("\n")).commit() }
+
+    /** Collapsed category groups (Grouping.key of each). */
+    var collapsed: Set<String>
+        get() = prefs.getStringSet(K_COLLAPSED, emptySet())!!.toSet()
+        set(v) { prefs.edit().putStringSet(K_COLLAPSED, v.toSet()).commit() }
+
     /** Puts the check-ins in the order of [ids] (any not listed keep their place at the end). */
     fun reorder(ids: List<String>) {
         val byId = checkins.associateBy { it.id }
@@ -372,6 +387,9 @@ class Store(context: Context) {
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
+        private const val K_STYLE = "style"
+        private const val K_GROUP_ORDER = "groupOrder"
+        private const val K_COLLAPSED = "collapsedGroups"
 
         const val DEFAULT_PAUSE = 45
 
