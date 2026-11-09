@@ -19,6 +19,9 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -365,11 +368,19 @@ class SoundAndBackgroundTest {
         ring(TestEnv.checkin("v", "Video").copy(background = Background(Background.VIDEO))) {
             Backgrounds.videoFile(TestEnv.ctx, "v").writeBytes(testVideoBytes())
         }
-        alarmScreen().use { scenario ->
+        alarmScreen().use {
             onView(tagged("ringing-video")).check(matches(isDisplayed()))
+            // Ask whichever ringing screen is in front, not the scenario's own
+            // instance: the alarm service may bring a fresh one forward and
+            // the first one is then destroyed.
             TestEnv.eventually(15_000) {
                 var playing = false
-                scenario.onActivity { playing = it.videoIsPlaying }
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    playing = ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<CheckinActivity>()
+                        .any { it.videoIsPlaying }
+                }
                 assertTrue("video should be playing", playing)
             }
             // The alarm sound is still the one playing (the video is muted).
