@@ -46,6 +46,7 @@ data class Checkin(
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
     val trigger: Trigger = Trigger.DEFAULT, // what makes it ring (times, or arriving/leaving a place)
+    val category: String = "",               // for grouping on the start page; "" = none
 ) {
     /** Every question in its question steps, in order: these are what gets logged. */
     val questions: List<Question> get() = steps.filter { it.kind == Steps.QUESTIONS }.flatMap { it.questions }
@@ -234,6 +235,18 @@ class Store(context: Context) {
         get() = prefs.getInt(K_THEME, THEME_SYSTEM)
         set(v) { prefs.edit().putInt(K_THEME, v).commit() }
 
+    /** Start page view: Grouping.UNGROUPED or Grouping.BY_CATEGORY. */
+    var view: String
+        get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
+        set(v) { prefs.edit().putString(K_VIEW, v).commit() }
+
+    /** Puts the check-ins in the order of [ids] (any not listed keep their place at the end). */
+    fun reorder(ids: List<String>) {
+        val byId = checkins.associateBy { it.id }
+        val ordered = ids.mapNotNull { byId[it] }
+        checkins = ordered + checkins.filter { it.id !in ids }
+    }
+
     /** How long the alarm stays quiet after each tap while you work through a check-in. */
     var pauseSeconds: Int
         get() = prefs.getInt(K_PAUSE, DEFAULT_PAUSE).takeIf { it in PAUSE_CHOICES } ?: DEFAULT_PAUSE
@@ -332,6 +345,7 @@ class Store(context: Context) {
             soundTitle = o.optString("soundTitle", ""),
             background = Background.fromJson(o.optJSONObject("background")),
             trigger = Trigger.fromJson(o.optJSONObject("trigger")),
+            category = o.optString("category", "").trim(),
         )
     }
 
@@ -348,6 +362,7 @@ class Store(context: Context) {
             .put("background", c.background.toJson())
             .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
             .put("trigger", c.trigger.toJson())
+            .put("category", c.category)
     }
 
     companion object {
@@ -356,6 +371,7 @@ class Store(context: Context) {
         private const val K_ENTRIES = "results"
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
+        private const val K_VIEW = "view"
 
         const val DEFAULT_PAUSE = 45
 

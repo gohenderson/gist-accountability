@@ -82,6 +82,7 @@ class CheckinEditActivity : BaseActivity() {
             })
         }
         col.add(name, dp(2))
+        col.add(button("Category: ${c.category.ifBlank { "none" }}") { pickCategory(c) }.apply { tag = "category" }, dp(8))
 
         // Schedule
         col = section(page, "Schedule")
@@ -309,6 +310,43 @@ class CheckinEditActivity : BaseActivity() {
             start.minute,
             DateFormat.is24HourFormat(this)
         ).show()
+    }
+
+    // ---------------------------------------------------------------- category
+
+    /** Categories group check-ins on the start page (View → Grouped by category). */
+    private fun pickCategory(c: Checkin) {
+        val existing = Grouping.categories(store.checkins)
+        val options = listOf(DialogOption("None", "Listed under \"${Grouping.OTHER}\" when grouped")) +
+            existing.map { DialogOption(it) } +
+            DialogOption("New category…", null, "category:new")
+        val current = if (c.category.isBlank()) 0 else existing.indexOfFirst { it.equals(c.category, true) } + 1
+        pickDialog("Category", options, current) { i ->
+            when {
+                i == 0 -> change { it.copy(category = "") }
+                i <= existing.size -> { val cat = existing[i - 1]; change { it.copy(category = cat) } }
+                else -> newCategory()
+            }
+        }
+    }
+
+    private fun newCategory() {
+        val input = EditText(this).apply {
+            hint = "e.g. Health, Work, Fitness"
+            tag = "category-name"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        }
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        box.add(input)
+        AlertDialog.Builder(this)
+            .setTitle("New category")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) change { it.copy(category = name) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---------------------------------------------------------------- triggers

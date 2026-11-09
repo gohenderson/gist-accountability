@@ -200,7 +200,7 @@ object Library {
         val names = existing.map { it.name }.toSet()
         val base = template.checkin.name
         val name = if (base !in names) base else (2..999).map { "$base $it" }.first { it !in names }
-        return template.checkin.copy(id = newId, name = name, enabled = true)
+        return template.checkin.copy(id = newId, name = name, enabled = true, category = template.category)
     }
 
     /** A blank check-in for "Create your own". */

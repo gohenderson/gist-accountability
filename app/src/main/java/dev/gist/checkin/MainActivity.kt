@@ -65,7 +65,22 @@ class MainActivity : BaseActivity() {
         bar.addWeighted(sectionTitle("Check-ins"))
         bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
         col.add(bar, dp(28))
-        checkins.forEach { col.add(checkinCard(it), dp(12)) }
+        if (checkins.size > 1) {
+            val grouped = store.view == Grouping.BY_CATEGORY
+            col.add(textButton("View: ${if (grouped) "grouped by category" else "ungrouped"} ▾") { pickView() }.apply {
+                tag = "view-mode"
+            }, dp(4))
+        }
+        if (store.view == Grouping.BY_CATEGORY) {
+            for ((category, members) in Grouping.byCategory(checkins)) {
+                col.add(label("$category · ${members.size}", 15f, bold = true, color = colorPrimary).apply {
+                    tag = "group:$category"
+                }, dp(20))
+                col.add(checkinList(checkins, members), dp(8))
+            }
+        } else if (checkins.isNotEmpty()) {
+            col.add(checkinList(checkins, checkins), dp(12))
+        }
         if (checkins.isEmpty()) {
             col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
         }
@@ -87,10 +102,40 @@ class MainActivity : BaseActivity() {
      * One check-in: name with its on/off switch, times and steps, last-7-days stat, the next
      * ring (with Do it now / Skip), anything already done early or skipped, and History / Edit.
      */
-    private fun checkinCard(c: Checkin): LinearLayout {
+    /** [members] as cards that can be dragged up and down by their ≡ handle (within this list). */
+    private fun checkinList(all: List<Checkin>, members: List<Checkin>): ReorderList {
+        val list = ReorderList(this) { from, to ->
+            store.reorder(Grouping.reorderWithin(all.map { it.id }, members.map { it.id }, from, to))
+            render()
+        }
+        members.forEach { c ->
+            val handle = label("≡", 24f, color = colorMuted).apply {
+                setPadding(0, 0, dp(12), 0)
+                tag = "drag-checkin:${c.id}"
+                contentDescription = "Drag to reorder ${c.name}"
+            }
+            list.addRow(checkinCard(c, if (members.size > 1) handle else null), handle, dp(12))
+        }
+        return list
+    }
+
+    private fun pickView() {
+        val values = listOf(Grouping.UNGROUPED, Grouping.BY_CATEGORY)
+        val options = listOf(
+            DialogOption("Ungrouped", "One list, in your order", "view:ungrouped"),
+            DialogOption("Grouped by category", "A section per category; set a check-in's category on its page", "view:category"),
+        )
+        pickDialog("View", options, values.indexOf(store.view)) { i ->
+            store.view = values[i]
+            render()
+        }
+    }
+
+    private fun checkinCard(c: Checkin, handle: View? = null): LinearLayout {
         val card = card()
 
         val titleRow = row()
+        handle?.let { titleRow.addWrapped(it) }
         titleRow.addWeighted(label(c.name, 20f, bold = true))
         titleRow.addWrapped(styledSwitch().apply {
             isChecked = c.enabled
