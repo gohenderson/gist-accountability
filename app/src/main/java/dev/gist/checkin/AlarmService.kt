@@ -24,6 +24,10 @@ import kotlin.math.ceil
 /**
  * Rings (sound + vibration) until CheckinActivity stops it after the questions are answered.
  * Keeps the alarm volume from being turned down below [VOLUME_FLOOR] while ringing.
+ *
+ * The first ring starts quietly and swells to full volume over [rampMs] (about 30 s), like
+ * a gentle alarm clock. Once you've been woken, it doesn't start soft again: when a pause
+ * runs out, it comes back at full volume.
  */
 class AlarmService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -44,6 +48,22 @@ class AlarmService : Service() {
     }
 
     private val giveUp = Runnable { stopSelf() }
+
+    private var rampStart = 0L
+    private val ramp = object : Runnable {
+        override fun run() {
+            val total = rampMs()
+            val f = ((SystemClock.elapsedRealtime() - rampStart).toFloat() / total).coerceIn(0f, 1f)
+            // Loudness is perceived roughly logarithmically: squaring keeps the early part soft.
+            setGain(RAMP_START + (1f - RAMP_START) * f * f)
+            if (f < 1f) handler.postDelayed(this, RAMP_STEP_MS)
+        }
+    }
+
+    private fun setGain(g: Float) {
+        currentGain = g
+        try { player?.setVolume(g, g) } catch (e: Exception) {}
+    }
 
     /**
      * Leaving the alarm screen (Home, the app switcher, another app) doesn't get you out of
@@ -134,6 +154,7 @@ class AlarmService : Service() {
                 mp.isLooping = true
                 mp.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
                 mp.prepare()
+                mp.setVolume(RAMP_START, RAMP_START)
                 mp.start()
                 player = mp
                 currentSound = uri.toString()
@@ -150,6 +171,10 @@ class AlarmService : Service() {
         }
         vibrator = vib
         startVibration()
+        // Start soft and swell to full volume.
+        rampStart = SystemClock.elapsedRealtime()
+        setGain(RAMP_START)
+        handler.post(ramp)
     }
 
     @Suppress("DEPRECATION")
@@ -170,6 +195,7 @@ class AlarmService : Service() {
             paused = true
             isPaused = true
             try { player?.pause() } catch (e: Exception) {}
+            handler.removeCallbacks(ramp)
             vibrator?.cancel()
             handler.removeCallbacks(volumeGuard)
         }
@@ -182,6 +208,7 @@ class AlarmService : Service() {
         paused = false
         isPaused = false
         pausedUntil = 0L
+        setGain(1f) // you were already woken: back at full volume, no slow start
         try { player?.start() } catch (e: Exception) {}
         startVibration()
         handler.post(volumeGuard)
@@ -200,6 +227,7 @@ class AlarmService : Service() {
     override fun onDestroy() {
         running = false
         currentSound = null
+        currentGain = 0f
         isPaused = false
         pausedUntil = 0L
         if (instance === this) instance = null
@@ -252,6 +280,19 @@ class AlarmService : Service() {
 
         /** How long the alarm stays quiet after the last tap. */
         fun pauseMs(context: Context): Long = testPauseMs ?: Store(context).pauseSeconds * 1000L
+
+        /** How long the first ring takes to reach full volume. Tests shorten it. */
+        @Volatile
+        var testRampMs: Long? = null
+        fun rampMs(): Long = (testRampMs ?: RAMP_MS).coerceAtLeast(1)
+        private const val RAMP_MS = 30_000L
+        private const val RAMP_STEP_MS = 250L
+        const val RAMP_START = 0.03f
+
+        /** The sound's current loudness, 0–1 of the alarm volume (for tests). */
+        @Volatile
+        var currentGain = 0f
+            private set
 
         /** True while the alarm is active (its own notification is showing). */
         @Volatile
