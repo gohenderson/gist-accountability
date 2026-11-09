@@ -1,6 +1,5 @@
 package dev.gist.checkin
 
-import android.graphics.Rect
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.espresso.Espresso.onView
@@ -31,18 +30,6 @@ class StepsTest {
 
     private fun edit(id: String) = ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, id))
 
-    /** A view's bounds on screen, found by its tag. */
-    private fun boundsOf(tag: String): Rect {
-        val r = Rect()
-        onView(tagged(tag)).check { v, e ->
-            if (e != null) throw e
-            val xy = IntArray(2)
-            v.getLocationOnScreen(xy)
-            r.set(xy[0], xy[1], xy[0] + v.width, xy[1] + v.height)
-        }
-        return r
-    }
-
     private fun kinds() = TestEnv.store.checkin("c")!!.steps.map { it.kind }
 
     @Test
@@ -61,34 +48,13 @@ class StepsTest {
         edit("c").use {
             onView(tagged("step:2")).perform(scrollTo())
             onView(tagged("step:0")).perform(scrollTo())
-            val handle = boundsOf("drag:2")
-            val top = boundsOf("step:0")
+            val handle = TestEnv.boundsOf("drag:2")
+            val top = TestEnv.boundsOf("step:0")
             // Drag Questions (3rd) up past Math (1st), like a finger would.
-            dragVertically(handle.centerX(), handle.centerY(), top.top - 10)
+            TestEnv.dragVertically(handle.centerX(), handle.centerY(), top.top - 10)
             TestEnv.eventually { assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), kinds()) }
             TestEnv.eventually { onView(withText("1. Questions")).check(matches(isDisplayed())) }
         }
-    }
-
-    /** Touch down, move in small steps (letting the list relayout), lift. */
-    private fun dragVertically(x: Int, fromY: Int, toY: Int) {
-        val inst = TestEnv.instrumentation
-        val start = android.os.SystemClock.uptimeMillis()
-        fun send(action: Int, y: Int) {
-            val ev = android.view.MotionEvent.obtain(start, android.os.SystemClock.uptimeMillis(), action, x.toFloat(), y.toFloat(), 0)
-            inst.sendPointerSync(ev)
-            ev.recycle()
-        }
-        send(android.view.MotionEvent.ACTION_DOWN, fromY)
-        val steps = 30
-        for (i in 1..steps) {
-            send(android.view.MotionEvent.ACTION_MOVE, fromY + (toY - fromY) * i / steps)
-            android.os.SystemClock.sleep(30)
-        }
-        android.os.SystemClock.sleep(200)
-        send(android.view.MotionEvent.ACTION_MOVE, toY)
-        send(android.view.MotionEvent.ACTION_UP, toY)
-        inst.waitForIdleSync()
     }
 
     @Test

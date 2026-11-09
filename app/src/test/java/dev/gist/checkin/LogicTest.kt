@@ -575,3 +575,24 @@ class RunDetectorTest {
         assertTrue("no set times", AlarmScheduler.occurrences(end).isEmpty())
     }
 }
+
+class GroupingLogicTest {
+    private fun c(id: String, cat: String = "") = Checkin(id = id, name = id, category = cat)
+
+    @Test
+    fun categoriesAToZWithUncategorizedLast() {
+        val groups = Grouping.byCategory(listOf(c("a", "work"), c("b"), c("c", "Health"), c("d", "Work"), c("e", "health ")))
+        assertEquals(listOf("Health", "work", "Other"), groups.map { it.first })
+        assertEquals(listOf("c", "e"), groups[0].second.map { it.id })
+        assertEquals(listOf("a", "d"), groups[1].second.map { it.id })
+        assertEquals(listOf("Health", "work"), Grouping.categories(listOf(c("a", "work"), c("c", "Health"), c("d", "Work"))))
+    }
+
+    @Test
+    fun reorderingInsideAGroupLeavesTheRestAlone() {
+        val all = listOf("a", "x", "b", "y", "c")
+        assertEquals(listOf("c", "x", "a", "y", "b"), Grouping.reorderWithin(all, listOf("a", "b", "c"), 2, 0))
+        assertEquals(listOf("y", "a", "x", "b", "c"), Grouping.reorderWithin(all, all, 3, 0))
+        assertEquals(all, Grouping.reorderWithin(all, listOf("a", "b"), 0, 5))
+    }
+}

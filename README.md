@@ -161,6 +161,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - a test ring can be stopped part-way with End test, logging nothing
   - the first ring starts soft and ramps to full volume; after a pause it resumes at full
     volume
+  - start page: grouped view shows a section per category with "Other" last; the View
+    menu switches it; dragging a card moves it; a category is set on the edit page
   - the pause after each tap defaults to 45 s and can be changed in Settings; on the
     ringing screen, Start check-in sits in the bottom half
   - edit page: rename saves as you type; add and reorder questions; turning the alarm
@@ -359,6 +361,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
   right of its name, and two buttons:
+  - **Drag a card by its ≡ handle** to put your check-ins in your own order.
+  - **View** (above the list, once you have two or more): **Ungrouped** (one list) or
+    **Grouped by category** (a section per category, A–Z, with uncategorized ones under
+    "Other"). Set a check-in's **Category** on its page: pick one you've used or type a new
+    one. Check-ins added from the library get the library's category (Food, Fitness…).
+    Dragging works within a section.
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
     sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
     The **test ring** is a practice run: it rings and runs every step, but nothing is
@@ -397,7 +405,8 @@ app/src/main/java/dev/gist/checkin/
   RunDetector.kt     notices runs starting and finishing from step-counter readings
   MovementWatch.kt   the step watcher service and ringing on run start / finish
   StepEditActivity.kt one step's own page (math level, scan code, questions)
-  ReorderList.kt     the drag-to-reorder list on the edit page
+  ReorderList.kt     drag-to-reorder lists (steps, and check-ins on the start page)
+  Grouping.kt        start page views: ungrouped or grouped by category; reordering
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
   ScanActivity.kt    registers a code for a check-in
   MathGen.kt         math problem generator

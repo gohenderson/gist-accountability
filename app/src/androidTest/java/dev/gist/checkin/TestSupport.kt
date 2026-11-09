@@ -3,6 +3,7 @@ package dev.gist.checkin
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.View
@@ -69,6 +70,41 @@ object TestEnv {
         if (scanCode != null) add(StepConfig("s", Steps.SCAN, scanCode = scanCode, scanLabel = "Test spot"))
         if (questions.isNotEmpty()) add(StepConfig("q", Steps.QUESTIONS, questions = questions))
     }
+
+    /** Touch down, move in small steps (letting the list relayout), lift. */
+    fun dragVertically(x: Int, fromY: Int, toY: Int) {
+        val inst = instrumentation
+        val start = android.os.SystemClock.uptimeMillis()
+        fun send(action: Int, y: Int) {
+            val ev = android.view.MotionEvent.obtain(start, android.os.SystemClock.uptimeMillis(), action, x.toFloat(), y.toFloat(), 0)
+            inst.sendPointerSync(ev)
+            ev.recycle()
+        }
+        send(android.view.MotionEvent.ACTION_DOWN, fromY)
+        val steps = 30
+        for (i in 1..steps) {
+            send(android.view.MotionEvent.ACTION_MOVE, fromY + (toY - fromY) * i / steps)
+            android.os.SystemClock.sleep(30)
+        }
+        android.os.SystemClock.sleep(200)
+        send(android.view.MotionEvent.ACTION_MOVE, toY)
+        send(android.view.MotionEvent.ACTION_UP, toY)
+        inst.waitForIdleSync()
+    }
+
+    /** A view's bounds on screen, found by its tag. */
+    fun boundsOf(tag: String): Rect {
+        val r = Rect()
+        onView(tagged(tag)).check { v, e ->
+            if (e != null) throw e
+            val xy = IntArray(2)
+            v.getLocationOnScreen(xy)
+            r.set(xy[0], xy[1], xy[0] + v.width, xy[1] + v.height)
+        }
+        return r
+    }
+
+    private fun kinds() = TestEnv.store.checkin("c")!!.steps.map { it.kind }
 
     /** Grants or resets "Display over other apps" (what lets an alarm come back to the front). */
     fun allowOverlay(allow: Boolean) {
