@@ -657,3 +657,39 @@ class ScoreTest {
         assertEquals(bad, Score.color(-1.0, bad, good))
     }
 }
+
+class PerTimeDaysTest {
+    private val ny = ZoneId.of("America/New_York")
+    private fun at(d: Int, h: Int, m: Int) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, ny) // Nov 9 2026 = Monday
+    private val track = Checkin(
+        id = "t", name = "Wake",
+        times = listOf(
+            AlarmTime(4, 0, days = Repeat.weekly(setOf(2))),                  // Tuesday: track run
+            AlarmTime(4, 45, days = Repeat.weekly(setOf(1, 3, 4, 5, 6, 7))),  // every other day
+        ),
+    )
+
+    @Test
+    fun eachTimeRingsOnItsOwnDays() {
+        val next = AlarmScheduler.occurrences(track, at(9, 20, 0), count = 4).map {
+            java.time.Instant.ofEpochMilli(it.at).atZone(ny).let { z -> "${z.dayOfWeek.name.take(3)} ${it.timeKey}" }
+        }
+        assertEquals(listOf("TUE 04:00", "WED 04:45", "THU 04:45", "FRI 04:45"), next)
+    }
+
+    @Test
+    fun timesWithoutTheirOwnDaysFollowTheCheckin() {
+        val c = Checkin(id = "c", name = "C", repeat = Repeat.weekly(Repeat.WEEKDAYS),
+            times = listOf(AlarmTime(7, 0), AlarmTime(9, 0, days = Repeat.weekly(Repeat.WEEKENDS))))
+        val days = AlarmScheduler.occurrences(c, at(13, 12, 0), count = 3).map { it.timeKey } // Friday noon
+        assertEquals(listOf("09:00", "09:00", "07:00"), days) // Sat 9, Sun 9, Mon 7
+        assertEquals(Repeat.weekly(Repeat.WEEKDAYS), c.daysFor(c.times[0]))
+    }
+
+    @Test
+    fun describedPerTime() {
+        assertEquals("4:00 AM Tue; 4:45 AM every day but Tue", CheckinText.times(track).replace(' ', ' '))
+        assertEquals("every day but Tue", Repeat.weekly(setOf(1, 3, 4, 5, 6, 7)).describe())
+        assertTrue("same time, different days aren't the same", AlarmTime(4, 0) != AlarmTime(4, 0, Repeat.weekly(setOf(2))))
+    }
+}

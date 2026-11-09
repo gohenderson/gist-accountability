@@ -40,7 +40,10 @@ object CheckinText {
     }
 
     /** e.g. "7:00 AM, 12:30 PM, 9:30 PM" */
-    fun times(c: Checkin): String = c.times.joinToString(", ") { Days.time(it.hour, it.minute) }
+    /** "4:45 AM, 9:00 PM", or with days per time: "4:45 AM every day but Tue; 4:00 AM Tue". */
+    fun times(c: Checkin): String =
+        if (!c.perTimeDays) c.times.joinToString(", ") { Days.time(it.hour, it.minute) }
+        else c.times.joinToString("; ") { "${Days.time(it.hour, it.minute)} ${c.daysFor(it).describe()}" }
 
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
     fun oneLine(c: Checkin): String = when {
@@ -66,5 +69,5 @@ object CheckinText {
     }
 
     private fun repeatSuffix(c: Checkin): String =
-        if (c.repeat.kind == Repeat.DAILY) "" else ", ${c.repeat.describe()}"
+        if (c.repeat.kind == Repeat.DAILY || c.perTimeDays) "" else ", ${c.repeat.describe()}"
 }

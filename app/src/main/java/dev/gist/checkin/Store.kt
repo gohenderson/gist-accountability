@@ -11,7 +11,12 @@ data class Question(val id: String, val text: String, val yesIsGood: Boolean = f
 }
 
 /** A time of day an alarm rings. */
-data class AlarmTime(val hour: Int, val minute: Int) : Comparable<AlarmTime> {
+/**
+ * A time of day a check-in rings. [days]: the days this time rings on; null means the
+ * check-in's own repeat rule (so one check-in can ring at 4:00 AM on Tuesdays and 4:45 AM
+ * on the other days).
+ */
+data class AlarmTime(val hour: Int, val minute: Int, val days: Repeat? = null) : Comparable<AlarmTime> {
     override fun compareTo(other: AlarmTime): Int = (hour * 60 + minute) - (other.hour * 60 + other.minute)
 
     /** Stored as "HH:mm", e.g. "07:00". */
@@ -48,6 +53,12 @@ data class Checkin(
     val trigger: Trigger = Trigger.DEFAULT, // what makes it ring (times, or arriving/leaving a place)
     val category: String = "",               // for grouping on the start page; "" = none
 ) {
+    /** The days [t] rings on: its own, or the check-in's repeat rule. */
+    fun daysFor(t: AlarmTime): Repeat = t.days ?: repeat
+
+    /** Does any time have days of its own? */
+    val perTimeDays: Boolean get() = times.any { it.days != null }
+
     /** Every question in its question steps, in order: these are what gets logged. */
     val questions: List<Question> get() = steps.filter { it.kind == Steps.QUESTIONS }.flatMap { it.questions }
 
@@ -346,12 +357,19 @@ class Store(context: Context) {
     }
 
     fun checkinFromJson(o: JSONObject): Checkin {
+        // Each time is "HH:mm", or {"t": "HH:mm", "days": {…}} when it has its own days.
         val ts = o.getJSONArray("times")
         return Checkin(
             id = o.getString("id"),
             name = o.optString("name", "Check-in"),
-            times = (0 until ts.length()).mapNotNull { AlarmTime.parse(ts.optString(it)) }
-                .distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) },
+            times = (0 until ts.length()).mapNotNull { i ->
+                val obj = ts.optJSONObject(i)
+                if (obj != null) {
+                    AlarmTime.parse(obj.optString("t"))?.copy(days = obj.optJSONObject("days")?.let { Repeat.fromJson(it) })
+                } else {
+                    AlarmTime.parse(ts.optString(i))
+                }
+            }.distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) },
             repeat = Repeat.fromJson(o.optJSONObject("repeat")),
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
@@ -368,7 +386,11 @@ class Store(context: Context) {
         return JSONObject()
             .put("id", c.id)
             .put("name", c.name)
-            .put("times", JSONArray().apply { c.times.forEach { put(it.toString()) } })
+            .put("times", JSONArray().apply {
+                c.times.forEach { t ->
+                    if (t.days == null) put(t.toString()) else put(JSONObject().put("t", t.toString()).put("days", t.days.toJson()))
+                }
+            })
             .put("repeat", c.repeat.toJson())
             .put("enabled", c.enabled)
             .put("aboutYesterday", c.aboutYesterday)
