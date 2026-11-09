@@ -161,6 +161,8 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - a test ring can be stopped part-way with End test, logging nothing
   - the first ring starts soft and ramps to full volume; after a pause it resumes at full
     volume
+  - scores: 100% / 50% / 0% check-ins show those numbers in green / in between / red;
+    a group shows its average (75%), the page the overall (50%); no history, no score
   - start page: dragging a group moves it (your order first, then A–Z, "Other" last);
     a group collapses and expands; Collapse all / Expand all; the Compact layout shows one
     line each and opens the check-in when tapped
@@ -364,6 +366,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
   right of its name, and two buttons:
+  - **On-track colors:** each check-in shows its score, the share of the last 7 logged days
+    that were fully on track (missed rings count as off track; skipped days and days it
+    didn't ring don't count), and its card or line is outlined in a color from red (0%)
+    through amber to green (100%). Group headers show the average of their check-ins, and
+    the top of the page shows the overall average, in the same colors. Check-ins that are
+    switched off, or have nothing logged in the last week, show no score.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
   - **View** (above the list, once you have two or more): **Ungrouped** (one list) or
     **Grouped by category** (a section per category, A–Z, with uncategorized ones under
@@ -414,6 +422,7 @@ app/src/main/java/dev/gist/checkin/
   MovementWatch.kt   the step watcher service and ringing on run start / finish
   StepEditActivity.kt one step's own page (math level, scan code, questions)
   ReorderList.kt     drag-to-reorder lists (steps, and check-ins on the start page)
+  Score.kt           on-track scores and their red → green colors
   Grouping.kt        start page views: ungrouped or grouped by category; reordering
   ScannerView.kt     camera preview + on-device QR/barcode decoding (Camera2 + ZXing)
   ScanActivity.kt    registers a code for a check-in

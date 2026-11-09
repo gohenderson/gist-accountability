@@ -53,7 +53,7 @@ class GroupingTest {
         ))
         TestEnv.store.view = Grouping.BY_CATEGORY
         main().use {
-            onView(tagged("group:Fitness")).perform(scrollTo()).check(matches(withText("Fitness · 1")))
+            onView(tagged("group:Fitness")).perform(scrollTo()).check(matches(withText("Fitness")))
             onView(tagged("group:Health")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("group:Other")).perform(scrollTo()).check(matches(isDisplayed()))
         }
@@ -163,5 +163,51 @@ class GroupingTest {
             onView(tagged("checkin-name")).check(matches(withText("Beta"))) // tapping opens its page
         }
         assertEquals(Grouping.COMPACT, TestEnv.store.style)
+    }
+
+    /** [id] answered on track on [good] of the last 4 days, off track on the rest. */
+    private fun history(id: String, good: Int) {
+        Days.lastN(4).forEachIndexed { i, day -> TestEnv.store.saveAnswers(day, id, "12:00", mapOf("soda" to (i >= good))) }
+    }
+
+    private fun textColorOf(tag: String): Int {
+        var color = 0
+        onView(tagged(tag)).check { v, e -> if (e != null) throw e; color = (v as android.widget.TextView).currentTextColor }
+        return color
+    }
+
+    @Test
+    fun scoresAreColoredAndRollUp() {
+        val q = Question("soda", "Soda?")
+        TestEnv.reset(listOf(
+            TestEnv.checkin("a", "All good", listOf(q)).copy(category = "Morning"),
+            TestEnv.checkin("b", "Half", listOf(q)).copy(category = "Morning"),
+            TestEnv.checkin("c", "None good", listOf(q)).copy(category = "Evening"),
+        ))
+        history("a", 4); history("b", 2); history("c", 0)
+        TestEnv.store.view = Grouping.BY_CATEGORY
+        val good = TestEnv.ctx.getColor(R.color.good)
+        val bad = TestEnv.ctx.getColor(R.color.bad)
+        main().use {
+            onView(tagged("score:a")).perform(scrollTo()).check(matches(withText("100%")))
+            assertEquals(good, textColorOf("score:a"))
+            onView(tagged("score:b")).perform(scrollTo()).check(matches(withText("50%")))
+            onView(tagged("score:c")).perform(scrollTo()).check(matches(withText("0%")))
+            assertEquals(bad, textColorOf("score:c"))
+            onView(tagged("group-score:Morning")).perform(scrollTo()).check(matches(withText("75%")))
+            onView(tagged("group-score:Evening")).perform(scrollTo()).check(matches(withText("0%")))
+            assertEquals(bad, textColorOf("group:Evening"))
+            onView(tagged("overall-score")).perform(scrollTo()).check(matches(withText("50%")))
+            assertEquals(Score.color(0.5, bad, good), textColorOf("overall-score"))
+        }
+    }
+
+    @Test
+    fun noHistoryMeansNoScore() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "New", listOf(Question("soda", "Soda?")))))
+        main().use {
+            onView(tagged("score:a")).check(doesNotExist())
+            onView(tagged("overall-score")).check(doesNotExist())
+        }
     }
 }

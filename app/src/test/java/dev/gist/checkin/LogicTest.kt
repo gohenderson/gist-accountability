@@ -618,3 +618,42 @@ class GroupOrderTest {
         assertEquals("health", Grouping.key(" Health "))
     }
 }
+
+class ScoreTest {
+    private val q = Question("soda", "Soda?") // "No" is on track
+    private val c = Checkin(id = "c", name = "C", steps = listOf(StepConfig("q", Steps.QUESTIONS, questions = listOf(q))))
+    private val days = listOf("2026-11-09", "2026-11-08", "2026-11-07", "2026-11-06")
+    private fun answered(v: Boolean) = mapOf("21:30" to SlotResult(SlotResult.ANSWERED, mapOf("soda" to v)))
+
+    @Test
+    fun shareOfLoggedDaysOnTrack() {
+        val results = mapOf(
+            "2026-11-09" to answered(false),                                      // on track
+            "2026-11-08" to answered(true),                                       // off track
+            "2026-11-07" to mapOf("21:30" to SlotResult(SlotResult.RANG)),        // missed = off
+            "2026-11-06" to mapOf("21:30" to SlotResult(SlotResult.SKIPPED)),     // doesn't count
+        )
+        assertEquals(1.0 / 3, Score.of(c, results, days)!!, 1e-9)
+        assertEquals(null, Score.of(c, emptyMap(), days))
+        assertEquals("33%", Score.percent(1.0 / 3))
+    }
+
+    @Test
+    fun averagesIgnoreUnknowns() {
+        assertEquals(0.75, Score.average(listOf(1.0, 0.5, null))!!, 1e-9)
+        assertEquals(null, Score.average(listOf(null, null)))
+    }
+
+    @Test
+    fun colorsRunFromRedToGreen() {
+        val bad = 0xFFD2423F.toInt()
+        val good = 0xFF23955E.toInt()
+        assertEquals(bad, Score.color(0.0, bad, good))
+        assertEquals(good, Score.color(1.0, bad, good))
+        val mid = Score.hsv(Score.color(0.5, bad, good))[0]
+        assertTrue("midway is yellow-ish: $mid", mid in 50f..100f)
+        val h70 = Score.hsv(Score.color(0.7, bad, good))[0]
+        assertTrue("closer to green the more on track", h70 > mid)
+        assertEquals(bad, Score.color(-1.0, bad, good))
+    }
+}

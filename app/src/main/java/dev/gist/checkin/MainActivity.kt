@@ -59,6 +59,19 @@ class MainActivity : BaseActivity() {
 
         col.add(header("Gist", todayLong()))
 
+        // Scores: each check-in's on-track share over the last week; groups and the page
+        // average them (off check-ins aren't counted).
+        val scores = checkins.associate { it.id to Score.of(it, store.allResults(it.id)) }
+        fun rollUp(list: List<Checkin>) = Score.average(list.filter { it.enabled }.map { scores[it.id] })
+        rollUp(checkins)?.let { overall ->
+            val box = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            box.addWrapped(label(Score.percent(overall), 40f, bold = true, color = scoreColor(overall)).apply {
+                tag = "overall-score"
+            })
+            box.addWeighted(muted("on track over the last ${Score.DAYS} days, across your check-ins", 14f), startMargin = dp(12))
+            col.add(box, dp(12))
+        }
+
         setupWarnings(col)
 
         val bar = row()
@@ -112,10 +125,16 @@ class MainActivity : BaseActivity() {
                     contentDescription = "Drag to reorder the $category group"
                 }
                 if (groups.size > 1) head.addWrapped(handle)
-                head.addWeighted(label("$category · ${members.size}", 15f, bold = true, color = colorPrimary).apply {
-                    tag = "group:$category"
-                })
-                head.addWrapped(label(if (folded) "▸" else "▾", 18f, color = colorPrimary).apply { tag = "group-chevron:$category" })
+                val groupScore = rollUp(members)
+                val groupColor = groupScore?.let { scoreColor(it) } ?: colorPrimary
+                head.addWeighted(label(category, 15f, bold = true, color = groupColor).apply { tag = "group:$category" })
+                groupScore?.let {
+                    head.addWrapped(label(Score.percent(it), 15f, bold = true, color = groupColor).apply {
+                        tag = "group-score:$category"
+                    }, startMargin = dp(8))
+                }
+                head.addWrapped(label(if (folded) "▸" else "▾", 18f, color = groupColor).apply { tag = "group-chevron:$category" },
+                    startMargin = dp(8))
                 section.add(head)
                 if (!folded) section.add(checkinList(checkins, members), dp(6))
                 outer.addRow(section, handle, dp(18))
@@ -158,11 +177,9 @@ class MainActivity : BaseActivity() {
                 contentDescription = "Drag to reorder ${c.name}"
             }
             val h = if (members.size > 1) handle else null
-            if (store.style == Grouping.COMPACT) {
-                list.addRow(checkinRow(c, h), handle, dp(6))
-            } else {
-                list.addRow(checkinCard(c, h), handle, dp(12))
-            }
+            val score = if (c.enabled) Score.of(c, store.allResults(c.id)) else null
+            val v = if (store.style == Grouping.COMPACT) checkinRow(c, h, score) else checkinCard(c, h, score)
+            list.addRow(v, handle, if (store.style == Grouping.COMPACT) dp(6) else dp(12))
         }
         return list
     }
@@ -203,8 +220,23 @@ class MainActivity : BaseActivity() {
     }
 
     /** The compact layout: one line per check-in. Tap it to open the check-in's page. */
-    private fun checkinRow(c: Checkin, handle: View?): LinearLayout = row().apply {
-        background = rounded(colorOf(R.color.surface_variant), 14)
+    /** The color for a score, between the off-track red and the on-track green. */
+    private fun scoreColor(score: Double) = Score.color(score, colorOf(R.color.bad), colorOf(R.color.good))
+
+    /** [base] with a border in the score's color (or as is, without a score yet). */
+    private fun scoreBackground(base: Int, radius: Int, score: Double?) = rounded(base, radius).apply {
+        if (score != null) setStroke(dp(2), scoreColor(score))
+    }
+
+    private fun scoreLabel(c: Checkin, score: Double?): View? = score?.let {
+        label(Score.percent(it), 15f, bold = true, color = scoreColor(it)).apply {
+            tag = "score:${c.id}"
+            contentDescription = "${Score.percent(it)} on track"
+        }
+    }
+
+    private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = row().apply {
+        background = scoreBackground(colorOf(R.color.surface_variant), 14, score)
         setPadding(dp(14), dp(10), dp(10), dp(10))
         isClickable = true
         tag = "row:${c.id}"
@@ -215,16 +247,19 @@ class MainActivity : BaseActivity() {
         val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
         text.add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" }, dp(2))
         addWeighted(text)
-        addWrapped(alarmSwitch(c))
+        scoreLabel(c, score)?.let { addWrapped(it, startMargin = dp(8)) }
+        addWrapped(alarmSwitch(c), startMargin = dp(4))
     }
 
-    private fun checkinCard(c: Checkin, handle: View? = null): LinearLayout {
+    private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
+        if (score != null) card.background = scoreBackground(colorOf(R.color.surface), 20, score)
 
         val titleRow = row()
         handle?.let { titleRow.addWrapped(it) }
         titleRow.addWeighted(label(c.name, 20f, bold = true))
-        titleRow.addWrapped(alarmSwitch(c))
+        scoreLabel(c, score)?.let { titleRow.addWrapped(it, startMargin = dp(8)) }
+        titleRow.addWrapped(alarmSwitch(c), startMargin = dp(4))
         card.add(titleRow)
         card.add(muted(CheckinText.oneLine(c)), dp(2))
 
