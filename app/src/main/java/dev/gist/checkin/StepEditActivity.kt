@@ -45,7 +45,7 @@ class StepEditActivity : BaseActivity() {
     private fun render() {
         val c = store.checkin(checkinId) ?: return finish()
         val st = c.steps.firstOrNull { it.id == stepId } ?: return finish()
-        val oldY = scroll?.scrollY ?: 0
+        val oldY = scroll?.pageScrollY ?: 0
         val pos = c.steps.indexOf(st)
         val page = column()
         page.add(header(Steps.title(st.kind), "${c.name} · Step ${pos + 1} of ${c.steps.size}"))
@@ -76,7 +76,7 @@ class StepEditActivity : BaseActivity() {
         val sv = screen(page)
         setContentView(sv)
         scroll = sv
-        sv.post { sv.scrollTo(0, oldY) }
+        sv.restoreScroll(oldY)
     }
 
     private fun change(f: (StepConfig) -> StepConfig) {

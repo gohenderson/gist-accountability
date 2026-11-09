@@ -186,6 +186,35 @@ class GroupingTest {
     }
 
     @Test
+    fun foldingWhileScrolledDownNeverFlashesTheTop() {
+        TestEnv.reset((1..10).map { TestEnv.checkin("c$it", "Check-in $it") })
+        main().use { scenario ->
+            var sv: android.widget.ScrollView? = null
+            val frames = java.util.Collections.synchronizedList(mutableListOf<Int>())
+            var recording = false
+            scenario.onActivity { a ->
+                sv = a.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.widget.ScrollView
+                sv!!.scrollTo(0, sv!!.getChildAt(0).height) // all the way down
+                // The decor view stays across page rebuilds: record where every frame is drawn.
+                a.window.decorView.viewTreeObserver.addOnDrawListener {
+                    if (recording) {
+                        val page = a.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.widget.ScrollView
+                        frames += page.scrollY
+                    }
+                }
+            }
+            var before = 0
+            scenario.onActivity { before = sv!!.scrollY; recording = true }
+            assertTrue("scrolled down: $before", before > 0)
+            onView(tagged("checkin-title:c10")).perform(click()) // fold the last one
+            onView(tagged("row:c10")).check(matches(isDisplayed()))
+            scenario.onActivity { recording = false }
+            assertTrue("drew something", frames.isNotEmpty())
+            assertTrue("never drawn at the top: $frames", frames.none { it == 0 })
+        }
+    }
+
+    @Test
     fun collapseAllFoldsCardsWhenUngrouped() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
         main().use {

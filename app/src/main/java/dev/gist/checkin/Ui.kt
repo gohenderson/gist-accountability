@@ -221,6 +221,28 @@ fun Context.screen(content: View): android.widget.ScrollView = android.widget.Sc
     applySystemBarInsets(this, dp(20))
 }
 
+/**
+ * Puts [this] back at scroll position [y] after the page was rebuilt. Done just before the
+ * new page's first frame, once it has been laid out: restoring it a frame later (with post)
+ * briefly showed the top of the page first, a visible flicker when scrolled down.
+ */
+fun android.widget.ScrollView.restoreScroll(y: Int) {
+    if (y <= 0) return
+    setTag(R.id.pending_scroll, y)
+    viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+            viewTreeObserver.removeOnPreDrawListener(this)
+            setTag(R.id.pending_scroll, null)
+            scrollTo(0, y)
+            return false // skip this frame (drawn at the top); the next one is drawn in place
+        }
+    })
+}
+
+/** Where the page is scrolled to, counting a position that hasn't been restored yet. */
+val android.widget.ScrollView.pageScrollY: Int
+    get() = getTag(R.id.pending_scroll) as? Int ?: scrollY
+
 // ------------------------------------------------------------------ dialogs
 //
 // Every list in a dialog is drawn with the app's tiles (instead of Android's plain rows),
