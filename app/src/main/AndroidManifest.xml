@@ -67,9 +67,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+            The alarm screen opens in a task of its own (like the stock Clock app's), not on top
+            of whatever Gist screen was open. Closing it on the lock screen (End test, or the
+            last step) then just removes that task; before, it left the screen underneath (say,
+            a check-in's page) stuck, blank and ignoring taps, after unlocking. Opened from
+            History or "Do it now" (without NEW_TASK) it still opens in the app's own task.
+        -->
         <activity
             android:name=".CheckinActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="dev.gist.checkin.alarm"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:showWhenLocked="true"
