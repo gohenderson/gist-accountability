@@ -161,6 +161,10 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - a test ring can be stopped part-way with End test, logging nothing
   - the first ring starts soft and ramps to full volume; after a pause it resumes at full
     volume
+  - triggers: removing the last one leaves the check-in silent and says so; + Add trigger
+    then turning it into "when I leave" with typed coordinates keeps the time and adds the
+    event; two places on one check-in are both watched and either can ring; a check-in
+    saved with the old single trigger is converted
   - per-time days: saved and loaded; giving 4:00 AM "Tue" and 4:45 AM "every day but Tue"
     on the edit page sets them and the real alarm; changing a time keeps its days; the
     next rings follow each time's days (Tue 4:00, then Wed 4:45…)
@@ -233,8 +237,8 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   stream and vibrates. While it rings, the alarm volume can't go below 80%; if you turn
   it down, it goes straight back up. The original volume is restored afterwards.
 - **Several times a day:** A check-in can ring at more than one time (e.g. brushing
-  teeth at 7:30 AM and 10:15 PM). On its page, under **Schedule**, use **+ Add time**,
-  tap a time to change it, or ✕ to remove it. Each time keeps its own result. Reports
+  teeth at 7:30 AM and 10:15 PM): add a trigger per time (see **Triggers**). Each time
+  keeps its own result. Reports
   roll them up per day:
   - **✗** if any time that day was answered off track, **or rang and was never finished**
     (missed);
@@ -242,57 +246,41 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **–** if every time that day was skipped; **·** if nothing rang.
   On History, tapping a day asks which time to fix (a missed time can be filled in
   afterwards). The CSV has one row per day, check-in and time, with its status.
-- **Repeats:** Under **Schedule**, tap **Repeats** to choose which days a check-in
-  rings (applies to all its times):
-  - **Every day** (the default);
-  - **Weekdays (Mon–Fri)** or **Weekends (Sat & Sun)**;
-  - **Specific days of the week…**, e.g. Mon, Wed, Fri;
-  - **Monthly on certain dates…**, e.g. the 1st and 15th, plus **Last day of the
-    month**. A month without the chosen date (the 31st in November) is skipped, so use
-    "Last day" for month-end.
-  Days it isn't scheduled show **·** on History and don't count against you. The start
-  page shows the rule next to the times (e.g. "7:00 AM, Mon–Fri") and the real next ring
-  ("Mon 7:00 AM", "Dec 1 9:00 AM"). The **Alarm on** switch still turns the whole check-in
-  off and on.
-- **Different days per time:** each time under **Rings at** has its own days button.
-  Tap it to give that time its own days, e.g. one wake-up check-in that rings at **4:00 AM
-  on Tuesdays** and at **4:45 AM every day but Tuesday**. Times you don't change follow the
-  check-in's **Repeats** rule (that button disappears once any time has days of its own).
-- **Running triggers (optional):** **Rings** can also be **When I start running** or **When
-  I finish running** (optionally only after a run of at least 5–60 minutes), with the same
-  Days / Time / once-a-day conditions as place triggers. Gist notices runs from the phone's
-  **step counter**: about 140+ steps a minute for a minute starts a run; about 1½ minutes
-  below that (stopped, or walking) ends it, so a red light doesn't. It works with the phone
-  in a pocket, armband or on a treadmill, and needs no GPS. It needs Android's "physical
-  activity" permission (the edit page and "Finish setup" ask) and a phone with a step
-  sensor (most have one). While a check-in uses it, a quiet "Watching for runs"
-  notification shows (Android requires one); during a run the CPU stays awake so the end
-  is noticed on time, otherwise the sensor's own low-power batching is used. Steps never
-  leave the phone.
-- **Place triggers (optional):** under **Schedule**, **Rings** can be:
-  - **At set times** (the classic alarm), optionally with **Where: only when I'm at** or
-    **away from** a place. At ring time Gist checks where the phone is; if the condition
-    doesn't hold, that time is marked skipped (–) instead of ringing. If the location
-    can't be found, it rings anyway.
-  - **When I arrive at a place** or **When I leave a place**, combined with conditions
-    that must *all* hold: **Days** (any repeat rule, e.g. Mon–Fri), **Time** (any time,
-    or only between two times, which can cross midnight), and **At most once a day**.
-    E.g. "when I arrive at the gym, Mon/Wed/Fri, 6–9 AM, once a day". Results are saved
-    under the time it rang.
-  Pick a place by **Use my current location**, **Enter coordinates** (long-press a spot in
-  any maps app and copy them), or one you've already used, and choose how close counts
-  (100 m to 1 km). Gist uses Android's own location service: no Google Play services,
-  no internet, and your location never leaves the phone. Android needs location allowed
-  **all the time** to notice an arrival while Gist is closed; the edit page and the
+- **Triggers:** Under **Schedule**, a check-in has a list of triggers, each in its own
+  card; it rings whenever any of them fires. **+ Add trigger** adds one (a time, which you
+  can change into anything else). Each card has:
+  - **When:** **At a set time**, **When I arrive** or **When I leave** a place, **When I
+    start running**, or **When I finish running**.
+  - **Time:** the time of day (for set times), or **Anytime** / **Only between…** two times
+    (for the others; a window can cross midnight).
+  - **Days:** every day, weekdays, weekends, specific days ("every day but Tue"), or
+    monthly dates (the 1st, the 15th, the last day; months without a date are skipped).
+  - **Where:** for set times, **Anywhere**, or only when you're **at** / **away from** a
+    place when it's due (checked then; if it doesn't hold, that time is marked skipped (–);
+    if the location can't be found it rings anyway). For arrive / leave, the place.
+  - **Run** (finish running): any length, or at least 5–60 minutes.
+  - **At most once a day** (for arrive / leave / running).
+  - **✕** removes it. A check-in with no triggers never rings on its own.
+
+  So one check-in can ring at 4:00 AM on Tuesdays and 4:45 AM every other day, and also
+  when you arrive at the gym on Mon/Wed/Fri mornings. The start page shows the next timed
+  ring and lists the other triggers ("📍 Rings when you arrive at Gym, …"). Days it isn't
+  scheduled show · on History and don't count against you.
+- **Places:** pick one by **Use my current location**, **Enter coordinates** (long-press a
+  spot in any maps app and copy them), or one you've already used, and choose how close
+  counts (100 m to 1 km). Gist uses Android's own location service: no Google Play
+  services, no internet, and your location never leaves the phone. Android needs location
+  allowed **all the time** to notice an arrival while Gist is closed; the edit page and the
   start page's "Finish setup" card ask for it. Accuracy is typically 50–200 m and an
-  arrival can take a few minutes to register, so a 200 m circle is a good start.
- Each check-in card on the start page shows its next ring.
-  - **Do it now** runs the same steps right away (math, scan, questions). That ring then
-    stays quiet. A scan must really be scanned: the "Can't scan?" fallback isn't offered
-    early.
-  - **Skip** cancels just that ring. It's only possible before the ring goes off, and
-    **Undo** brings it back.
-  Both apply to the next ring only.
+  arrival can take a few minutes to register, so a 200 m circle is a good start. Each check-in
+  can watch up to 10 places.
+- **Running:** noticed from the phone's **step counter**: about 140+ steps a minute for a
+  minute starts a run; about 1½ minutes below that (stopped, or walking) ends it, so a red
+  light doesn't. Works in a pocket, armband or on a treadmill, with no GPS. It needs
+  Android's "physical activity" permission and a step sensor (most phones have one). While
+  a check-in uses it, a quiet "Watching for runs" notification shows (Android requires
+  one); during a run the CPU stays awake so the end is noticed on time. Steps never leave
+  the phone.
 - **Sound, background and caption per check-in:** On a check-in's page, under **While it
   rings**:
   - **Sound:** any of the phone's sounds, or "Silent" to only vibrate.
