@@ -18,7 +18,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val test = intent.getBooleanExtra(AlarmScheduler.EXTRA_TEST, false)
         // A snoozed ring already passed its place check when it first rang.
         val fromPlace = intent.getBooleanExtra(EXTRA_PLACE, false) || intent.getBooleanExtra(AlarmScheduler.EXTRA_SNOOZE, false)
-        if (!test && store.isClosed(day, c.id, time)) {
+        // (A voice set off by a place or a run can speak again within the same minute: those
+        // triggers have their own once-a-day / once-per-run rules.)
+        val voiceEvent = c.voice && intent.getBooleanExtra(EXTRA_PLACE, false)
+        if (!test && !voiceEvent && store.isClosed(day, c.id, time)) {
             // Already done early or skipped: stay quiet and move on to the next ring.
             AlarmScheduler.schedule(context, c)
             return
@@ -51,6 +54,13 @@ class AlarmReceiver : BroadcastReceiver() {
 
     private fun ring(context: Context, c: Checkin, day: String, time: String, test: Boolean) {
         val store = Store(context)
+        if (c.voice) {
+            // No alarm: just say it. Logged as done (not counted) so "once a day" still works.
+            if (!test) store.markDone(day, c.id, time)
+            VoiceService.play(context, c)
+            AlarmScheduler.schedule(context, c)
+            return
+        }
         // A test ring logs nothing: no "missed" mark, and its answers aren't saved.
         if (!test) store.markRang(day, c.id, time)
         store.addPending(Pending(c.id, day, time, practice = test))

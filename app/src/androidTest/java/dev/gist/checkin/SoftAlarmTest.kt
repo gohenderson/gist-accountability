@@ -44,7 +44,7 @@ class SoftAlarmTest {
     }
 
     private fun soft(id: String = "s", questions: List<Question> = listOf(q)) =
-        TestEnv.checkin(id, "Soft one", questions).copy(soft = true)
+        TestEnv.checkin(id, "Soft one", questions).copy(commitment = Checkin.SOFT)
 
     /** A real (not practice) ring of [c], with its alarm screen in front. */
     private fun ringFor(c: Checkin) {
@@ -146,7 +146,7 @@ class SoftAlarmTest {
         val days = Days.lastN(3)
         TestEnv.store.saveAnswers(days[0], "s", "12:00", mapOf("soda" to true)) // off track, but soft
         assertTrue(TestEnv.store.allResults("s").isEmpty())
-        TestEnv.store.updateCheckin("s") { it.copy(soft = false) }
+        TestEnv.store.updateCheckin("s") { it.copy(commitment = Checkin.STRICT) }
         TestEnv.store.saveAnswers(days[1], "s", "12:00", mapOf("soda" to false)) // no soda: on track
         assertEquals("only the strict day counts", listOf(days[1]), TestEnv.store.allResults("s").keys.toList())
         assertEquals(1.0, Score.of(TestEnv.store.checkin("s")!!, TestEnv.store.allResults("s"))!!, 0.0)
@@ -158,9 +158,9 @@ class SoftAlarmTest {
         TestEnv.allowOverlay(true)
         TestEnv.reset(listOf(TestEnv.checkin("a", "Strict", listOf(q)), soft()))
         TestEnv.store.saveAnswers(TestEnv.today(), "a", "12:00", mapOf("soda" to true)) // off track: 0%
-        TestEnv.store.updateCheckin("s") { it.copy(soft = false) }
+        TestEnv.store.updateCheckin("s") { it.copy(commitment = Checkin.STRICT) }
         TestEnv.store.saveAnswers(Days.lastN(2)[0], "s", "12:00", mapOf("soda" to false)) // on track, counted only while strict
-        TestEnv.store.updateCheckin("s") { it.copy(soft = true) }
+        TestEnv.store.updateCheckin("s") { it.copy(commitment = Checkin.SOFT) }
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("soft-note:s")).perform(scrollTo()).check(matches(withText("Soft alarm · not counted in stats")))
             onView(tagged("overall-score")).check(matches(withText("0%")))

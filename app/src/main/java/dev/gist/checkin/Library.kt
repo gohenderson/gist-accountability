@@ -139,6 +139,16 @@ object Library {
             ),
         ),
         Template(
+            "run-cheer", "Fitness",
+            "A voice in your headphones 30 minutes into a run. No alarm, nothing to tap. Change the line, or record your own.",
+            Checkin(
+                id = "", name = "30 minutes in", times = emptyList(),
+                events = listOf(Trigger(kind = Trigger.RUN_FOR, minRunMinutes = 30, oncePerDay = false)),
+                commitment = Checkin.VOICE,
+                voiceText = "Thirty minutes in. Look at you go.",
+            ),
+        ),
+        Template(
             "weigh-in", "Fitness",
             "Sunday mornings.",
             Checkin(

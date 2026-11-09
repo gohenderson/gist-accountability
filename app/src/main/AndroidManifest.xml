@@ -39,6 +39,15 @@
          foreground service of the "health" type while a check-in needs it. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- Voice check-ins: recording a clip in the app (asked only when you tap Record). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Voice check-ins speak typed text with the phone's text-to-speech engine. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
 
     <!-- Note: no INTERNET permission. Nothing ever leaves the phone. -->
@@ -97,6 +106,11 @@
 
         <service
             android:name=".AlarmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <service
+            android:name=".VoiceService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 

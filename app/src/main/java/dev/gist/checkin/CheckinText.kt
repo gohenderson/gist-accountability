@@ -8,6 +8,7 @@ import java.time.ZoneId
 object CheckinText {
     /** e.g. "solve 3 math → scan Bathroom sink → answer 2 questions" */
     fun steps(c: Checkin): String {
+        if (c.voice) return if (c.voiceSource == Checkin.VOICE_CLIP) "plays your clip" else "speaks a line"
         val parts = Steps.active(c).map { st ->
             when (st.kind) {
                 Steps.MATH -> "solve ${st.mathCount} math"

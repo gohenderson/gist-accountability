@@ -136,63 +136,42 @@ class CheckinEditActivity : BaseActivity() {
         }
         col.add(yesterday, dp(8))
 
-        // Sound & background
-        col = section(page, "While it rings")
-        col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
-        val photoCount = Backgrounds.photos(this, checkinId).size
-        col.add(
-            button("Background: ${c.background.describe(photoCount)}") { pickBackgroundKind(c) }.apply { tag = "background-kind" },
-            dp(4)
-        )
-        if (c.background.kind == Background.SLIDESHOW) {
-            col.add(button("Change photo every ${c.background.intervalSec} s") { pickInterval(c) }.apply {
-                tag = "slideshow-interval"
-            }, dp(4))
-        }
-        if (c.background.hasMedia) {
-            Backgrounds.preview(this, checkinId, c.background)?.let { bmp ->
-                val preview = ImageView(this).apply {
-                    setImageBitmap(bmp)
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    tag = "background-preview"
-                    contentDescription = "Background preview"
-                }
-                col.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(160)).apply {
-                    topMargin = dp(6)
-                })
-            }
-            if (c.background.kind == Background.VIDEO) col.add(muted("Plays muted and loops while it rings.", 13f), dp(2))
-        }
-        // Caption: saved as you type, like the name.
-        val caption = EditText(this).apply {
-            setText(c.background.caption)
-            hint = "Caption (optional), e.g. Future you says thanks"
-            tag = "background-caption"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    val text = s?.toString()?.trim().orEmpty()
-                    store.updateCheckin(checkinId) { it.copy(background = it.background.copy(caption = text)) }
-                }
-            })
-        }
-        col.add(caption, dp(8))
+        if (!c.voice) whileItRings(page, c) // a voice check-in doesn't ring
 
-        // Steps, in the order they run. Drag ≡ to reorder; tap one to set it up.
-        col = section(page, "When it rings")
-        // Commitment: strict (the steps are the only way out) or soft (snooze / dismiss, no stats).
-        col.add(button("Commitment: ${if (c.soft) "Soft" else "Strict"}") { pickCommitment(c) }.apply { tag = "commitment" }, dp(4))
-        col.add(muted(if (c.soft) {
-            "Snooze or dismiss it any time; the steps are optional. It doesn't come back if you leave it, " +
-                "and it isn't counted in your stats."
-        } else {
-            "Only finishing the steps stops it: no snooze, and it comes back if you leave it. Counted in your stats."
-        }, 13f).apply { tag = "commitment-detail" }, dp(2))
+        // Commitment (strict, soft or voice), then the steps, or for a voice what it says.
+        col = section(page, if (c.voice) "What it says" else "When it rings")
+        col.add(button("Commitment: ${commitmentName(c.commitment)}") { pickCommitment(c) }.apply { tag = "commitment" }, dp(4))
+        col.add(muted(commitmentDetail(c.commitment), 13f).apply { tag = "commitment-detail" }, dp(2))
         if (c.soft) {
             col.add(button("Snooze: ${c.snoozeMinutes} minutes") { pickSnooze(c) }.apply { tag = "snooze-length" }, dp(8))
         }
+        if (c.voice) {
+            voiceSection(col, c)
+        } else {
+            stepsSection(col, c)
+        }
+
+        // Test & delete
+        col = section(page, "Try it")
+        if (c.voice) {
+            col.add(button("Play it now") { playNow() }.apply { tag = "test-voice" }, dp(4))
+        } else {
+            col.add(button("Test: ring in 10 seconds") {
+                AlarmScheduler.scheduleTest(this, checkinId)
+                toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. Nothing is logged, and the next real alarm still rings.")
+            }, dp(4))
+        }
+
+        page.add(dangerButton("Delete this check-in") { confirmDelete(c) }, dp(24))
+
+        val sv = screen(page)
+        
+        setContentView(sv)
+        scroll = sv
+        sv.post { sv.scrollTo(0, oldY) }
+    }
+
+    private fun stepsSection(col: LinearLayout, c: Checkin) {
         col.add(label(CheckinText.steps(c), 15f), dp(14))
         if (c.steps.isEmpty()) {
             col.add(muted("No steps: the alarm just shows a Dismiss button.", 13f), dp(2))
@@ -203,21 +182,6 @@ class CheckinEditActivity : BaseActivity() {
             col.add(list, dp(10))
         }
         col.add(button("+ Add step") { addStep(c) }.apply { tag = "add-step" }, dp(10))
-
-        // Test & delete
-        col = section(page, "Try it")
-        col.add(button("Test: ring in 10 seconds") {
-            AlarmScheduler.scheduleTest(this, checkinId)
-            toast("Ringing in 10 seconds. Lock your phone to see the full-screen version. Nothing is logged, and the next real alarm still rings.")
-        }, dp(4))
-
-        page.add(dangerButton("Delete this check-in") { confirmDelete(c) }, dp(24))
-
-        val sv = screen(page)
-        
-        setContentView(sv)
-        scroll = sv
-        sv.post { sv.scrollTo(0, oldY) }
     }
 
     /** Starts a new card on [page] with a small title; returns it to add the section's content to. */
@@ -269,12 +233,224 @@ class CheckinEditActivity : BaseActivity() {
     // ---------------------------------------------------------------- actions
 
     /** Update this check-in, re-arm its alarm, redraw. */
+    /** Sound, background and caption: what the alarm screen looks and sounds like. */
+    private fun whileItRings(page: LinearLayout, c: Checkin) {
+        val col = section(page, "While it rings")
+        col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
+        val photoCount = Backgrounds.photos(this, checkinId).size
+        col.add(
+            button("Background: ${c.background.describe(photoCount)}") { pickBackgroundKind(c) }.apply { tag = "background-kind" },
+            dp(4)
+        )
+        if (c.background.kind == Background.SLIDESHOW) {
+            col.add(button("Change photo every ${c.background.intervalSec} s") { pickInterval(c) }.apply {
+                tag = "slideshow-interval"
+            }, dp(4))
+        }
+        if (c.background.hasMedia) {
+            Backgrounds.preview(this, checkinId, c.background)?.let { bmp ->
+                val preview = ImageView(this).apply {
+                    setImageBitmap(bmp)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    tag = "background-preview"
+                    contentDescription = "Background preview"
+                }
+                col.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(160)).apply {
+                    topMargin = dp(6)
+                })
+            }
+            if (c.background.kind == Background.VIDEO) col.add(muted("Plays muted and loops while it rings.", 13f), dp(2))
+        }
+        // Caption: saved as you type, like the name.
+        val caption = EditText(this).apply {
+            setText(c.background.caption)
+            hint = "Caption (optional), e.g. Future you says thanks"
+            tag = "background-caption"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    val text = s?.toString()?.trim().orEmpty()
+                    store.updateCheckin(checkinId) { it.copy(background = it.background.copy(caption = text)) }
+                }
+            })
+        }
+        col.add(caption, dp(8))
+    }
+
     private fun pickCommitment(c: Checkin) {
         val options = listOf(
             DialogOption("Strict", "Only finishing the steps stops it. No snooze; it comes back if you leave it. Counted in your stats.", "commitment:strict"),
             DialogOption("Soft", "Snooze or dismiss any time; the steps are optional. Not counted in your stats.", "commitment:soft"),
+            DialogOption("Voice", "No alarm: says a line (or plays your clip) through your headphones. Not counted in your stats.", "commitment:voice"),
         )
-        pickDialog("Commitment", options, if (c.soft) 1 else 0) { i -> change { it.copy(soft = i == 1) } }
+        pickDialog("Commitment", options, Checkin.COMMITMENTS.indexOf(c.commitment)) { i ->
+            change { it.copy(commitment = Checkin.COMMITMENTS[i]) }
+        }
+    }
+
+    private fun commitmentName(k: String) = when (k) {
+        Checkin.SOFT -> "Soft"
+        Checkin.VOICE -> "Voice"
+        else -> "Strict"
+    }
+
+    private fun commitmentDetail(k: String) = when (k) {
+        Checkin.SOFT -> "Snooze or dismiss it any time; the steps are optional. It doesn't come back if you leave it, " +
+            "and it isn't counted in your stats."
+        Checkin.VOICE -> "No alarm and nothing to tap: when a trigger fires, it says its line (or plays your clip) " +
+            "through your headphones, and your music dips while it talks. Not counted in your stats."
+        else -> "Only finishing the steps stops it: no snooze, and it comes back if you leave it. Counted in your stats."
+    }
+
+    // ---------------------------------------------------------------- voice
+
+    private var recorder: android.media.MediaRecorder? = null
+    private var recordingFile: java.io.File? = null
+
+    /** What a voice check-in says: typed text, or a clip recorded here or picked. */
+    private fun voiceSection(col: LinearLayout, c: Checkin) {
+        val clip = c.voiceSource == Checkin.VOICE_CLIP
+        col.add(button("Voice: ${if (clip) "Recorded clip" else "Spoken text"}") { pickVoiceSource(c) }.apply {
+            tag = "voice-source"
+        }, dp(14))
+        if (!clip) {
+            // Saved as you type, like the name.
+            val text = EditText(this).apply {
+                setText(c.voiceText)
+                hint = "What it says, e.g. Is that Forrest Gump?"
+                tag = "voice-text"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: Editable?) {
+                        val t = s?.toString()?.trim().orEmpty()
+                        store.updateCheckin(checkinId) { it.copy(voiceText = t) }
+                    }
+                })
+            }
+            col.add(text, dp(8))
+            col.add(muted("Read aloud by the phone's text-to-speech voice. Empty: it says the check-in's name.", 13f), dp(2))
+        } else {
+            val secs = Backgrounds.voiceSeconds(this, checkinId)
+            val status = when {
+                recorder != null -> "Recording… tap Stop when you're done (30 seconds at most)."
+                secs != null -> "Clip: $secs second${if (secs == 1) "" else "s"}"
+                else -> "No clip yet. Until there is one, it says the check-in's name."
+            }
+            col.add(label(status, 15f).apply { tag = "voice-clip-status" }, dp(8))
+            val r = row()
+            r.addWeighted(button(if (recorder != null) "Stop" else if (secs != null) "Record again" else "Record") {
+                if (recorder != null) stopRecording() else startRecording()
+            }.apply { tag = "voice-record" })
+            r.addWeighted(outlineButton("Choose a file…") { pickMedia("audio/*", multiple = false, REQ_AUDIO) }.apply {
+                tag = "voice-pick"
+            }, startMargin = dp(8))
+            col.add(r, dp(6))
+        }
+        col.add(styledSwitch("Only through headphones").apply {
+            isChecked = c.voiceHeadphonesOnly
+            tag = "voice-headphones"
+            setOnCheckedChangeListener { _, on -> change { it.copy(voiceHeadphonesOnly = on) } }
+        }, dp(10))
+        col.add(muted(if (c.voiceHeadphonesOnly) "Stays quiet when no headphones are connected, so it never talks out of your pocket."
+            else "Plays through the phone's speaker when no headphones are connected.", 13f), dp(2))
+    }
+
+    private fun pickVoiceSource(c: Checkin) {
+        val values = listOf(Checkin.VOICE_TEXT, Checkin.VOICE_CLIP)
+        val options = listOf(
+            DialogOption("Spoken text", "Type a line; the phone reads it out", "voice:text"),
+            DialogOption("Recorded clip", "Record it here (you, or anyone handy), or pick an audio file", "voice:clip"),
+        )
+        pickDialog("Voice", options, values.indexOf(c.voiceSource)) { i -> change { it.copy(voiceSource = values[i]) } }
+    }
+
+    private fun playNow() {
+        val c = store.checkin(checkinId) ?: return
+        if (c.voiceHeadphonesOnly && !VoiceService.headphonesConnected(this)) {
+            toast("Connect headphones first, or turn off \"Only through headphones\".")
+            return
+        }
+        VoiceService.play(this, c)
+    }
+
+    private fun startRecording() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_MIC)
+            return
+        }
+        val file = java.io.File(Backgrounds.dir(this, checkinId), "voice-rec.tmp")
+        @Suppress("DEPRECATION")
+        val rec = if (Build.VERSION.SDK_INT >= 31) android.media.MediaRecorder(this) else android.media.MediaRecorder()
+        try {
+            rec.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            rec.setAudioEncodingBitRate(96_000)
+            rec.setAudioSamplingRate(44_100)
+            rec.setMaxDuration(MAX_RECORD_MS)
+            rec.setOutputFile(file.path)
+            rec.setOnInfoListener { _, what, _ ->
+                if (what == android.media.MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) runOnUiThread { stopRecording() }
+            }
+            rec.prepare()
+            rec.start()
+        } catch (e: Exception) {
+            rec.release()
+            toast("Couldn't start recording: ${e.message}")
+            return
+        }
+        recorder = rec
+        recordingFile = file
+        render()
+    }
+
+    /** Stops recording and keeps the clip (a fumbled, too-short one is thrown away). */
+    private fun stopRecording(keep: Boolean = true) {
+        val rec = recorder ?: return
+        recorder = null
+        val ok = try { rec.stop(); true } catch (e: Exception) { false } // stop() throws if nothing was recorded
+        rec.release()
+        val file = recordingFile
+        recordingFile = null
+        if (keep && ok && file != null && file.length() > 0) {
+            file.renameTo(Backgrounds.voiceFile(this, checkinId))
+            change { it.copy(voiceSource = Checkin.VOICE_CLIP) }
+        } else {
+            file?.delete()
+            if (keep) toast("Nothing was recorded. Try again, a little longer.")
+            render()
+        }
+    }
+
+    override fun onPause() {
+        stopRecording(keep = true)
+        super.onPause()
+    }
+
+    private fun audioPicked(data: Intent) {
+        val uri = SafeUri.picked(this, data.data) ?: return
+        val app = applicationContext
+        val id = checkinId
+        toast("Preparing clip…")
+        Thread {
+            try {
+                Backgrounds.setVoiceFromUri(app, id, uri)
+                runOnUiThread { change { it.copy(voiceSource = Checkin.VOICE_CLIP) } }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Couldn't use that: ${e.message}") }
+            }
+        }.start()
+    }
+
+    private fun pickRunFor(j: Int, ev: Trigger) {
+        val values = listOf(5, 10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240)
+        val current = ev.minRunMinutes.coerceAtLeast(1)
+        pickDialog("How far into the run", values.map { DialogOption(Trigger.runForText(it), tag = "run-for:$it") },
+            values.indexOf(current)) { i -> setEvent(j) { it.copy(minRunMinutes = values[i]) } }
     }
 
     private fun pickSnooze(c: Checkin) {
@@ -311,13 +487,14 @@ class CheckinEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- triggers
 
-    private val kinds = listOf(Trigger.TIME, Trigger.ARRIVE, Trigger.LEAVE, Trigger.RUN_START, Trigger.RUN_END)
+    private val kinds = listOf(Trigger.TIME, Trigger.ARRIVE, Trigger.LEAVE, Trigger.RUN_START, Trigger.RUN_END, Trigger.RUN_FOR)
 
     private fun kindText(kind: String) = when (kind) {
         Trigger.ARRIVE -> "When I arrive"
         Trigger.LEAVE -> "When I leave"
         Trigger.RUN_START -> "When I start running"
         Trigger.RUN_END -> "When I finish running"
+        Trigger.RUN_FOR -> "Partway into a run"
         else -> "At a set time"
     }
 
@@ -389,6 +566,9 @@ class CheckinEditActivity : BaseActivity() {
                 pickPlace { p -> setEvent(j) { it.copy(place = p) }; askLocation(background = true) }
             }
         }
+        if (ev.kind == Trigger.RUN_FOR) {
+            field(card, "Run time", "After ${Trigger.runForText(ev.minRunMinutes)}", "trigger-run-for:$n") { pickRunFor(j, ev) }
+        }
         if (ev.kind == Trigger.RUN_END) {
             val min = if (ev.minRunMinutes == 0) "Any length" else "${ev.minRunMinutes}+ minutes"
             field(card, "Minimum run duration", min, "trigger-min-run:$n", stacked = true) { pickMinRun(j, ev) }
@@ -434,6 +614,7 @@ class CheckinEditActivity : BaseActivity() {
             DialogOption("When I leave a place", "Uses the phone's location", "kind:leave"),
             DialogOption("When I start running", "Uses the phone's step sensor", "kind:run-start"),
             DialogOption("When I finish running", "Uses the phone's step sensor", "kind:run-end"),
+            DialogOption("Partway into a run", "e.g. 30 minutes in; uses the phone's step sensor", "kind:run-for"),
         )
         pickDialog("Trigger ${n + 1}", options, kinds.indexOf(current)) { k ->
             val kind = kinds[k]
@@ -447,6 +628,7 @@ class CheckinEditActivity : BaseActivity() {
                         cur.copy(
                             times = cur.times.filterIndexed { k2, _ -> k2 != n },
                             events = cur.events + Trigger(kind = kind, days = cur.daysFor(tm),
+                                minRunMinutes = if (kind == Trigger.RUN_FOR) Trigger.DEFAULT_RUN_FOR else 0,
                                 place = if (kind == Trigger.ARRIVE || kind == Trigger.LEAVE) tm.place else null),
                         )
                     }
@@ -459,7 +641,10 @@ class CheckinEditActivity : BaseActivity() {
                     else -> {
                         val j = n - cur.times.size
                         eventIndex = j
-                        cur.copy(events = cur.events.toMutableList().apply { this[j] = this[j].copy(kind = kind) })
+                        cur.copy(events = cur.events.toMutableList().apply {
+                            // "Partway into a run" needs a time in; the minimum run length doesn't carry over.
+                            this[j] = this[j].copy(kind = kind, minRunMinutes = if (kind == Trigger.RUN_FOR) Trigger.DEFAULT_RUN_FOR else 0)
+                        })
                     }
                 }
             }
@@ -682,6 +867,9 @@ class CheckinEditActivity : BaseActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         store.checkin(checkinId)?.let { AlarmScheduler.schedule(this, it) } // start watching its place
         render()
+        if (requestCode == REQ_MIC && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startRecording()
+        }
         if (requestCode == REQ_LOCATION && LocationTriggers.hasLocation(this)) {
             val next = afterLocationGranted
             afterLocationGranted = null
@@ -761,6 +949,7 @@ class CheckinEditActivity : BaseActivity() {
         when (requestCode) {
             REQ_SOUND -> soundPicked(pickedRingtone(data))
             REQ_IMAGE, REQ_IMAGES, REQ_VIDEO -> mediaPicked(requestCode, data)
+            REQ_AUDIO -> audioPicked(data)
         }
     }
 
@@ -890,6 +1079,9 @@ class CheckinEditActivity : BaseActivity() {
         private const val REQ_LOCATION = 9
         private const val REQ_BACKGROUND = 10
         private const val REQ_ACTIVITY = 11
+        private const val REQ_AUDIO = 12
+        private const val REQ_MIC = 13
+        private const val MAX_RECORD_MS = 30_000
 
         fun intent(context: Context, checkinId: String): Intent =
             Intent(context, CheckinEditActivity::class.java).putExtra(EXTRA_ID, checkinId)

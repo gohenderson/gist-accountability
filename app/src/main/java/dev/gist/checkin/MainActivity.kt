@@ -267,6 +267,13 @@ class MainActivity : BaseActivity() {
 
         if (c.soft) {
             card.add(muted("Soft alarm · not counted in stats", 13f).apply { tag = "soft-note:${c.id}" }, dp(4))
+        } else if (c.voice) {
+            val what = if (c.voiceSource == Checkin.VOICE_CLIP) "plays your clip" else "says \"${VoiceService.spokenText(c)}\""
+            card.add(muted("Voice · $what · not counted in stats", 13f).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                tag = "voice-note:${c.id}"
+            }, dp(4))
         } else if (c.questions.isNotEmpty()) {
             val results = store.allResults(c.id)
             card.add(muted(Stats.line(c, results, 7), 13f), dp(4))
@@ -303,7 +310,7 @@ class MainActivity : BaseActivity() {
                 val r = row()
                 r.addWeighted(label("Next · ${whenText(next)}", 15f).apply { tag = "next:${c.id}" })
                 r.addWrapped(textButton("Skip", colorMuted) { skip(c, next) })
-                r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4))
+                if (!c.voice) r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4)) // nothing to do for a voice
                 box.add(r)
                 card.add(box, dp(10))
             }

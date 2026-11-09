@@ -59,6 +59,27 @@ object MovementWatch {
         }
     }
 
+    /**
+     * The current run has lasted [minutes]: ring each "N minutes into a run" trigger that's due
+     * and not in [fired] yet (keys from [milestoneKey]; the caller clears it when a run starts).
+     */
+    fun onRunProgress(context: Context, minutes: Int, fired: MutableSet<String>, now: LocalDateTime = LocalDateTime.now()) {
+        val store = Store(context)
+        for (c in store.checkins) {
+            c.runEvents.forEachIndexed { i, t ->
+                if (t.kind != Trigger.RUN_FOR || minutes < t.minRunMinutes.coerceAtLeast(1)) return@forEachIndexed
+                val key = milestoneKey(c, i, t)
+                if (!fired.add(key)) return@forEachIndexed // once per run
+                val day = Days.forAlarmNow(c.aboutYesterday, now)
+                val rangToday = store.results(day, c.id).values.any { it.status != SlotResult.SKIPPED } ||
+                    store.pending.any { it.checkinId == c.id && !it.practice }
+                if (Trigger.runProgressRings(c, t, minutes, now, rangToday)) LocationTriggers.ringNow(context, c)
+            }
+        }
+    }
+
+    fun milestoneKey(c: Checkin, index: Int, t: Trigger) = "${c.id}:$index:${t.minRunMinutes}"
+
     /** A run started ([finishedMinutes] = null) or finished: ring every check-in that wants it. */
     fun onRun(context: Context, finishedMinutes: Int?, now: LocalDateTime = LocalDateTime.now()) {
         val store = Store(context)
@@ -80,11 +101,14 @@ object MovementWatch {
 class MovementService : Service(), SensorEventListener {
     private val handler = Handler(Looper.getMainLooper())
     private val detector = RunDetector()
+    private val milestones = mutableSetOf<String>() // "N minutes into a run" already rung this run
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val ticker = object : Runnable {
         override fun run() {
-            handle(detector.tick(System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            handle(detector.tick(now))
+            detector.runStartedAt?.let { MovementWatch.onRunProgress(this@MovementService, ((now - it) / 60_000L).toInt(), milestones) }
             handler.postDelayed(this, TICK_MS)
         }
     }
@@ -123,6 +147,7 @@ class MovementService : Service(), SensorEventListener {
     private fun handle(e: RunDetector.Event?) {
         when (e) {
             is RunDetector.Event.Started -> {
+                milestones.clear()
                 holdAwake(true)
                 MovementWatch.onRun(this, null)
             }
