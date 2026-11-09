@@ -34,6 +34,9 @@ class AboutTest {
             onView(withText(startsWith("Version "))).check(matches(isDisplayed()))
             onView(tagged("donate")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("source")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("license-notice")).perform(scrollTo())
+                .check(matches(withText(org.hamcrest.Matchers.containsString("GNU General Public License"))))
+            onView(tagged("license")).perform(scrollTo()).check(matches(isDisplayed()))
         }
     }
 }

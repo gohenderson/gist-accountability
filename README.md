@@ -68,8 +68,8 @@ to green.
 
 - **Actually wake up.** Weekdays at 6:00: ten hard math problems, then scan the code on
   the coffee maker. A gentler version for weekends.
-- **Keep an honest diet log.** At 9:30 PM: "Soda today? Dessert? Second helpings?" A morning
-  check-in about last night logs to the right day.
+- **Eat the way you meant to.** At 9:30 PM: "Soda today? Dessert? Second helpings?" A
+  morning check-in about last night's snacking logs to the right day.
 - **Take your medication.** At 8 AM, scan the barcode on the bottle, which means you're
   standing next to it.
 - **Show up at the gym.** When you arrive on Monday, Wednesday or Friday morning: "Did you
@@ -124,6 +124,15 @@ Or [build it yourself](BUILDING.md).
 | [Architecture](ARCHITECTURE.md) | How the code is organized, file by file, and the design choices behind it |
 
 Found a bug or have an idea? [Open an issue](https://github.com/gohenderson/gist-accountability/issues).
+
+## License
+
+Gist is free software, licensed under the [GNU General Public License v3.0 or
+later](LICENSE). You can use, study, change and share it. If you distribute a modified
+version, it has to stay under the same license, with its source available, so Gist and
+anything built from it stay open. It comes with no warranty.
+
+Its two libraries, ZXing and SnakeYAML Engine, are Apache-2.0, which is compatible.
 
 ## Donate
 

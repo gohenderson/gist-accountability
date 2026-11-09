@@ -17,9 +17,9 @@ class AboutActivity : BaseActivity() {
         val what = card()
         what.add(label("Alarms that won't stop until you check in.", 18f, bold = true))
         what.add(label(
-            "Each check-in rings on your schedule and runs its steps (math, a scan, yes/no questions) " +
-                "before it lets you go. It keeps a simple log, so you see the gist of your habits " +
-                "without counting every calorie.", 15f), dp(6))
+            "Each check-in goes off when it matters (at a time, at a place, or partway into a run) and " +
+                "holds you to it: math, a scan or yes/no questions before it lets you go. It keeps a " +
+                "simple log, so you see the gist of how your habits are going.", 15f), dp(6))
         col.add(what, dp(20))
 
         val privacy = card()
@@ -41,6 +41,16 @@ class AboutActivity : BaseActivity() {
         code.add(outlineButton("Source code on GitHub") { open(Links.REPO) }.apply { tag = "source" }, dp(12))
         code.add(outlineButton("Report a problem") { open(Links.ISSUES) }, dp(8))
         col.add(code, dp(12))
+
+        // The GPL asks interactive programs to show its notice and that there's no warranty.
+        val license = card()
+        license.add(sectionTitle("License"))
+        license.add(label(
+            "Gist is free software: you can redistribute it and/or modify it under the terms of the " +
+                "GNU General Public License, version 3 or (at your option) any later version. It comes " +
+                "with ABSOLUTELY NO WARRANTY.", 15f).apply { tag = "license-notice" }, dp(6))
+        license.add(outlineButton("Read the license") { open(Links.LICENSE) }.apply { tag = "license" }, dp(12))
+        col.add(license, dp(12))
 
         setContentView(screen(col))
     }
