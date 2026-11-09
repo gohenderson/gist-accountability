@@ -288,14 +288,23 @@ class CheckinEditActivity : BaseActivity() {
         else -> "At a set time"
     }
 
-    /** One "Name: value" line of a trigger card; tap the value to change it. */
-    private fun field(card: LinearLayout, name: String, value: String, tag: String, onClick: () -> Unit) {
-        val r = row()
-        r.addView(label(name, 14f, color = colorMuted), LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT))
-        r.addWeighted(outlineButton(value) { onClick() }.apply {
+    /**
+     * One "Name: value" line of a trigger card; tap the value to change it. A long [name]
+     * goes on its own line above the value ([stacked]).
+     */
+    private fun field(card: LinearLayout, name: String, value: String, tag: String, stacked: Boolean = false, onClick: () -> Unit) {
+        val button = outlineButton(value) { onClick() }.apply {
             this.tag = tag
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
-        })
+        }
+        if (stacked) {
+            card.add(label(name, 14f, color = colorMuted), dp(6))
+            card.add(button, dp(2))
+            return
+        }
+        val r = row()
+        r.addView(label(name, 14f, color = colorMuted), LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT))
+        r.addWeighted(button)
         card.add(r, dp(4))
     }
 
@@ -348,8 +357,8 @@ class CheckinEditActivity : BaseActivity() {
             }
         }
         if (ev.kind == Trigger.RUN_END) {
-            val min = if (ev.minRunMinutes == 0) "Any length" else "At least ${ev.minRunMinutes} min"
-            field(card, "Run", min, "trigger-min-run:$n") { pickMinRun(j, ev) }
+            val min = if (ev.minRunMinutes == 0) "Any length" else "${ev.minRunMinutes}+ minutes"
+            field(card, "Minimum run duration", min, "trigger-min-run:$n", stacked = true) { pickMinRun(j, ev) }
         }
         val window = Trigger.windowText(ev) { Days.time(it.hour, it.minute) }.ifEmpty { "Anytime" }.replaceFirstChar { it.uppercase() }
         field(card, "Time", window, "trigger-time:$n") { pickWindow(j, ev) }
@@ -447,7 +456,10 @@ class CheckinEditActivity : BaseActivity() {
 
     private fun pickMinRun(j: Int, ev: Trigger) {
         val values = listOf(0, 5, 10, 20, 30, 45, 60)
-        pickDialog("Only after a run of", values.map { DialogOption(if (it == 0) "Any length" else "At least $it minutes") },
+        pickDialog("Minimum run duration", values.map {
+            if (it == 0) DialogOption("Any length", "Rings after every run, even a short one")
+            else DialogOption("At least $it minutes", "Shorter runs don't ring it")
+        },
             values.indexOf(ev.minRunMinutes)) { i -> setEvent(j) { it.copy(minRunMinutes = values[i]) } }
     }
 

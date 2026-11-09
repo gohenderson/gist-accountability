@@ -258,7 +258,9 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **Where:** for set times, **Anywhere**, or only when you're **at** / **away from** a
     place when it's due (checked then; if it doesn't hold, that time is marked skipped (–);
     if the location can't be found it rings anyway). For arrive / leave, the place.
-  - **Run** (finish running): any length, or at least 5–60 minutes.
+  - **Minimum run duration** (finish running only): any length, or at least 5–60 minutes,
+    so a short dash for the bus doesn't count. ("Start running" rings about a minute into
+    any run, before its length is known.)
   - **At most once a day** (for arrive / leave / running).
   - **✕** removes it. A check-in with no triggers never rings on its own.
 
