@@ -10,8 +10,10 @@ import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -231,16 +233,39 @@ class GroupingTest {
         val good = TestEnv.ctx.getColor(R.color.good)
         val bad = TestEnv.ctx.getColor(R.color.bad)
         main().use {
-            onView(tagged("score:a")).perform(scrollTo()).check(matches(withText("100%")))
-            assertEquals(good, textColorOf("score:a"))
-            onView(tagged("score:b")).perform(scrollTo()).check(matches(withText("50%")))
-            onView(tagged("score:c")).perform(scrollTo()).check(matches(withText("0%")))
-            assertEquals(bad, textColorOf("score:c"))
-            onView(tagged("group-score:Morning")).perform(scrollTo()).check(matches(withText("75%")))
-            onView(tagged("group-score:Evening")).perform(scrollTo()).check(matches(withText("0%")))
+            // Rows and groups show their score only as color (and read it out); no numbers.
+            for (id in listOf("a", "b", "c")) onView(tagged("score:$id")).check(doesNotExist())
+            onView(withText("100%")).check(doesNotExist())
+            onView(tagged("checkin-header:a")).perform(scrollTo()).check(matches(withContentDescription(containsString("100% on track"))))
+            onView(tagged("checkin-header:b")).perform(scrollTo()).check(matches(withContentDescription(containsString("50% on track"))))
+            onView(tagged("group-header:Morning")).perform(scrollTo()).check(matches(withContentDescription(containsString("75% on track"))))
+            onView(tagged("group-score:Morning")).check(doesNotExist())
+            assertEquals(Score.color(0.75, bad, good), textColorOf("group:Morning"))
             assertEquals(bad, textColorOf("group:Evening"))
+            // The overall number stays at the top.
             onView(tagged("overall-score")).perform(scrollTo()).check(matches(withText("50%")))
             assertEquals(Score.color(0.5, bad, good), textColorOf("overall-score"))
+        }
+    }
+
+    @Test
+    fun theCheckinPageShowsItsScore() {
+        val q = Question("soda", "Soda?")
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Half", listOf(q))))
+        history("a", 2)
+        ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "a")).use {
+            onView(tagged("checkin-score")).check(matches(withText("50%")))
+            assertEquals(Score.color(0.5, TestEnv.ctx.getColor(R.color.bad), TestEnv.ctx.getColor(R.color.good)),
+                textColorOf("checkin-score"))
+        }
+    }
+
+    @Test
+    fun noHistoryMeansNoScoreOnItsPage() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "New", listOf(Question("soda", "Soda?")))))
+        ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "a")).use {
+            onView(tagged("checkin-name")).check(matches(withText("New")))
+            onView(tagged("checkin-score")).check(doesNotExist())
         }
     }
 
@@ -248,7 +273,7 @@ class GroupingTest {
     fun noHistoryMeansNoScore() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "New", listOf(Question("soda", "Soda?")))))
         main().use {
-            onView(tagged("score:a")).check(doesNotExist())
+            onView(tagged("checkin-header:a")).check(matches(withContentDescription(org.hamcrest.Matchers.not(containsString("on track")))))
             onView(tagged("overall-score")).check(doesNotExist())
         }
     }

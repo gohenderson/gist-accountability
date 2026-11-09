@@ -61,6 +61,14 @@ class CheckinEditActivity : BaseActivity() {
         val title = label(c.name, 30f, bold = true)
         col.add(title)
         col.add(muted(CheckinText.oneLine(c), 15f), dp(2))
+        // How on track it's been, like the overall score on the start page.
+        Score.of(c, store.allResults(c.id))?.let { score ->
+            val box = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            box.addWrapped(label(Score.percent(score), 34f, bold = true,
+                color = Score.color(score, colorOf(R.color.bad), colorOf(R.color.good))).apply { tag = "checkin-score" })
+            box.addWeighted(muted("on track over the last ${Score.DAYS} days", 14f), startMargin = dp(12))
+            col.add(box, dp(8))
+        }
 
         // Name: saved as you type (no redraw, so the keyboard stays put).
         col = section(page, "Name")
