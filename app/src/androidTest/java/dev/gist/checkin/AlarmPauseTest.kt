@@ -149,3 +149,36 @@ class RingingLayoutTest {
         }
     }
 }
+
+/** The first ring starts soft and swells; after a pause it comes back at full volume. */
+@RunWith(AndroidJUnit4::class)
+class VolumeRampTest {
+    @get:Rule
+    val failureScreenshot = FailureScreenshot()
+
+    @After
+    fun tearDown() {
+        AlarmService.testRampMs = null
+        AlarmService.testPauseMs = null
+        TestEnv.reset(emptyList())
+    }
+
+    @Test
+    fun startsQuietRampsUpAndResumesLoud() {
+        AlarmService.testRampMs = 4_000
+        AlarmService.testPauseMs = 2_000
+        TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        TestEnv.reset(listOf(TestEnv.checkin("v", "Ramp", listOf(Question("q", "Q?")))))
+        AlarmScheduler.scheduleTest(TestEnv.ctx, "v", 1_000)
+        TestEnv.eventually(20_000) { assertTrue(AlarmService.running) }
+        TestEnv.eventually { assertTrue("a sound should play", AlarmService.currentSound != null) }
+        assertTrue("starts soft: ${AlarmService.currentGain}", AlarmService.currentGain < 0.5f)
+        TestEnv.eventually(10_000) { assertEquals(1f, AlarmService.currentGain, 0.001f) }
+
+        // Pause, let it run out: it comes back at full volume straight away.
+        TestEnv.instrumentation.runOnMainSync { AlarmService.instance?.pauseFor(2_000) }
+        assertTrue(AlarmService.isPaused)
+        TestEnv.eventually(10_000) { assertFalse(AlarmService.isPaused) }
+        assertEquals("no slow start the second time", 1f, AlarmService.currentGain, 0.001f)
+    }
+}
