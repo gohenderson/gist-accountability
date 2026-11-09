@@ -30,6 +30,8 @@ class StepsTest {
 
     private fun edit(id: String) = ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, id))
 
+    private fun kinds() = TestEnv.store.checkin("c")!!.steps.map { it.kind }
+
     @Test
     fun stepsAreListedInTheirOrder() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Wake", listOf(q), mathCount = 2).let { it.copy(steps = it.steps.reversed()) }))
