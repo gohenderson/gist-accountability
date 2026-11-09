@@ -27,8 +27,17 @@ class LockScreenTest {
 
     private val device get() = UiDevice.getInstance(TestEnv.instrumentation)
 
+    companion object {
+        private const val PIN = "1357"
+    }
+
+    private var pin = false
+
     @After
     fun tearDown() {
+        if (pin) unlockWithPin()
+        TestEnv.shell("locksettings clear --old $PIN")
+        TestEnv.allowOverlay(false)
         TestEnv.readyDevice()
         TestEnv.instrumentation.runOnMainSync {
             for (stage in listOf(Stage.RESUMED, Stage.PAUSED, Stage.STOPPED)) {
@@ -47,9 +56,35 @@ class LockScreenTest {
     }
 
     @Test
-    fun endingATestOnTheLockScreenLeavesTheCheckinPageWorking() {
+    fun endingATestOnTheLockScreenLeavesTheCheckinPageWorking() = endTestWhileLocked(securePin = false, overlay = false)
+
+    /** As on most phones: a PIN lock, and "display over other apps" allowed (Finish setup asks for it). */
+    @Test
+    fun sameWithAPinLockAndDisplayOverOtherApps() = endTestWhileLocked(securePin = true, overlay = true)
+
+    @Test
+    fun sameWithAVideoBackground() = endTestWhileLocked(securePin = true, overlay = true, video = true)
+
+    private fun unlockWithPin() {
+        TestEnv.shell("input keyevent KEYCODE_WAKEUP")
+        Thread.sleep(500)
+        TestEnv.shell("input keyevent KEYCODE_MENU") // swipe up to the PIN pad
+        Thread.sleep(800)
+        TestEnv.shell("input text $PIN")
+        TestEnv.shell("input keyevent KEYCODE_ENTER")
+        Thread.sleep(1_500)
+    }
+
+    private fun endTestWhileLocked(securePin: Boolean, overlay: Boolean, video: Boolean = false) {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
-        TestEnv.reset(listOf(TestEnv.checkin("t", "Test me", listOf(Question("q", "Q?")))))
+        if (overlay) TestEnv.allowOverlay(true)
+        val c = TestEnv.checkin("t", "Test me", listOf(Question("q", "Q?")))
+        TestEnv.reset(listOf(if (video) c.copy(background = Background(Background.VIDEO)) else c))
+        if (video) Backgrounds.videoFile(TestEnv.ctx, "t").writeBytes(testVideoBytes())
+        if (securePin) {
+            TestEnv.shell("locksettings set-pin $PIN")
+            pin = true
+        }
         // Open the check-in's page the way the app does (in the app's own task).
         TestEnv.ctx.startActivity(CheckinEditActivity.intent(TestEnv.ctx, "t").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         TestEnv.eventually(10_000) { assertTrue(resumed().any { it is CheckinEditActivity }) }
@@ -69,6 +104,7 @@ class LockScreenTest {
         }
 
         // Unlock: the check-in's page is back, and it responds.
+        if (securePin) unlockWithPin()
         TestEnv.readyDevice()
         TestEnv.eventually(15_000) { assertTrue("the check-in's page is in front", resumed().any { it is CheckinEditActivity }) }
         val category = device.wait(Until.findObject(By.text("Category: none")), 10_000)
