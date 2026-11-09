@@ -28,7 +28,8 @@ data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet()) {
             WEEKDAYS -> "Mon–Fri"
             WEEKENDS -> "Sat & Sun"
             (1..7).toSet() -> "every day"
-            else -> days.sorted().joinToString(", ") { dayName(it) }
+            else -> if (days.size == 6) "every day but ${dayName(((1..7) - days).single())}"
+                else days.sorted().joinToString(", ") { dayName(it) }
         }
         MONTHLY -> {
             val parts = days.filter { it != LAST_DAY }.sorted().map { ordinal(it) } +

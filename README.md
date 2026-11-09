@@ -161,6 +161,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - a test ring can be stopped part-way with End test, logging nothing
   - the first ring starts soft and ramps to full volume; after a pause it resumes at full
     volume
+  - per-time days: saved and loaded; giving 4:00 AM "Tue" and 4:45 AM "every day but Tue"
+    on the edit page sets them and the real alarm; changing a time keeps its days; the
+    next rings follow each time's days (Tue 4:00, then Wed 4:45…)
   - scores: 100% / 50% / 0% check-ins show those numbers in green / in between / red;
     a group shows its average (75%), the page the overall (50%); no history, no score
   - start page: dragging a group moves it (your order first, then A–Z, "Other" last);
@@ -251,6 +254,10 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   page shows the rule next to the times (e.g. "7:00 AM, Mon–Fri") and the real next ring
   ("Mon 7:00 AM", "Dec 1 9:00 AM"). The **Alarm on** switch still turns the whole check-in
   off and on.
+- **Different days per time:** each time under **Rings at** has its own days button.
+  Tap it to give that time its own days, e.g. one wake-up check-in that rings at **4:00 AM
+  on Tuesdays** and at **4:45 AM every day but Tuesday**. Times you don't change follow the
+  check-in's **Repeats** rule (that button disappears once any time has days of its own).
 - **Running triggers (optional):** **Rings** can also be **When I start running** or **When
   I finish running** (optionally only after a run of at least 5–60 minutes), with the same
   Days / Time / once-a-day conditions as place triggers. Gist notices runs from the phone's

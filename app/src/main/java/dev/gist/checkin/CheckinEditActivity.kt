@@ -118,7 +118,9 @@ class CheckinEditActivity : BaseActivity() {
                 }
             }
             col.add(label("Only when all of these hold:", 15f), dp(12))
-            col.add(button("Days: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(4))
+            col.add(button("Days: ${c.repeat.describe()}") {
+                pickRepeat(c.repeat) { r -> change { it.copy(repeat = r) } }
+            }.apply { tag = "repeat" }, dp(4))
             val window = Trigger.windowText(t) { Days.time(it.hour, it.minute) }.ifEmpty { "any time of day" }
             col.add(button("Time: $window") { pickWindow(c) }.apply { tag = "trigger-window" }, dp(4))
             col.add(styledSwitch("At most once a day").apply {
@@ -130,13 +132,29 @@ class CheckinEditActivity : BaseActivity() {
                 tag = "trigger-summary"
             }, dp(6))
         } else {
-            col.add(button("Repeats: ${c.repeat.describe()}") { pickRepeat(c) }.apply { tag = "repeat" }, dp(8))
+            if (!c.perTimeDays) {
+                col.add(button("Repeats: ${c.repeat.describe()}") {
+                    pickRepeat(c.repeat) { r -> change { it.copy(repeat = r) } }
+                }.apply { tag = "repeat" }, dp(8))
+            }
             col.add(label("Rings at:", 15f), dp(12))
+            col.add(muted("Tap a time's days to give it its own (e.g. earlier on one day of the week).", 13f), dp(2))
             c.times.forEachIndexed { i, tm ->
                 val r = row()
                 r.addView(
                     button(Days.time(tm.hour, tm.minute)) { pickTime(c, i) }.apply { tag = "time:$i" },
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                // Each time can ring on its own days (e.g. 4:00 AM on Tuesdays, 4:45 AM the rest).
+                r.addView(
+                    outlineButton(c.daysFor(tm).describe()) {
+                        pickRepeat(c.daysFor(tm)) { rule -> setTimeDays(i, rule) }
+                    }.apply {
+                        tag = "time-days:$i"
+                        contentDescription = "Days for ${Days.time(tm.hour, tm.minute)}"
+                        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+                    },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.3f).apply { marginStart = dp(6) }
                 )
                 if (c.times.size > 1) {
                     r.addView(button("✕") { removeTime(i) }.apply {
@@ -302,7 +320,9 @@ class CheckinEditActivity : BaseActivity() {
             { _, h, m ->
                 change { cur ->
                     val list = cur.times.toMutableList()
-                    if (index != null && index < list.size) list[index] = AlarmTime(h, m) else list += AlarmTime(h, m)
+                    // A changed time keeps its own days; a new one rings on the check-in's days.
+                    if (index != null && index < list.size) list[index] = list[index].copy(hour = h, minute = m)
+                    else list += AlarmTime(h, m)
                     cur.copy(times = list.distinct().sorted(), enabled = true)
                 }
             },
@@ -561,57 +581,59 @@ class CheckinEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- repeat
 
-    private fun pickRepeat(c: Checkin) {
-        val r = c.repeat
+    /** Picks a repeat rule starting from [cur]; [onPick] gets the new one. */
+    private fun pickRepeat(cur: Repeat, onPick: (Repeat) -> Unit) {
         val current = when {
-            r.kind == Repeat.DAILY -> 0
-            r == Repeat.weekly(Repeat.WEEKDAYS) -> 1
-            r == Repeat.weekly(Repeat.WEEKENDS) -> 2
-            r.kind == Repeat.WEEKLY -> 3
+            cur.kind == Repeat.DAILY -> 0
+            cur == Repeat.weekly(Repeat.WEEKDAYS) -> 1
+            cur == Repeat.weekly(Repeat.WEEKENDS) -> 2
+            cur.kind == Repeat.WEEKLY -> 3
             else -> 4
         }
         val options = listOf(
             DialogOption("Every day"),
             DialogOption("Weekdays (Mon–Fri)"),
             DialogOption("Weekends (Sat & Sun)"),
-            DialogOption("Specific days of the week…", "e.g. Mon, Wed, Fri"),
+            DialogOption("Specific days of the week…", "e.g. Mon, Wed, Fri, or every day but Tue"),
             DialogOption("Monthly on certain dates…", "e.g. the 1st and 15th, or the last day"),
         )
         pickDialog("Repeats", options, current) { i ->
             when (i) {
-                0 -> change { it.copy(repeat = Repeat.EVERY_DAY) }
-                1 -> change { it.copy(repeat = Repeat.weekly(Repeat.WEEKDAYS)) }
-                2 -> change { it.copy(repeat = Repeat.weekly(Repeat.WEEKENDS)) }
-                3 -> pickWeekdays(c)
-                4 -> pickMonthDays(c)
+                0 -> onPick(Repeat.EVERY_DAY)
+                1 -> onPick(Repeat.weekly(Repeat.WEEKDAYS))
+                2 -> onPick(Repeat.weekly(Repeat.WEEKENDS))
+                3 -> pickWeekdays(cur, onPick)
+                4 -> pickMonthDays(cur, onPick)
             }
         }
     }
 
-    private fun pickWeekdays(c: Checkin) {
+    private fun pickWeekdays(cur: Repeat, onPick: (Repeat) -> Unit) {
         val labels = (1..7).map {
             java.time.DayOfWeek.of(it).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
         }
-        val checked = BooleanArray(7) { i -> c.repeat.kind == Repeat.WEEKLY && (i + 1) in c.repeat.days }
+        val checked = BooleanArray(7) { i -> cur.kind == Repeat.DAILY || (cur.kind == Repeat.WEEKLY && (i + 1) in cur.days) }
         checklistDialog("Rings on", labels, checked) { ticked ->
             val days = (1..7).filter { ticked[it - 1] }.toSet()
-            if (days.isEmpty()) toast("Pick at least one day.") else change { it.copy(repeat = Repeat.weekly(days)) }
+            if (days.isEmpty()) toast("Pick at least one day.") else onPick(Repeat.weekly(days))
         }
     }
 
-    private fun pickMonthDays(c: Checkin) {
+    private fun pickMonthDays(cur: Repeat, onPick: (Repeat) -> Unit) {
         val values = (1..31).toList() + Repeat.LAST_DAY
         val labels = (1..31).map { Repeat.ordinal(it) } + "Last day"
-        val checked = BooleanArray(values.size) { i -> c.repeat.kind == Repeat.MONTHLY && values[i] in c.repeat.days }
+        val checked = BooleanArray(values.size) { i -> cur.kind == Repeat.MONTHLY && values[i] in cur.days }
         checklistDialog("Rings each month on", labels, checked, columns = 4,
             message = "Months without a date you pick are skipped; \"Last day\" always rings.") { ticked ->
             val days = values.filterIndexed { i, _ -> ticked[i] }.toSet()
-            if (days.isEmpty()) {
-                toast("Pick at least one date.")
-            } else {
-                change { it.copy(repeat = Repeat.monthly(days)) }
-            }
+            if (days.isEmpty()) toast("Pick at least one date.") else onPick(Repeat.monthly(days))
         }
+    }
+
+    /** Gives the time at [index] its own days. */
+    private fun setTimeDays(index: Int, rule: Repeat) = change { cur ->
+        if (index !in cur.times.indices) return@change cur
+        cur.copy(times = cur.times.toMutableList().apply { this[index] = this[index].copy(days = rule) })
     }
 
     private fun removeTime(index: Int) {

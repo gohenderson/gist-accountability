@@ -35,12 +35,11 @@ object AlarmScheduler {
         var date = now.toLocalDate()
         val last = date.plusDays(400)
         while (out.size < count && !date.isAfter(last)) {
-            if (c.repeat.matches(date)) {
-                for (t in c.times) {
-                    val at = ZonedDateTime.of(date, LocalTime.of(t.hour, t.minute), now.zone)
-                    if (at.isAfter(now)) {
-                        out += Occurrence(t, at.toInstant().toEpochMilli(), Days.forAlarmNow(c.aboutYesterday, at.toLocalDateTime()))
-                    }
+            for (t in c.times) {
+                if (!c.daysFor(t).matches(date)) continue // each time can have its own days
+                val at = ZonedDateTime.of(date, LocalTime.of(t.hour, t.minute), now.zone)
+                if (at.isAfter(now)) {
+                    out += Occurrence(t, at.toInstant().toEpochMilli(), Days.forAlarmNow(c.aboutYesterday, at.toLocalDateTime()))
                 }
             }
             date = date.plusDays(1)
