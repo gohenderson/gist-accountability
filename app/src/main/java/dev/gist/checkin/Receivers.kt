@@ -16,7 +16,8 @@ class AlarmReceiver : BroadcastReceiver() {
             ?: AlarmScheduler.nearestTime(c).toString()
         val day = intent.getStringExtra(AlarmScheduler.EXTRA_DAY) ?: Days.forAlarmNow(c.aboutYesterday)
         val test = intent.getBooleanExtra(AlarmScheduler.EXTRA_TEST, false)
-        val fromPlace = intent.getBooleanExtra(EXTRA_PLACE, false)
+        // A snoozed ring already passed its place check when it first rang.
+        val fromPlace = intent.getBooleanExtra(EXTRA_PLACE, false) || intent.getBooleanExtra(AlarmScheduler.EXTRA_SNOOZE, false)
         if (!test && store.isClosed(day, c.id, time)) {
             // Already done early or skipped: stay quiet and move on to the next ring.
             AlarmScheduler.schedule(context, c)

@@ -182,7 +182,18 @@ class CheckinEditActivity : BaseActivity() {
 
         // Steps, in the order they run. Drag ≡ to reorder; tap one to set it up.
         col = section(page, "When it rings")
-        col.add(label(CheckinText.steps(c), 15f), dp(4))
+        // Commitment: strict (the steps are the only way out) or soft (snooze / dismiss, no stats).
+        col.add(button("Commitment: ${if (c.soft) "Soft" else "Strict"}") { pickCommitment(c) }.apply { tag = "commitment" }, dp(4))
+        col.add(muted(if (c.soft) {
+            "Snooze or dismiss it any time; the steps are optional. It doesn't come back if you leave it, " +
+                "and it isn't counted in your stats."
+        } else {
+            "Only finishing the steps stops it: no snooze, and it comes back if you leave it. Counted in your stats."
+        }, 13f).apply { tag = "commitment-detail" }, dp(2))
+        if (c.soft) {
+            col.add(button("Snooze: ${c.snoozeMinutes} minutes") { pickSnooze(c) }.apply { tag = "snooze-length" }, dp(8))
+        }
+        col.add(label(CheckinText.steps(c), 15f), dp(14))
         if (c.steps.isEmpty()) {
             col.add(muted("No steps: the alarm just shows a Dismiss button.", 13f), dp(2))
         } else {
@@ -258,6 +269,20 @@ class CheckinEditActivity : BaseActivity() {
     // ---------------------------------------------------------------- actions
 
     /** Update this check-in, re-arm its alarm, redraw. */
+    private fun pickCommitment(c: Checkin) {
+        val options = listOf(
+            DialogOption("Strict", "Only finishing the steps stops it. No snooze; it comes back if you leave it. Counted in your stats.", "commitment:strict"),
+            DialogOption("Soft", "Snooze or dismiss any time; the steps are optional. Not counted in your stats.", "commitment:soft"),
+        )
+        pickDialog("Commitment", options, if (c.soft) 1 else 0) { i -> change { it.copy(soft = i == 1) } }
+    }
+
+    private fun pickSnooze(c: Checkin) {
+        val choices = Checkin.SNOOZE_CHOICES
+        val options = choices.map { DialogOption("$it minutes", tag = "snooze:$it") }
+        pickDialog("Snooze for", options, choices.indexOf(c.snoozeMinutes)) { i -> change { it.copy(snoozeMinutes = choices[i]) } }
+    }
+
     private fun change(f: (Checkin) -> Checkin) {
         store.updateCheckin(checkinId, f)
         store.checkin(checkinId)?.let { AlarmScheduler.schedule(this, it) }

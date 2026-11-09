@@ -18,6 +18,8 @@ object AlarmScheduler {
     const val EXTRA_TIME = "time"
     const val EXTRA_DAY = "day"
     const val EXTRA_TEST = "test"
+    const val EXTRA_SNOOZE = "snooze"
+    private const val ACTION_SNOOZE = "dev.gist.checkin.SNOOZE"
 
     fun nextTriggerMillis(hour: Int, minute: Int, now: ZonedDateTime = ZonedDateTime.now()): Long {
         var t = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
@@ -101,7 +103,37 @@ object AlarmScheduler {
         val am = context.getSystemService(AlarmManager::class.java)
         am.cancel(broadcast(context, checkinId, test = false))
         am.cancel(broadcast(context, checkinId, test = true))
+        am.cancel(snoozeBroadcast(context, Pending(checkinId, "", "")))
         LocationTriggers.remove(context, checkinId)
+    }
+
+    /**
+     * Rings [p] again in [minutes] (a soft alarm's Snooze): same day and time, so it's the
+     * same ring, just later. One snooze per check-in; a newer one replaces it.
+     */
+    fun snooze(context: Context, p: Pending, minutes: Int): Long {
+        val at = System.currentTimeMillis() + (testSnoozeMs ?: minutes * 60_000L)
+        set(context, context.getSystemService(AlarmManager::class.java), at, snoozeBroadcast(context, p))
+        return at
+    }
+
+    /** Tests shorten the snooze. */
+    @Volatile
+    var testSnoozeMs: Long? = null
+
+    private fun snoozeBroadcast(context: Context, p: Pending): PendingIntent {
+        // Its own action keeps it apart from the check-in's regular alarm (same request code).
+        val intent = Intent(context, AlarmReceiver::class.java)
+            .setAction(ACTION_SNOOZE)
+            .putExtra(EXTRA_CHECKIN, p.checkinId)
+            .putExtra(EXTRA_TEST, p.practice)
+            .putExtra(EXTRA_SNOOZE, true)
+        if (p.time.isNotEmpty()) intent.putExtra(EXTRA_TIME, p.time)
+        if (p.day.isNotEmpty()) intent.putExtra(EXTRA_DAY, p.day)
+        return PendingIntent.getBroadcast(
+            context, (p.checkinId.hashCode() and 0x3FFFFFFF) * 2, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
     /**

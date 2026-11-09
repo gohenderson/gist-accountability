@@ -203,6 +203,12 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     after Start check-in
   - a test ring from the edit page is marked as a test, logs nothing, and leaves the next
     real ring alone
+  - soft alarms: Dismiss stops it without the steps (logged as dismissed, soft); with no
+    steps Dismiss is the main button; the steps can still be done or abandoned; Snooze
+    rings the same time again later; the notification's Snooze / Dismiss work; Home
+    doesn't pull it back; strict alarms have no Snooze, Dismiss or notification buttons;
+    soft results stay out of scores and averages, even after switching to strict;
+    commitment and snooze length are set on the check-in's page and kept in backups
   - place triggers: arriving rings (once a day); leaving or outside the time window doesn't;
     "only when at" skips when elsewhere and rings when there; "only when away" rings when
     elsewhere; the place is watched while on and not when off; choosing "arrive" and typing
@@ -239,6 +245,17 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
 - **Ringing:** At the chosen time it plays your phone's default alarm sound on the alarm
   stream and vibrates. While it rings, the alarm volume can't go below 80%; if you turn
   it down, it goes straight back up. The original volume is restored afterwards.
+- **Commitment: strict or soft.** Set per check-in, under **When it rings**.
+  - **Strict** (the default) is the whole point of Gist: only finishing the steps stops
+    it. There's no snooze, and it comes back to the front if you leave it. It counts in
+    your stats.
+  - **Soft** is for things that don't need forcing. The ringing screen (and the alarm
+    notification) has **Snooze** (5, 10, 15, 20 or 30 minutes; 10 by default) and
+    **Dismiss**, and the steps are optional: start them, or dismiss part-way. Back or
+    Home leaves it ringing in the background instead of pulling you back. Soft alarms
+    are **left out of every stat**: no score, no on-track line or History, not in group
+    or overall averages, and not in the CSV. Results logged while a check-in is soft
+    stay out even if you later make it strict.
 - **Several times a day:** A check-in can ring at more than one time (e.g. brushing
   teeth at 7:30 AM and 10:15 PM): add a trigger per time (see **Triggers**). Each time
   keeps its own result. Reports
@@ -387,7 +404,7 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   - **Collapse all / Expand all** (next to the View menu) folds or unfolds everything:
     the groups and the check-ins.
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
-    sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
+    sound and background, strict or soft, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
     The **test ring** is a practice run: it rings and runs every step, but nothing is
     logged and the next real alarm still rings as scheduled. **End test** (or Back) stops it
     at any point, and leaving it with Home doesn't pull you back.
@@ -417,6 +434,7 @@ app/src/main/java/dev/gist/checkin/
   Repeat.kt          repeat rules (every day, weekdays, chosen days, monthly dates)
   Background.kt      background type (none / photo / slideshow / video) and caption
   Backgrounds.kt     stores the background photos and video in the app's private files
+  SoftAlarm.kt       Snooze / Dismiss for soft alarms (ringing screen and notification)
   Backup.kt / Yaml.kt  backup file export/import (YAML via SnakeYAML Engine)
   CheckinText.kt     short descriptions of a check-in (time, steps, next ring)
   CheckinActivity.kt the alarm screen: runs the steps in their order, then stops the alarm

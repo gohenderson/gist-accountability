@@ -108,6 +108,10 @@
             android:name=".ProximityReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".SoftAlarmReceiver"
+            android:exported="false" />
+
         <service
             android:name=".MovementService"
             android:exported="false"

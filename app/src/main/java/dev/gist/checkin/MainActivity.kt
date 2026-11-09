@@ -265,7 +265,9 @@ class MainActivity : BaseActivity() {
         card.add(titleRow(c, handle, score, folded = false, size = 20f))
         card.add(muted(CheckinText.oneLine(c)), dp(2))
 
-        if (c.questions.isNotEmpty()) {
+        if (c.soft) {
+            card.add(muted("Soft alarm · not counted in stats", 13f).apply { tag = "soft-note:${c.id}" }, dp(4))
+        } else if (c.questions.isNotEmpty()) {
             val results = store.allResults(c.id)
             card.add(muted(Stats.line(c, results, 7), 13f), dp(4))
         }
@@ -329,7 +331,7 @@ class MainActivity : BaseActivity() {
         // Right-aligned with gravity. (An empty spacer view here would grab all the height
         // it's offered, which stretched the card to fill the screen.)
         val actions = row().apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        if (c.questions.isNotEmpty()) {
+        if (c.questions.isNotEmpty() && !c.soft) {
             actions.addWrapped(textButton("History") { startActivity(HistoryActivity.intent(this, c.id)) })
         }
         actions.addWrapped(textButton("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) }, dp(4))
