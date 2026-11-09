@@ -245,14 +245,22 @@ class MainActivity : BaseActivity() {
         addWrapped(alarmSwitch(c), startMargin = dp(8))
     }
 
+    /**
+     * A check-in's card background: the same when folded or not (only the content changes),
+     * outlined in its score's color once it has one.
+     */
+    private fun checkinBackground(card: LinearLayout, score: Double?) {
+        if (score != null) card.background = scoreBackground(colorOf(R.color.surface), CARD_RADIUS, score)
+    }
+
     /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
-    private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = column().apply {
-        background = scoreBackground(colorOf(R.color.surface_variant), 14, score)
-        setPadding(dp(14), dp(8), dp(10), dp(8))
+    private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = card().apply {
+        checkinBackground(this, score)
+        setPadding(dp(16), dp(10), dp(16), dp(12))
         tag = "row:${c.id}"
         isClickable = true
         setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
-        add(titleRow(c, handle, score, folded = true, size = 16f))
+        add(titleRow(c, handle, score, folded = true, size = TITLE_SIZE))
         val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
         add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" })
     }
@@ -260,9 +268,9 @@ class MainActivity : BaseActivity() {
     private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
         card.tag = "card:${c.id}"
-        if (score != null) card.background = scoreBackground(colorOf(R.color.surface), 20, score)
+        checkinBackground(card, score)
 
-        card.add(titleRow(c, handle, score, folded = false, size = 20f))
+        card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
         card.add(muted(CheckinText.oneLine(c)), dp(2))
 
         if (c.soft) {
@@ -438,6 +446,9 @@ class MainActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
+        /** Check-in cards, folded or not: the corner radius (as Ui.card) and the name's size. */
+        private const val CARD_RADIUS = 20
+        private const val TITLE_SIZE = 18f
         private const val REQ_NOTIF = 1
         private const val REQ_LOCATION = 2
         private const val REQ_ACTIVITY = 3

@@ -1,6 +1,7 @@
 package dev.gist.checkin
 
 import android.content.Intent
+import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
@@ -211,6 +212,26 @@ class GroupingTest {
             scenario.onActivity { recording = false }
             assertTrue("drew something", frames.isNotEmpty())
             assertTrue("never drawn at the top: $frames", frames.none { it == 0 })
+        }
+    }
+
+    @Test
+    fun foldedAndOpenCardsLookAlike() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        TestEnv.store.collapsedCheckins = setOf("a")
+        main().use { scenario ->
+            onView(tagged("row:a")).perform(scrollTo())
+            onView(tagged("card:b")).perform(scrollTo())
+            scenario.onActivity { act ->
+                val root = act.window.decorView
+                fun bg(tag: String) = root.findViewWithTag<View>(tag).background as android.graphics.drawable.GradientDrawable
+                val folded = bg("row:a")
+                val open = bg("card:b")
+                assertEquals("corners", open.cornerRadius, folded.cornerRadius, 0.01f)
+                assertEquals("color", open.color?.defaultColor, folded.color?.defaultColor)
+                fun size(tag: String) = root.findViewWithTag<android.widget.TextView>(tag).textSize
+                assertEquals("name size", size("checkin-title:b"), size("checkin-title:a"), 0.01f)
+            }
         }
     }
 

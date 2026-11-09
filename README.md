@@ -201,6 +201,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
     starts blank
   - leaving a ringing alarm with Home brings it back to the front, both while ringing and
     after Start check-in
+  - a test rung from a check-in's page with the phone locked and ended on the lock screen
+    leaves that page working after unlocking (the alarm screen has a task of its own)
+  - folded and open check-in cards share their background, corners and name size
   - a test ring from the edit page is marked as a test, logs nothing, and leaves the next
     real ring alone
   - soft alarms: Dismiss stops it without the steps (logged as dismissed, soft); with no
