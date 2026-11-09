@@ -168,8 +168,10 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - per-time days: saved and loaded; giving 4:00 AM "Tue" and 4:45 AM "every day but Tue"
     on the edit page sets them and the real alarm; changing a time keeps its days; the
     next rings follow each time's days (Tue 4:00, then Wed 4:45…)
-  - scores: 100% / 50% / 0% check-ins show those numbers in green / in between / red;
-    a group shows its average (75%), the page the overall (50%); no history, no score
+  - scores: on the start page check-ins and groups show their score as color only (the
+    number is read out by screen readers); the group header is colored by its average
+    (75%), the top shows the overall (50%); a check-in's page shows its own number and
+    color; no history, no score
   - start page: dragging a group moves it (your order first, then A–Z, "Other" last);
     a group collapses and expands; tapping a check-in's title folds it to one line (name,
     next ring, switch) and back; Collapse all / Expand all folds groups and check-ins, also
@@ -364,11 +366,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
   adjust, or **Create your own** to start blank. Templates live in `Library.kt`. The start page lists
   each check-in with its times, steps and last-7-days stat, an on/off switch at the far
   right of its name, and two buttons:
-  - **On-track colors:** each check-in shows its score, the share of the last 7 logged days
+  - **On-track colors:** each check-in's score is the share of the last 7 logged days
     that were fully on track (missed rings count as off track; skipped days and days it
-    didn't ring don't count), and its card or line is outlined in a color from red (0%)
-    through amber to green (100%). Group headers show the average of their check-ins, and
-    the top of the page shows the overall average, in the same colors. Check-ins that are
+    didn't ring don't count). Its card or line is outlined in a color from red (0%)
+    through amber to green (100%), and group headers are colored by the average of their
+    check-ins. The numbers stay out of the list: the top of the page shows the overall
+    average, and each check-in's page shows its own score at the top. Check-ins that are
     switched off, or have nothing logged in the last week, show no score.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
   - **View** (above the list, once you have two or more): **Ungrouped** (one list) or
@@ -378,7 +381,7 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     Dragging works within a section. Drag a **group** by the ≡ on its header to move it
     above or below the others (e.g. Morning above Evening); tap a header to **collapse**
     or expand it.
-  - **Tap a check-in's title to fold it** to one line (name, next ring, score and the
+  - **Tap a check-in's title to fold it** to one line (name, next ring and the
     on/off switch); tap it again for the full card (next ring with Skip / Do it now,
     stats, History / Edit). Each check-in remembers how you left it.
   - **Collapse all / Expand all** (next to the View menu) folds or unfolds everything:

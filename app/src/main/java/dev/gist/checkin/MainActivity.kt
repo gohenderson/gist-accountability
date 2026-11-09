@@ -111,10 +111,13 @@ class MainActivity : BaseActivity() {
                 val key = Grouping.key(category)
                 val folded = key in store.collapsed
                 val section = column()
+                // The group's color shows its score; the number is only read out (it's at the top).
+                val groupScore = rollUp(members)
                 val head = row().apply {
                     isClickable = true
                     tag = "group-header:$category"
-                    contentDescription = "$category, ${if (folded) "collapsed" else "expanded"}"
+                    contentDescription = "$category, ${if (folded) "collapsed" else "expanded"}" +
+                        (groupScore?.let { ", ${Score.percent(it)} on track" } ?: "")
                     setPadding(0, dp(6), 0, dp(6))
                     setOnClickListener {
                         store.collapsed = if (folded) store.collapsed - key else store.collapsed + key
@@ -127,14 +130,8 @@ class MainActivity : BaseActivity() {
                     contentDescription = "Drag to reorder the $category group"
                 }
                 if (groups.size > 1) head.addWrapped(handle)
-                val groupScore = rollUp(members)
                 val groupColor = groupScore?.let { scoreColor(it) } ?: colorPrimary
                 head.addWeighted(label(category, 15f, bold = true, color = groupColor).apply { tag = "group:$category" })
-                groupScore?.let {
-                    head.addWrapped(label(Score.percent(it), 15f, bold = true, color = groupColor).apply {
-                        tag = "group-score:$category"
-                    }, startMargin = dp(8))
-                }
                 head.addWrapped(label(if (folded) "▸" else "▾", 18f, color = groupColor).apply { tag = "group-chevron:$category" },
                     startMargin = dp(8))
                 section.add(head)
@@ -218,13 +215,6 @@ class MainActivity : BaseActivity() {
         if (score != null) setStroke(dp(2), scoreColor(score))
     }
 
-    private fun scoreLabel(c: Checkin, score: Double?): View? = score?.let {
-        label(Score.percent(it), 15f, bold = true, color = scoreColor(it)).apply {
-            tag = "score:${c.id}"
-            contentDescription = "${Score.percent(it)} on track"
-        }
-    }
-
     /** Folds or unfolds a check-in's card. */
     private fun toggleFolded(c: Checkin) {
         val folded = store.collapsedCheckins
@@ -233,14 +223,16 @@ class MainActivity : BaseActivity() {
     }
 
     /**
-     * A check-in's title line: drag handle, name, chevron, score and on/off switch. Tapping it
+     * A check-in's title line: drag handle, name, chevron and on/off switch (the card's border
+     * color shows the score; the number is only read out, and shown on the check-in's page). Tapping it
      * folds the card to this line (plus the next ring) or unfolds it again.
      */
     private fun titleRow(c: Checkin, handle: View?, score: Double?, folded: Boolean, size: Float): LinearLayout = row().apply {
         gravity = Gravity.CENTER_VERTICAL
         isClickable = true
         tag = "checkin-header:${c.id}"
-        contentDescription = "${c.name}, ${if (folded) "collapsed" else "expanded"}"
+        contentDescription = "${c.name}, ${if (folded) "collapsed" else "expanded"}" +
+            (score?.let { ", ${Score.percent(it)} on track" } ?: "")
         setOnClickListener { toggleFolded(c) }
         handle?.let { addWrapped(it) }
         addWeighted(label(c.name, size, bold = true).apply {
@@ -250,8 +242,7 @@ class MainActivity : BaseActivity() {
         })
         addWrapped(label(if (folded) "▸" else "▾", 18f, color = colorMuted).apply { tag = "checkin-chevron:${c.id}" },
             startMargin = dp(6))
-        scoreLabel(c, score)?.let { addWrapped(it, startMargin = dp(8)) }
-        addWrapped(alarmSwitch(c), startMargin = dp(4))
+        addWrapped(alarmSwitch(c), startMargin = dp(8))
     }
 
     /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
