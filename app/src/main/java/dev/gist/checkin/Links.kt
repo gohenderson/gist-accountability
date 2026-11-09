@@ -6,4 +6,5 @@ object Links {
     /** The README's "Donate" section (its heading is "## Donate"). */
     const val DONATE = "$REPO#donate"
     const val ISSUES = "$REPO/issues"
+    const val LICENSE = "$REPO/blob/main/LICENSE"
 }

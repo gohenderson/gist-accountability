@@ -4,7 +4,7 @@ name: Release
 #   - Actions → Release → Run workflow, enter a version like v1.0.0. If that tag doesn't
 #     exist yet, it's created on the commit you run from (normally main's latest).
 #   - Or push a tag yourself: git tag v1.0.0 && git push origin v1.0.0
-# Requires the signing secrets in the "release" environment (README.md → Releases);
+# Requires the signing secrets in the "release" environment (RELEASING.md);
 # each run waits for approval under Actions before it can use them. The full test suite
 # (Build workflow) runs first; the approval request only appears once it passes.
 
@@ -83,7 +83,7 @@ jobs:
           [[ -n "$KEY_ALIAS" ]] || missing+=(ANDROID_KEY_ALIAS)
           [[ -n "$KEY_PASS" ]]  || missing+=(ANDROID_KEY_PASSWORD)
           if (( ${#missing[@]} )); then
-            msg="Missing secrets in the release environment: ${missing[*]}. See README.md → Releases."
+            msg="Missing secrets in the release environment: ${missing[*]}. See RELEASING.md."
             echo "::error title=Signing not configured::$msg"
             echo "### ❌ Release not built: $msg" >> "$GITHUB_STEP_SUMMARY"
             exit 1
