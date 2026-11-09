@@ -81,22 +81,24 @@ class MainActivity : BaseActivity() {
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (checkins.size > 1) {
-            // View options: grouping, layout, and (when grouped) expand / collapse all.
+            // View options: grouping, and expand / collapse all (groups and check-ins).
             val controls = row()
             controls.addWrapped(textButton("${if (grouped) "Grouped by category" else "Ungrouped"} ▾") { pickView() }.apply {
                 tag = "view-mode"
             })
-            controls.addWrapped(textButton("${if (store.style == Grouping.COMPACT) "Compact" else "Cards"} ▾") { pickStyle() }.apply {
-                tag = "style-mode"
-            })
-            if (grouped && groups.size > 1) {
-                val keys = groups.map { Grouping.key(it.first) }.toSet()
-                val allCollapsed = keys.all { it in store.collapsed }
-                controls.addWrapped(textButton(if (allCollapsed) "Expand all" else "Collapse all") {
-                    store.collapsed = if (allCollapsed) store.collapsed - keys else store.collapsed + keys
-                    render()
-                }.apply { tag = "toggle-all-groups" })
-            }
+            val keys = groups.map { Grouping.key(it.first) }.toSet()
+            val ids = checkins.map { it.id }.toSet()
+            val allFolded = Grouping.allFolded(keys, store.collapsed, ids, store.collapsedCheckins)
+            controls.addWrapped(textButton(if (allFolded) "Expand all" else "Collapse all") {
+                if (allFolded) {
+                    store.collapsed = store.collapsed - keys
+                    store.collapsedCheckins = store.collapsedCheckins - ids
+                } else {
+                    store.collapsed = store.collapsed + keys
+                    store.collapsedCheckins = store.collapsedCheckins + ids
+                }
+                render()
+            }.apply { tag = "toggle-all" })
             col.add(controls, dp(4))
         }
         if (grouped) {
@@ -178,8 +180,9 @@ class MainActivity : BaseActivity() {
             }
             val h = if (members.size > 1) handle else null
             val score = if (c.enabled) Score.of(c, store.allResults(c.id)) else null
-            val v = if (store.style == Grouping.COMPACT) checkinRow(c, h, score) else checkinCard(c, h, score)
-            list.addRow(v, handle, if (store.style == Grouping.COMPACT) dp(6) else dp(12))
+            val folded = c.id in store.collapsedCheckins
+            val v = if (folded) checkinRow(c, h, score) else checkinCard(c, h, score)
+            list.addRow(v, handle, dp(10))
         }
         return list
     }
@@ -196,18 +199,6 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun pickStyle() {
-        val values = listOf(Grouping.CARDS, Grouping.COMPACT)
-        val options = listOf(
-            DialogOption("Cards", "Everything at a glance: next ring, Skip / Do it now, stats", "style:cards"),
-            DialogOption("Compact", "One line each: name, next ring and on / off. Tap to open", "style:compact"),
-        )
-        pickDialog("Layout", options, values.indexOf(store.style)) { i ->
-            store.style = values[i]
-            render()
-        }
-    }
-
     private fun alarmSwitch(c: Checkin) = styledSwitch().apply {
         isChecked = c.enabled
         tag = "toggle:${c.id}"
@@ -219,7 +210,6 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    /** The compact layout: one line per check-in. Tap it to open the check-in's page. */
     /** The color for a score, between the off-track red and the on-track green. */
     private fun scoreColor(score: Double) = Score.color(score, colorOf(R.color.bad), colorOf(R.color.good))
 
@@ -235,32 +225,53 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = row().apply {
-        background = scoreBackground(colorOf(R.color.surface_variant), 14, score)
-        setPadding(dp(14), dp(10), dp(10), dp(10))
+    /** Folds or unfolds a check-in's card. */
+    private fun toggleFolded(c: Checkin) {
+        val folded = store.collapsedCheckins
+        store.collapsedCheckins = if (c.id in folded) folded - c.id else folded + c.id
+        render()
+    }
+
+    /**
+     * A check-in's title line: drag handle, name, chevron, score and on/off switch. Tapping it
+     * folds the card to this line (plus the next ring) or unfolds it again.
+     */
+    private fun titleRow(c: Checkin, handle: View?, score: Double?, folded: Boolean, size: Float): LinearLayout = row().apply {
+        gravity = Gravity.CENTER_VERTICAL
         isClickable = true
-        tag = "row:${c.id}"
-        setOnClickListener { startActivity(CheckinEditActivity.intent(this@MainActivity, c.id)) }
+        tag = "checkin-header:${c.id}"
+        contentDescription = "${c.name}, ${if (folded) "collapsed" else "expanded"}"
+        setOnClickListener { toggleFolded(c) }
         handle?.let { addWrapped(it) }
-        val text = column()
-        text.add(label(c.name, 16f, bold = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
-        val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
-        text.add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" }, dp(2))
-        addWeighted(text)
+        addWeighted(label(c.name, size, bold = true).apply {
+            maxLines = if (folded) 1 else 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            tag = "checkin-title:${c.id}"
+        })
+        addWrapped(label(if (folded) "▸" else "▾", 18f, color = colorMuted).apply { tag = "checkin-chevron:${c.id}" },
+            startMargin = dp(6))
         scoreLabel(c, score)?.let { addWrapped(it, startMargin = dp(8)) }
         addWrapped(alarmSwitch(c), startMargin = dp(4))
     }
 
+    /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
+    private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = column().apply {
+        background = scoreBackground(colorOf(R.color.surface_variant), 14, score)
+        setPadding(dp(14), dp(8), dp(10), dp(8))
+        tag = "row:${c.id}"
+        isClickable = true
+        setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
+        add(titleRow(c, handle, score, folded = true, size = 16f))
+        val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
+        add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" })
+    }
+
     private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
+        card.tag = "card:${c.id}"
         if (score != null) card.background = scoreBackground(colorOf(R.color.surface), 20, score)
 
-        val titleRow = row()
-        handle?.let { titleRow.addWrapped(it) }
-        titleRow.addWeighted(label(c.name, 20f, bold = true))
-        scoreLabel(c, score)?.let { titleRow.addWrapped(it, startMargin = dp(8)) }
-        titleRow.addWrapped(alarmSwitch(c), startMargin = dp(4))
-        card.add(titleRow)
+        card.add(titleRow(c, handle, score, folded = false, size = 20f))
         card.add(muted(CheckinText.oneLine(c)), dp(2))
 
         if (c.questions.isNotEmpty()) {

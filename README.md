@@ -171,8 +171,9 @@ Two kinds, both run by GitHub Actions on every push to `main` and every pull req
   - scores: 100% / 50% / 0% check-ins show those numbers in green / in between / red;
     a group shows its average (75%), the page the overall (50%); no history, no score
   - start page: dragging a group moves it (your order first, then A–Z, "Other" last);
-    a group collapses and expands; Collapse all / Expand all; the Compact layout shows one
-    line each and opens the check-in when tapped
+    a group collapses and expands; tapping a check-in's title folds it to one line (name,
+    next ring, switch) and back; Collapse all / Expand all folds groups and check-ins, also
+    when ungrouped; the old Compact layout setting starts everything folded
   - start page: grouped view shows a section per category with "Other" last; the View
     menu switches it; dragging a card moves it; a category is set on the edit page
   - the pause after each tap defaults to 45 s and can be changed in Settings; on the
@@ -376,10 +377,12 @@ Then press a check-in's **Test** button (it rings in 10 seconds) and lock the ph
     one. Check-ins added from the library get the library's category (Food, Fitness…).
     Dragging works within a section. Drag a **group** by the ≡ on its header to move it
     above or below the others (e.g. Morning above Evening); tap a header to **collapse**
-    or expand it, or use **Collapse all / Expand all**.
-  - **Layout:** **Cards** (everything: next ring, Skip / Do it now, stats, History / Edit)
-    or **Compact** (one line each: name, next ring and the on/off switch; tap a line to
-    open the check-in). Next to the View menu.
+    or expand it.
+  - **Tap a check-in's title to fold it** to one line (name, next ring, score and the
+    on/off switch); tap it again for the full card (next ring with Skip / Do it now,
+    stats, History / Edit). Each check-in remembers how you left it.
+  - **Collapse all / Expand all** (next to the View menu) folds or unfolds everything:
+    the groups and the check-ins.
   - **Edit** opens its own page: name, on/off, repeats and times, "previous day" option,
     sound and background, the steps (each with its own page), a 10-second test, and delete. Changes save as you make them.
     The **test ring** is a practice run: it rings and runs every step, but nothing is

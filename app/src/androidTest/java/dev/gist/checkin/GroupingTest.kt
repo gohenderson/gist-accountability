@@ -36,7 +36,7 @@ class GroupingTest {
     fun tearDown() {
         TestEnv.allowOverlay(false)
         TestEnv.store.view = Grouping.UNGROUPED
-        TestEnv.store.style = Grouping.CARDS
+        TestEnv.store.collapsedCheckins = emptySet()
         TestEnv.store.groupOrder = emptyList()
         TestEnv.store.collapsed = emptySet()
         TestEnv.reset(emptyList())
@@ -141,28 +141,70 @@ class GroupingTest {
     fun collapseAllAndExpandAll() {
         threeGroups()
         main().use {
-            onView(tagged("toggle-all-groups")).perform(scrollTo()).check(matches(withText("Collapse all")))
-            onView(tagged("toggle-all-groups")).perform(click())
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all")))
+            onView(tagged("toggle-all")).perform(click())
             for (id in listOf("m", "e", "f")) onView(tagged("toggle:$id")).check(doesNotExist())
-            onView(tagged("toggle-all-groups")).perform(scrollTo()).check(matches(withText("Expand all")))
-            onView(tagged("toggle-all-groups")).perform(click())
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Expand all")))
+            onView(tagged("toggle-all")).perform(click())
             for (id in listOf("m", "e", "f")) onView(tagged("toggle:$id")).perform(scrollTo()).check(matches(isDisplayed()))
         }
     }
 
     @Test
-    fun compactLayoutShowsOneLineEach() {
+    fun collapseAllAlsoFoldsTheCheckins() {
+        threeGroups()
+        main().use {
+            onView(tagged("toggle-all")).perform(scrollTo(), click())
+            // Opening a group shows its check-ins folded to one line.
+            onView(tagged("group-header:Morning")).perform(scrollTo(), click())
+            onView(tagged("row:m")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("card:m")).check(doesNotExist())
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all"))) // not all folded now
+        }
+        assertEquals(setOf("m", "e", "f"), TestEnv.store.collapsedCheckins)
+    }
+
+    @Test
+    fun tappingTheTitleFoldsAndUnfoldsACheckin() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
         main().use {
-            onView(tagged("style-mode")).perform(scrollTo(), click())
-            onView(tagged("style:compact")).inRoot(isDialog()).perform(click())
+            onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("checkin-chevron:a")).check(matches(withText("▾")))
+            onView(tagged("checkin-title:a")).perform(scrollTo(), click())
             onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("card:a")).check(doesNotExist())
+            onView(tagged("checkin-chevron:a")).check(matches(withText("▸")))
             onView(tagged("next-line:a")).check(matches(withText(org.hamcrest.Matchers.startsWith("Next: "))))
-            onView(withText("History")).check(doesNotExist()) // card-only actions are gone
-            onView(tagged("row:b")).perform(scrollTo(), click())
-            onView(tagged("checkin-name")).check(matches(withText("Beta"))) // tapping opens its page
+            onView(tagged("card:b")).perform(scrollTo()).check(matches(isDisplayed())) // the other stays open
+            onView(tagged("toggle:a")).check(matches(isDisplayed())) // the switch is still there
+            onView(tagged("checkin-title:a")).perform(scrollTo(), click())
+            onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
         }
-        assertEquals(Grouping.COMPACT, TestEnv.store.style)
+        assertTrue(TestEnv.store.collapsedCheckins.isEmpty())
+    }
+
+    @Test
+    fun collapseAllFoldsCardsWhenUngrouped() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        main().use {
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all")))
+            onView(tagged("toggle-all")).perform(click())
+            for (id in listOf("a", "b")) onView(tagged("row:$id")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("History")).check(doesNotExist())
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Expand all")))
+            onView(tagged("toggle-all")).perform(click())
+            for (id in listOf("a", "b")) onView(tagged("card:$id")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+    }
+
+    @Test
+    fun theOldCompactLayoutStartsFolded() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE).edit()
+            .putString("style", "compact").commit()
+        assertEquals(setOf("a", "b"), TestEnv.store.collapsedCheckins)
+        TestEnv.store.collapsedCheckins = setOf("b") // the first change replaces the old setting
+        assertEquals(setOf("b"), TestEnv.store.collapsedCheckins)
     }
 
     /** [id] answered on track on [good] of the last 4 days, off track on the rest. */
