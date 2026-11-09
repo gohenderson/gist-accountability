@@ -53,7 +53,7 @@ class MainActivity : BaseActivity() {
     // ---------------------------------------------------------------- layout
 
     private fun render() {
-        val oldY = scroll?.scrollY ?: 0
+        val oldY = scroll?.pageScrollY ?: 0
         val col = column()
         val checkins = store.checkins
 
@@ -156,7 +156,7 @@ class MainActivity : BaseActivity() {
         val sv = screen(col)
         setContentView(sv)
         scroll = sv
-        sv.post { sv.scrollTo(0, oldY) }
+        sv.restoreScroll(oldY)
     }
 
     /**

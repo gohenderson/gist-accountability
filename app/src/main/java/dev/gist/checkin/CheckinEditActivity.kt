@@ -54,7 +54,7 @@ class CheckinEditActivity : BaseActivity() {
 
     private fun render() {
         val c = store.checkin(checkinId) ?: return finish()
-        val oldY = scroll?.scrollY ?: 0
+        val oldY = scroll?.pageScrollY ?: 0
         val page = column()
         var col: LinearLayout = page // sections below swap this for their own card
 
@@ -168,7 +168,7 @@ class CheckinEditActivity : BaseActivity() {
         
         setContentView(sv)
         scroll = sv
-        sv.post { sv.scrollTo(0, oldY) }
+        sv.restoreScroll(oldY)
     }
 
     private fun stepsSection(col: LinearLayout, c: Checkin) {
