@@ -12,10 +12,11 @@ object Grouping {
 
     /** (category, its check-ins in your order); categories A–Z, uncategorized last. */
     fun byCategory(checkins: List<Checkin>): List<Pair<String, List<Checkin>>> {
+        // "Health" and "health " are the same category, shown as first written.
         val named = checkins.filter { it.category.isNotBlank() }
-            .groupBy { it.category.trim() }
-            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-            .map { (k, v) -> k to v }
+            .groupBy { it.category.trim().lowercase() }
+            .map { (_, v) -> v.first().category.trim() to v }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first })
         val rest = checkins.filter { it.category.isBlank() }
         return if (rest.isEmpty()) named else named + (OTHER to rest)
     }
