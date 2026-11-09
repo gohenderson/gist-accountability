@@ -103,7 +103,7 @@ class EditCheckinTest {
     fun removingATimeReschedulesForTheRemainingOnes() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Teeth").copy(times = listOf(AlarmTime(7, 0), AlarmTime(22, 0)))))
         open("c").use {
-            onView(tagged("remove-time:0")).perform(scrollTo(), click())
+            onView(tagged("trigger-remove:0")).perform(scrollTo(), click())
         }
         val c = TestEnv.store.checkin("c")!!
         assertEquals(listOf(AlarmTime(22, 0)), c.times)
@@ -115,12 +115,12 @@ class EditCheckinTest {
     fun choosingWeekdaysSavesTheRuleAndMovesTheAlarm() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Work")))
         open("c").use {
-            onView(tagged("repeat")).perform(scrollTo(), click())
+            onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Weekdays (Mon–Fri)")).inRoot(isDialog()).perform(click())
-            onView(withText("Repeats: Mon–Fri")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("trigger-days:0")).perform(scrollTo()).check(matches(withText("Mon–Fri")))
         }
         val c = TestEnv.store.checkin("c")!!
-        assertEquals(Repeat.weekly(Repeat.WEEKDAYS), c.repeat)
+        assertEquals(Repeat.weekly(Repeat.WEEKDAYS), c.daysFor(c.times.single()))
         val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
         assertEquals(AlarmScheduler.nextTriggerMillis(c)!! / 1000, am.nextAlarmClock!!.triggerTime / 1000)
     }
@@ -129,14 +129,14 @@ class EditCheckinTest {
     fun monthlyOnTheFirstThroughTheDateList() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Bills")))
         open("c").use {
-            onView(tagged("repeat")).perform(scrollTo(), click())
+            onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Monthly on certain dates…")).inRoot(isDialog()).perform(click())
             onView(withText("1st")).inRoot(isDialog()).perform(click())
             onView(withText("Save")).inRoot(isDialog()).perform(click())
-            onView(withText("Repeats: monthly on the 1st")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("trigger-days:0")).perform(scrollTo()).check(matches(withText("monthly on the 1st")))
         }
         val c = TestEnv.store.checkin("c")!!
-        assertEquals(Repeat.monthly(setOf(1)), c.repeat)
+        assertEquals(Repeat.monthly(setOf(1)), c.daysFor(c.times.single()))
         val next = java.time.Instant.ofEpochMilli(
             TestEnv.ctx.getSystemService(AlarmManager::class.java).nextAlarmClock!!.triggerTime,
         ).atZone(java.time.ZoneId.systemDefault())
@@ -144,12 +144,41 @@ class EditCheckinTest {
     }
 
     @Test
-    fun theLastTimeCantBeRemoved() {
+    fun removingTheLastTriggerLeavesItSilentAndSaysSo() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Single")))
         open("c").use {
-            onView(tagged("time:0")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("remove-time:0")).check(doesNotExist())
+            onView(tagged("trigger-remove:0")).perform(scrollTo(), click())
+            onView(withText("No triggers: it never rings on its own. Add one below.")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("trigger:0")).check(doesNotExist())
         }
+        assertTrue(TestEnv.store.checkin("c")!!.hasNoTriggers)
+        assertEquals("no alarm left", null, TestEnv.ctx.getSystemService(AlarmManager::class.java).nextAlarmClock)
+    }
+
+    @Test
+    fun addTriggerThenMakeItAnArrival() {
+        for (p in listOf("ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION")) {
+            TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.$p")
+        }
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Mixed")))
+        open("c").use {
+            onView(tagged("add-trigger")).perform(scrollTo(), click())
+            onView(tagged("trigger:1")).perform(scrollTo()).check(matches(isDisplayed()))
+            // Trigger 2 becomes "when I leave", at an existing coordinate.
+            onView(tagged("trigger-when:1")).perform(scrollTo(), click())
+            onView(tagged("kind:leave")).inRoot(isDialog()).perform(click())
+            onView(withText("Enter coordinates…")).inRoot(isDialog()).perform(click())
+            onView(tagged("place-coords")).inRoot(isDialog()).perform(replaceText("40.7128, -74.0060"))
+            onView(withText("Next")).inRoot(isDialog()).perform(click())
+            onView(tagged("place-name")).inRoot(isDialog()).perform(replaceText("Home"))
+            onView(withText("Save")).inRoot(isDialog()).perform(click())
+            onView(tagged("trigger-place:1")).perform(scrollTo()).check(matches(withText("Home · 200 m")))
+            onView(tagged("trigger-time:1")).perform(scrollTo()).check(matches(withText("Anytime")))
+        }
+        val c = TestEnv.store.checkin("c")!!
+        assertEquals(listOf(AlarmTime(12, 0)), c.times)
+        assertEquals(Trigger.LEAVE, c.events.single().kind)
+        assertEquals("Home", c.events.single().place!!.name)
     }
 
     @Test

@@ -60,6 +60,7 @@ data class Trigger(
     val windowEnd: AlarmTime? = null,
     val oncePerDay: Boolean = true,
     val minRunMinutes: Int = 0,            // RUN_END only
+    val days: Repeat = Repeat.EVERY_DAY,   // the days this event trigger is active
 ) {
     val isPlace: Boolean get() = kind == ARRIVE || kind == LEAVE
     val isMovement: Boolean get() = kind == RUN_START || kind == RUN_END
@@ -75,6 +76,7 @@ data class Trigger(
         .put("where", where)
         .put("oncePerDay", oncePerDay)
         .put("minRunMinutes", minRunMinutes)
+        .put("days", days.toJson())
         .apply {
             place?.let { put("place", it.toJson()) }
             windowStart?.let { put("windowStart", it.toString()) }
@@ -105,6 +107,7 @@ data class Trigger(
                 windowEnd = AlarmTime.parse(o.optString("windowEnd", "")),
                 oncePerDay = o.optBoolean("oncePerDay", true),
                 minRunMinutes = o.optInt("minRunMinutes", 0).coerceIn(0, 600),
+                days = Repeat.fromJson(o.optJSONObject("days")),
             )
         }
 
@@ -131,32 +134,29 @@ data class Trigger(
          * Should entering ([entering] = true) or leaving [c]'s place ring it now? [rangToday]:
          * it already rang (or was answered) today.
          */
-        fun placeEventRings(c: Checkin, entering: Boolean, now: LocalDateTime, rangToday: Boolean): Boolean {
-            val t = c.trigger
+        fun placeEventRings(c: Checkin, t: Trigger, entering: Boolean, now: LocalDateTime, rangToday: Boolean): Boolean {
             if (!c.enabled || !t.isPlace || t.place == null) return false
             if ((t.kind == ARRIVE) != entering) return false
-            return conditionsHold(c, now, rangToday)
+            return conditionsHold(t, now, rangToday)
         }
 
         /**
          * Should [c] ring for a run that just started ([finishedMinutes] = null) or just finished
          * after [finishedMinutes] minutes?
          */
-        fun runEventRings(c: Checkin, finishedMinutes: Int?, now: LocalDateTime, rangToday: Boolean): Boolean {
-            val t = c.trigger
+        fun runEventRings(c: Checkin, t: Trigger, finishedMinutes: Int?, now: LocalDateTime, rangToday: Boolean): Boolean {
             if (!c.enabled) return false
             when (t.kind) {
                 RUN_START -> if (finishedMinutes != null) return false
                 RUN_END -> if (finishedMinutes == null || finishedMinutes < t.minRunMinutes) return false
                 else -> return false
             }
-            return conditionsHold(c, now, rangToday)
+            return conditionsHold(t, now, rangToday)
         }
 
         /** Days, time window and once a day: shared by all event triggers. */
-        fun conditionsHold(c: Checkin, now: LocalDateTime, rangToday: Boolean): Boolean {
-            val t = c.trigger
-            if (!c.repeat.matches(now.toLocalDate())) return false
+        fun conditionsHold(t: Trigger, now: LocalDateTime, rangToday: Boolean): Boolean {
+            if (!t.days.matches(now.toLocalDate())) return false
             if (!inWindow(t, now.toLocalTime())) return false
             if (t.oncePerDay && rangToday) return false
             return true
@@ -166,11 +166,21 @@ data class Trigger(
          * For a timed check-in with a place condition: ring given you're [distanceM] from the
          * place? Unknown location (null) rings anyway: better a ring too many than a missed one.
          */
-        fun locationAllows(t: Trigger, distanceM: Double?): Boolean {
-            val p = t.place ?: return true
-            if (t.where == ANYWHERE || distanceM == null) return true
+        fun locationAllows(t: Trigger, distanceM: Double?): Boolean = locationAllows(t.where, t.place, distanceM)
+
+        /** Same, for a timed trigger's own "where". */
+        fun locationAllows(where: String, place: Place?, distanceM: Double?): Boolean {
+            val p = place ?: return true
+            if (where == ANYWHERE || distanceM == null) return true
             val inside = distanceM <= p.radiusM
-            return if (t.where == AT) inside else !inside
+            return if (where == AT) inside else !inside
+        }
+
+        /** "anywhere", "at Home", "away from Home" */
+        fun whereText(where: String, place: Place?): String = when {
+            place == null || where == ANYWHERE -> "anywhere"
+            where == AT -> "at ${place.name}"
+            else -> "away from ${place.name}"
         }
 
         /** e.g. "when you arrive at Gym", "only when away from Home" */

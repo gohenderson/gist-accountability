@@ -12,11 +12,20 @@ data class Question(val id: String, val text: String, val yesIsGood: Boolean = f
 
 /** A time of day an alarm rings. */
 /**
- * A time of day a check-in rings. [days]: the days this time rings on; null means the
- * check-in's own repeat rule (so one check-in can ring at 4:00 AM on Tuesdays and 4:45 AM
- * on the other days).
+ * A time of day a check-in rings: a timed trigger. [days]: the days it rings on (null: the
+ * check-in's [Checkin.repeat]). [where] / [place]: optionally only when you're at
+ * ([Trigger.AT]) or away from ([Trigger.AWAY]) a place at that moment.
  */
-data class AlarmTime(val hour: Int, val minute: Int, val days: Repeat? = null) : Comparable<AlarmTime> {
+data class AlarmTime(
+    val hour: Int,
+    val minute: Int,
+    val days: Repeat? = null,
+    val where: String = Trigger.ANYWHERE,
+    val place: Place? = null,
+) : Comparable<AlarmTime> {
+    /** Does ringing depend on where you are? */
+    val usesLocation: Boolean get() = where != Trigger.ANYWHERE && place != null
+
     override fun compareTo(other: AlarmTime): Int = (hour * 60 + minute) - (other.hour * 60 + other.minute)
 
     /** Stored as "HH:mm", e.g. "07:00". */
@@ -50,7 +59,7 @@ data class Checkin(
     val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
-    val trigger: Trigger = Trigger.DEFAULT, // what makes it ring (times, or arriving/leaving a place)
+    val events: List<Trigger> = emptyList(), // event triggers: arriving / leaving a place, running
     val category: String = "",               // for grouping on the start page; "" = none
 ) {
     /** The days [t] rings on: its own, or the check-in's repeat rule. */
@@ -58,6 +67,18 @@ data class Checkin(
 
     /** Does any time have days of its own? */
     val perTimeDays: Boolean get() = times.any { it.days != null }
+
+    /** Event triggers that watch a place. */
+    val placeEvents: List<Trigger> get() = events.filter { it.isPlace }
+
+    /** Event triggers that watch for running. */
+    val runEvents: List<Trigger> get() = events.filter { it.isMovement }
+
+    /** Does anything about this check-in need the phone's location? */
+    val usesLocation: Boolean get() = times.any { it.usesLocation } || events.any { it.usesLocation }
+
+    /** Has no triggers at all (it only rings when tested)? */
+    val hasNoTriggers: Boolean get() = times.isEmpty() && events.isEmpty()
 
     /** Every question in its question steps, in order: these are what gets logged. */
     val questions: List<Question> get() = steps.filter { it.kind == Steps.QUESTIONS }.flatMap { it.questions }
@@ -358,18 +379,22 @@ class Store(context: Context) {
 
     fun checkinFromJson(o: JSONObject): Checkin {
         // Each time is "HH:mm", or {"t": "HH:mm", "days": {…}} when it has its own days.
-        val ts = o.getJSONArray("times")
-        return Checkin(
+        val ts = o.optJSONArray("times") ?: JSONArray()
+        val c = Checkin(
             id = o.getString("id"),
             name = o.optString("name", "Check-in"),
             times = (0 until ts.length()).mapNotNull { i ->
                 val obj = ts.optJSONObject(i)
                 if (obj != null) {
-                    AlarmTime.parse(obj.optString("t"))?.copy(days = obj.optJSONObject("days")?.let { Repeat.fromJson(it) })
+                    AlarmTime.parse(obj.optString("t"))?.copy(
+                        days = obj.optJSONObject("days")?.let { Repeat.fromJson(it) },
+                        where = obj.optString("where", Trigger.ANYWHERE).takeIf { it in setOf(Trigger.AT, Trigger.AWAY) } ?: Trigger.ANYWHERE,
+                        place = Place.fromJson(obj.optJSONObject("place")),
+                    )
                 } else {
                     AlarmTime.parse(ts.optString(i))
                 }
-            }.distinct().sorted().ifEmpty { listOf(AlarmTime(12, 0)) },
+            }.distinct().sorted(),
             repeat = Repeat.fromJson(o.optJSONObject("repeat")),
             enabled = o.optBoolean("enabled", true),
             aboutYesterday = o.optBoolean("aboutYesterday", false),
@@ -377,9 +402,21 @@ class Store(context: Context) {
             soundUri = o.optString("soundUri", "").ifEmpty { null },
             soundTitle = o.optString("soundTitle", ""),
             background = Background.fromJson(o.optJSONObject("background")),
-            trigger = Trigger.fromJson(o.optJSONObject("trigger")),
+            events = (o.optJSONArray("events") ?: JSONArray()).let { a ->
+                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Trigger.fromJson(it) }.filter { it.isEvent }
+            },
             category = o.optString("category", "").trim(),
         )
+        // Saved before a check-in could have several kinds of trigger: one "trigger" applied
+        // to the whole check-in. An event replaced the times; a place condition applied to all.
+        val legacy = o.optJSONObject("trigger")
+        if (legacy == null || o.has("events")) return c
+        val t = Trigger.fromJson(legacy)
+        return when {
+            t.isEvent -> c.copy(times = emptyList(), events = listOf(t.copy(days = c.repeat)))
+            t.where != Trigger.ANYWHERE && t.place != null -> c.copy(times = c.times.map { it.copy(where = t.where, place = t.place) })
+            else -> c
+        }
     }
 
     fun checkinToJson(c: Checkin): JSONObject {
@@ -388,7 +425,14 @@ class Store(context: Context) {
             .put("name", c.name)
             .put("times", JSONArray().apply {
                 c.times.forEach { t ->
-                    if (t.days == null) put(t.toString()) else put(JSONObject().put("t", t.toString()).put("days", t.days.toJson()))
+                    if (t.days == null && !t.usesLocation) {
+                        put(t.toString())
+                    } else {
+                        put(JSONObject().put("t", t.toString()).apply {
+                            t.days?.let { put("days", it.toJson()) }
+                            if (t.usesLocation) put("where", t.where).put("place", t.place!!.toJson())
+                        })
+                    }
                 }
             })
             .put("repeat", c.repeat.toJson())
@@ -398,7 +442,7 @@ class Store(context: Context) {
             .put("soundTitle", c.soundTitle)
             .put("background", c.background.toJson())
             .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
-            .put("trigger", c.trigger.toJson())
+            .put("events", JSONArray().apply { c.events.forEach { put(it.toJson()) } })
             .put("category", c.category)
     }
 

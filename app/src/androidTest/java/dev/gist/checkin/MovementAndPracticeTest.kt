@@ -47,7 +47,7 @@ class MovementTriggerTest {
 
     @Test
     fun startingARunRingsAStartTrigger() {
-        TestEnv.reset(listOf(TestEnv.checkin("r", "Run").copy(trigger = Trigger(Trigger.RUN_START))))
+        TestEnv.reset(listOf(TestEnv.checkin("r", "Run").copy(times = emptyList(), events = listOf(Trigger(Trigger.RUN_START)))))
         MovementWatch.onRun(TestEnv.ctx, finishedMinutes = null)
         TestEnv.eventually(15_000) { assertTrue("should ring", AlarmService.running) }
         assertEquals("r", TestEnv.store.pending.single().checkinId)
@@ -55,7 +55,7 @@ class MovementTriggerTest {
 
     @Test
     fun finishingRingsOnlyAfterALongEnoughRun() {
-        TestEnv.reset(listOf(TestEnv.checkin("r", "After").copy(trigger = Trigger(Trigger.RUN_END, minRunMinutes = 10))))
+        TestEnv.reset(listOf(TestEnv.checkin("r", "After").copy(times = emptyList(), events = listOf(Trigger(Trigger.RUN_END, minRunMinutes = 10)))))
         MovementWatch.onRun(TestEnv.ctx, finishedMinutes = null) // a start isn't a finish
         MovementWatch.onRun(TestEnv.ctx, finishedMinutes = 6)    // too short
         quietFor(3_000)
@@ -65,7 +65,7 @@ class MovementTriggerTest {
 
     @Test
     fun theStepWatcherRunsOnlyWhileNeeded() {
-        val c = TestEnv.checkin("r", "Run").copy(trigger = Trigger(Trigger.RUN_START))
+        val c = TestEnv.checkin("r", "Run").copy(times = emptyList(), events = listOf(Trigger(Trigger.RUN_START)))
         TestEnv.reset(listOf(c))
         AlarmScheduler.schedule(TestEnv.ctx, c)
         if (!MovementWatch.hasSensor(TestEnv.ctx)) {
@@ -84,14 +84,16 @@ class MovementTriggerTest {
     fun choosingFinishRunningAndAMinimumOnTheEditPage() {
         TestEnv.reset(listOf(TestEnv.checkin("r", "After")))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "r")).use {
-            onView(tagged("trigger-kind")).perform(scrollTo(), click())
+            onView(tagged("trigger-when:0")).perform(scrollTo(), click())
             onView(tagged("kind:run-end")).inRoot(isDialog()).perform(click())
-            onView(tagged("trigger-min-run")).perform(scrollTo(), click())
+            onView(tagged("trigger-min-run:0")).perform(scrollTo(), click())
             onView(withText("At least 20 minutes")).inRoot(isDialog()).perform(click())
             onView(tagged("trigger-summary")).perform(scrollTo())
                 .check(matches(withText(containsString("when you finish a run of 20+ min"))))
         }
-        val t = TestEnv.store.checkin("r")!!.trigger
+        val c = TestEnv.store.checkin("r")!!
+        assertTrue("the time became the run trigger", c.times.isEmpty())
+        val t = c.events.single()
         assertEquals(Trigger.RUN_END, t.kind)
         assertEquals(20, t.minRunMinutes)
     }

@@ -133,8 +133,8 @@ class HistoryActivity : BaseActivity() {
     /** Opens a day's answers for editing; asks which time first if there's more than one. */
     private fun fixDay(c: Checkin, day: String, slots: Map<String, SlotResult>) {
         // Place check-ins have no set times: their results are saved under when they rang.
-        val base = if (c.trigger.isEvent && slots.isNotEmpty()) emptyList() else c.times.map { it.toString() }
-        val times = (base + slots.keys)
+        val base = if (c.times.isEmpty() && slots.isNotEmpty()) emptyList() else c.times.map { it.toString() }
+        val times = (base + slots.keys).ifEmpty { listOf(AlarmScheduler.nearestTime(c).toString()) }
             .distinct()
             .sortedBy { AlarmTime.parse(it) ?: AlarmTime(0, 0) }
         if (times.size == 1) {
