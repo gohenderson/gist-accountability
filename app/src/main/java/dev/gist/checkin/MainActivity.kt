@@ -81,10 +81,11 @@ class MainActivity : BaseActivity() {
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (checkins.size > 1) {
-            // View options: grouping, and expand / collapse all (groups and check-ins).
+            // View (grouping and sort), and expand / collapse all (groups and check-ins).
             val controls = row()
-            controls.addWrapped(textButton("${if (grouped) "Grouped by category" else "Ungrouped"} ▾") { pickView() }.apply {
+            controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
                 tag = "view-mode"
+                contentDescription = "View: ${if (grouped) "by category, " else ""}${Grouping.sortName(store.sort)}"
             })
             val keys = groups.map { Grouping.key(it.first) }.toSet()
             val ids = checkins.map { it.id }.toSet()
@@ -146,7 +147,7 @@ class MainActivity : BaseActivity() {
             col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
         }
 
-        col.add(outlineButton("Settings · backup · dark mode") {
+        col.add(outlineButton("Settings · backup · appearance") { // what's inside, not the current theme
             startActivity(Intent(this, SettingsActivity::class.java))
         }, dp(28))
         col.add(textButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply {
@@ -163,8 +164,15 @@ class MainActivity : BaseActivity() {
      * One check-in: name with its on/off switch, times and steps, last-7-days stat, the next
      * ring (with Do it now / Skip), anything already done early or skipped, and History / Edit.
      */
-    /** [members] as cards that can be dragged up and down by their ≡ handle (within this list). */
-    private fun checkinList(all: List<Checkin>, members: List<Checkin>): ReorderList {
+    /**
+     * [members] as cards, in the chosen sort. In My order they can be dragged up and down by
+     * their ≡ handle (within this list); sorted any other way there are no handles.
+     */
+    private fun checkinList(all: List<Checkin>, unsorted: List<Checkin>): ReorderList {
+        val how = store.sort
+        val members = Grouping.sort(unsorted, how,
+            next = { c -> if (c.enabled) AlarmScheduler.nextOpenOccurrence(store, c)?.at else null },
+            score = { c -> if (c.enabled) Score.of(c, store.allResults(c.id)) else null })
         val list = ReorderList(this) { from, to ->
             store.reorder(Grouping.reorderWithin(all.map { it.id }, members.map { it.id }, from, to))
             render()
@@ -175,7 +183,7 @@ class MainActivity : BaseActivity() {
                 tag = "drag-checkin:${c.id}"
                 contentDescription = "Drag to reorder ${c.name}"
             }
-            val h = if (members.size > 1) handle else null
+            val h = if (members.size > 1 && how == Grouping.SORT_CUSTOM) handle else null
             val score = if (c.enabled) Score.of(c, store.allResults(c.id)) else null
             val folded = c.id in store.collapsedCheckins
             val v = if (folded) checkinRow(c, h, score) else checkinCard(c, h, score)
@@ -184,16 +192,44 @@ class MainActivity : BaseActivity() {
         return list
     }
 
+    /**
+     * View: group by category or not, and the sort (My order, Next alarm, Needs attention,
+     * Name). Each tap applies it and closes the menu.
+     */
     private fun pickView() {
-        val values = listOf(Grouping.UNGROUPED, Grouping.BY_CATEGORY)
-        val options = listOf(
-            DialogOption("Ungrouped", "One list, in your order", "view:ungrouped"),
-            DialogOption("Grouped by category", "A section per category; set a check-in's category on its page", "view:category"),
+        lateinit var dialog: android.app.AlertDialog
+        val sorts = Grouping.SORTS
+        val details = listOf(
+            "As you've dragged them",
+            "Soonest first; ones without a set time go last",
+            "Lowest on-track score first; ones without a score go last",
+            "A to Z",
         )
-        pickDialog("View", options, values.indexOf(store.view)) { i ->
-            store.view = values[i]
-            render()
+        val body = dialogBody {
+            add(checkTile("By category", store.view == Grouping.BY_CATEGORY,
+                "A section per category; set a check-in's category on its page").apply {
+                tag = "view:category"
+                setOnCheckedChangeListener { _, on ->
+                    store.view = if (on) Grouping.BY_CATEGORY else Grouping.UNGROUPED
+                    dialog.dismiss()
+                    render()
+                }
+            })
+            add(sectionTitle("Sort"), dp(14))
+            sorts.forEachIndexed { i, how ->
+                add(optionTile(DialogOption(Grouping.sortName(how), details[i], "sort:$how"), how == store.sort) {
+                    store.sort = how
+                    dialog.dismiss()
+                    render()
+                }, dp(8))
+            }
         }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("View")
+            .setView(body)
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.show()
     }
 
     private fun alarmSwitch(c: Checkin) = styledSwitch().apply {

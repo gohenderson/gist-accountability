@@ -57,16 +57,26 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - **Tap a check-in's title to fold it** to one line: its name, next ring and switch. Tap
     again to unfold it. Each check-in remembers how you left it.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
-- **View** (above the list, once you have two or more check-ins) offers two layouts:
-  - **Ungrouped:** one list.
-  - **Grouped by category:** a section per category, A–Z, with uncategorized check-ins
-    under "Other".
+- **View** (above the list, once you have two or more check-ins) holds both how the list is
+  grouped and how it's sorted. Each choice applies right away. The button shows the
+  current sort.
+  - **By category** (a checkbox): a section per category, A–Z, with uncategorized
+    check-ins under "Other". Unticked, it's one list.
 
   Set a check-in's **Category** on its page, either one you've used or a new one.
   Check-ins from the library come with the library's category. When grouped:
   - you can drag cards within a section;
   - drag a **group** by the ≡ on its header to move it above or below the others;
   - tap a group's header to collapse or expand it.
+- **Sort** (in the same View menu) orders the check-ins, within each group when grouped:
+  - **My order** (the default): as you've dragged them.
+  - **Next alarm:** soonest ring first.
+  - **Needs attention:** lowest on-track score first, so what's slipping comes to the top.
+  - **Name:** A to Z.
+
+  Check-ins without a next ring (switched off, or only place or run triggers) or without
+  a score go last, in your order. While sorted, cards can't be dragged; switch back to My
+  order to rearrange them. Your order is kept underneath, and the choice is remembered.
 - **Collapse all / Expand all** folds or unfolds everything: groups and check-ins.
 - **On-track colors.** Each check-in's card is outlined in a color from red (0%) through
   amber to green (100%) by its score (see [History, scores and

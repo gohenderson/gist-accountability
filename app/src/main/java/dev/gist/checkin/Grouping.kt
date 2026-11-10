@@ -10,6 +10,37 @@ object Grouping {
     const val BY_CATEGORY = "category"
     const val OTHER = "Other"
 
+    /** How check-ins are ordered on the start page (within each group when grouped). */
+    const val SORT_CUSTOM = "custom"       // My order: as dragged
+    const val SORT_NEXT = "next"           // Next alarm: soonest ring first
+    const val SORT_ATTENTION = "attention" // Needs attention: lowest on-track score first
+    const val SORT_NAME = "name"           // Name, A–Z
+    val SORTS = listOf(SORT_CUSTOM, SORT_NEXT, SORT_ATTENTION, SORT_NAME)
+
+    fun sortName(how: String) = when (how) {
+        SORT_NEXT -> "Next alarm"
+        SORT_ATTENTION -> "Needs attention"
+        SORT_NAME -> "Name"
+        else -> "My order"
+    }
+
+    /**
+     * [checkins] (in your order) sorted [how]. [next] is a check-in's next ring (epoch ms) and
+     * [score] its on-track score; check-ins without one (switched off, only place or run
+     * triggers, no history) go last. Ties, and everything at the end, keep your order.
+     */
+    fun sort(
+        checkins: List<Checkin>,
+        how: String,
+        next: (Checkin) -> Long?,
+        score: (Checkin) -> Double?,
+    ): List<Checkin> = when (how) {
+        SORT_NEXT -> checkins.sortedWith(compareBy(nullsLast()) { next(it) })
+        SORT_ATTENTION -> checkins.sortedWith(compareBy(nullsLast()) { score(it) })
+        SORT_NAME -> checkins.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name.trim() })
+        else -> checkins
+    }
+
     /**
      * Expand all / Collapse all: everything is folded when every group in [groups] and every
      * check-in in [ids] is. Then the button expands them all; otherwise it folds them all.

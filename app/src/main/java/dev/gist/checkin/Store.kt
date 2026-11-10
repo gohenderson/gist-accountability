@@ -325,6 +325,11 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
+    /** Start page order: one of Grouping.SORTS (My order by default). */
+    var sort: String
+        get() = prefs.getString(K_SORT, null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
+        set(v) { prefs.edit().putString(K_SORT, v).commit() }
+
     /**
      * Check-ins folded to one line on the start page (ids); the rest show their full card.
      * Anyone who had picked the old "Compact" layout starts with all of them folded.
@@ -524,6 +529,7 @@ class Store(context: Context) {
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
+        private const val K_SORT = "sort"
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"
