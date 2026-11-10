@@ -147,7 +147,7 @@ class MainActivity : BaseActivity() {
             col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
         }
 
-        col.add(outlineButton("Settings · backup · dark mode") {
+        col.add(outlineButton("Settings · backup · appearance") { // what's inside, not the current theme
             startActivity(Intent(this, SettingsActivity::class.java))
         }, dp(28))
         col.add(textButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply {
