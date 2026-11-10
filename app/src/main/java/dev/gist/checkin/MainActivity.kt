@@ -81,16 +81,12 @@ class MainActivity : BaseActivity() {
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (checkins.size > 1) {
-            // View options: grouping and sort, then expand / collapse all (groups and check-ins).
-            val options = row()
-            options.addWrapped(textButton("${if (grouped) "Grouped" else "Ungrouped"} ▾") { pickView() }.apply {
-                tag = "view-mode"
-            })
-            options.addWrapped(textButton("Sort: ${Grouping.sortName(store.sort)} ▾") { pickSort() }.apply {
-                tag = "sort-mode"
-            })
-            col.add(options, dp(4))
+            // View (grouping and sort), and expand / collapse all (groups and check-ins).
             val controls = row()
+            controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
+                tag = "view-mode"
+                contentDescription = "View: ${if (grouped) "by category, " else ""}${Grouping.sortName(store.sort)}"
+            })
             val keys = groups.map { Grouping.key(it.first) }.toSet()
             val ids = checkins.map { it.id }.toSet()
             val allFolded = Grouping.allFolded(keys, store.collapsed, ids, store.collapsedCheckins)
@@ -104,7 +100,7 @@ class MainActivity : BaseActivity() {
                 }
                 render()
             }.apply { tag = "toggle-all" })
-            col.add(controls, 0)
+            col.add(controls, dp(4))
         }
         if (grouped) {
             // Each group can be dragged above / below the others by its ≡, and tapped to fold.
@@ -196,30 +192,44 @@ class MainActivity : BaseActivity() {
         return list
     }
 
+    /**
+     * View: group by category or not, and the sort (My order, Next alarm, Needs attention,
+     * Name). Each tap applies it and closes the menu.
+     */
     private fun pickView() {
-        val values = listOf(Grouping.UNGROUPED, Grouping.BY_CATEGORY)
-        val options = listOf(
-            DialogOption("Ungrouped", "One list", "view:ungrouped"),
-            DialogOption("Grouped by category", "A section per category; set a check-in's category on its page", "view:category"),
+        lateinit var dialog: android.app.AlertDialog
+        val sorts = Grouping.SORTS
+        val details = listOf(
+            "As you've dragged them",
+            "Soonest first; ones without a set time go last",
+            "Lowest on-track score first; ones without a score go last",
+            "A to Z",
         )
-        pickDialog("View", options, values.indexOf(store.view)) { i ->
-            store.view = values[i]
-            render()
+        val body = dialogBody {
+            add(checkTile("By category", store.view == Grouping.BY_CATEGORY,
+                "A section per category; set a check-in's category on its page").apply {
+                tag = "view:category"
+                setOnCheckedChangeListener { _, on ->
+                    store.view = if (on) Grouping.BY_CATEGORY else Grouping.UNGROUPED
+                    dialog.dismiss()
+                    render()
+                }
+            })
+            add(sectionTitle("Sort"), dp(14))
+            sorts.forEachIndexed { i, how ->
+                add(optionTile(DialogOption(Grouping.sortName(how), details[i], "sort:$how"), how == store.sort) {
+                    store.sort = how
+                    dialog.dismiss()
+                    render()
+                }, dp(8))
+            }
         }
-    }
-
-    private fun pickSort() {
-        val values = Grouping.SORTS
-        val options = listOf(
-            DialogOption("My order", "As you've dragged them", "sort:custom"),
-            DialogOption("Next alarm", "Soonest first; ones without a set time go last", "sort:next"),
-            DialogOption("Needs attention", "Lowest on-track score first; ones without a score go last", "sort:attention"),
-            DialogOption("Name", "A to Z", "sort:name"),
-        )
-        pickDialog("Sort", options, values.indexOf(store.sort)) { i ->
-            store.sort = values[i]
-            render()
-        }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("View")
+            .setView(body)
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.show()
     }
 
     private fun alarmSwitch(c: Checkin) = styledSwitch().apply {

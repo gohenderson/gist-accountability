@@ -11,6 +11,8 @@ import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
+import androidx.test.espresso.matcher.ViewMatchers.isChecked
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -68,10 +70,21 @@ class GroupingTest {
         TestEnv.reset(listOf(TestEnv.checkin("a", "A").copy(category = "Health"), TestEnv.checkin("b", "B")))
         main().use {
             onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:category")).inRoot(isDialog()).perform(click())
+            // One menu: By category, then the four sorts.
+            for (how in Grouping.SORTS) onView(tagged("sort:$how")).inRoot(isDialog()).check(matches(isDisplayed()))
+            onView(tagged("view:category")).inRoot(isDialog()).check(matches(isNotChecked())).perform(click())
             onView(tagged("group:Health")).perform(scrollTo()).check(matches(isDisplayed()))
+            assertEquals(Grouping.BY_CATEGORY, TestEnv.store.view)
+            // Sorting keeps the grouping; unticking By category ungroups.
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("sort:attention")).inRoot(isDialog()).perform(click())
+            onView(tagged("group:Health")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:category")).inRoot(isDialog()).check(matches(isChecked())).perform(click())
+            onView(tagged("group:Health")).check(doesNotExist())
         }
-        assertEquals(Grouping.BY_CATEGORY, TestEnv.store.view)
+        assertEquals(Grouping.UNGROUPED, TestEnv.store.view)
+        assertEquals(Grouping.SORT_ATTENTION, TestEnv.store.sort)
     }
 
     @Test
@@ -273,16 +286,16 @@ class GroupingTest {
         val ids = listOf("z", "a", "m")
         main().use { scenario ->
             assertEquals(ids, cardOrder(scenario, ids))
-            onView(tagged("sort-mode")).check(matches(withText("Sort: My order ▾")))
+            onView(tagged("view-mode")).check(matches(withText("View: My order ▾")))
             onView(tagged("drag-checkin:z")).check(matches(isDisplayed()))
 
-            onView(tagged("sort-mode")).perform(scrollTo(), click())
+            onView(tagged("view-mode")).perform(scrollTo(), click())
             onView(tagged("sort:next")).inRoot(isDialog()).perform(click())
-            onView(tagged("sort-mode")).check(matches(withText("Sort: Next alarm ▾")))
+            onView(tagged("view-mode")).check(matches(withText("View: Next alarm ▾")))
             assertEquals(listOf("m", "z", "a"), cardOrder(scenario, ids))
             onView(tagged("drag-checkin:z")).check(doesNotExist()) // no dragging while sorted
 
-            onView(tagged("sort-mode")).perform(scrollTo(), click())
+            onView(tagged("view-mode")).perform(scrollTo(), click())
             onView(tagged("sort:name")).inRoot(isDialog()).perform(click())
             assertEquals(listOf("a", "m", "z"), cardOrder(scenario, ids))
         }

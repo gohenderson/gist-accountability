@@ -146,8 +146,9 @@ the phone you rely on for alarms.
   - Early scanning has no fallback.
 - **The start page:**
   - **Switch:** a card's switch turns its alarm off and on.
-  - **Grouping:** grouped view shows a section per category, with "Other" last, and the
-    View menu switches it.
+  - **Grouping:** grouped view shows a section per category, with "Other" last. The View
+    menu holds By category and the four sorts; sorting keeps the grouping, and unticking
+    By category ungroups.
   - **Dragging:** dragging a card moves it. Dragging a group moves it (your order first,
     then A–Z, "Other" last).
   - **Folding:** a group collapses and expands. Tapping a check-in's title folds it and
