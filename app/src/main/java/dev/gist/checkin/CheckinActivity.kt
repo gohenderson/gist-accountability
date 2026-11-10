@@ -274,6 +274,23 @@ class CheckinActivity : BaseActivity() {
 
     private fun dismissButton(): Button = textButton("Dismiss without the check-in") { dismissSoft() }.apply { tag = "dismiss-alarm" }
 
+    /**
+     * Put the keyboard away before closing. A math step keeps it up, and closing the alarm screen
+     * over the lock screen with the keyboard still showing could leave the next screen, after
+     * unlocking, drawn but not taking touches.
+     */
+    override fun finish() {
+        try {
+            val imm = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            val focus = currentFocus ?: window.decorView
+            imm.hideSoftInputFromWindow(focus.windowToken, 0)
+            focus.clearFocus()
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        } catch (e: Exception) {
+        }
+        super.finish()
+    }
+
     private fun endTestButton(): View = outlineButton("End test") { endTest() }.apply { tag = "end-test" }
 
     override fun onSaveInstanceState(outState: Bundle) {

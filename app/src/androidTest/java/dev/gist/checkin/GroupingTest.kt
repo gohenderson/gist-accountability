@@ -231,6 +231,15 @@ class GroupingTest {
                 assertEquals("color", open.color?.defaultColor, folded.color?.defaultColor)
                 fun size(tag: String) = root.findViewWithTag<android.widget.TextView>(tag).textSize
                 assertEquals("name size", size("checkin-title:b"), size("checkin-title:a"), 0.01f)
+                // The name sits in the same spot, so folding doesn't nudge it up or down.
+                fun pad(tag: String) = root.findViewWithTag<View>(tag).let { listOf(it.paddingLeft, it.paddingTop, it.paddingRight) }
+                assertEquals("padding", pad("card:b"), pad("row:a"))
+                fun titleOffset(card: String, title: String): Pair<Int, Int> {
+                    val c = IntArray(2).also { root.findViewWithTag<View>(card).getLocationOnScreen(it) }
+                    val t = IntArray(2).also { root.findViewWithTag<View>(title).getLocationOnScreen(it) }
+                    return (t[0] - c[0]) to (t[1] - c[1])
+                }
+                assertEquals("name position", titleOffset("card:b", "checkin-title:b"), titleOffset("row:a", "checkin-title:a"))
             }
         }
     }

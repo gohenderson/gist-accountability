@@ -66,7 +66,7 @@ class SoftAlarmTest {
         onView(tagged("snooze")).check(matches(withText("Snooze 10 min")))
         onView(tagged("dismiss-alarm")).perform(scrollTo(), click())
         waitUntilQuiet()
-        val r = TestEnv.store.results(TestEnv.today(), "s").values.single()
+        val r = TestEnv.onlyResult("s")
         assertEquals(SlotResult.DISMISSED, r.status)
         assertTrue("logged as soft", r.soft)
         assertTrue("no stats", TestEnv.store.allResults("s").isEmpty())
@@ -91,7 +91,7 @@ class SoftAlarmTest {
         onView(withText("Submit")).perform(scrollTo(), click())
         waitUntilQuiet()
         // Done, but a soft alarm's answers still don't count.
-        assertTrue(TestEnv.store.results(TestEnv.today(), "s").values.single().soft)
+        assertTrue(TestEnv.onlyResult("s").soft)
         assertNull(Score.of(TestEnv.store.checkin("s")!!, TestEnv.store.allResults("s")))
     }
 
@@ -126,7 +126,7 @@ class SoftAlarmTest {
         val p = TestEnv.store.pending.single()
         SoftAlarmReceiver().onReceive(TestEnv.ctx, SoftAlarmReceiver.intent(TestEnv.ctx, SoftAlarmReceiver.ACTION_DISMISS, p))
         waitUntilQuiet()
-        assertEquals(SlotResult.DISMISSED, TestEnv.store.results(TestEnv.today(), "s").values.single().status)
+        assertEquals(SlotResult.DISMISSED, TestEnv.onlyResult("s").status)
         TestEnv.eventually(10_000) { assertFalse("the alarm screen closes too", CheckinActivity.visible) }
     }
 

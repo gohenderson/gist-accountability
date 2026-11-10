@@ -65,7 +65,7 @@ class VoiceTest {
         assertEquals(before + 1, VoiceService.plays)
         assertFalse("no alarm", AlarmService.running)
         assertTrue("nothing waiting", TestEnv.store.pending.isEmpty())
-        val r = TestEnv.store.results(TestEnv.today(), "v").values.single()
+        val r = TestEnv.onlyResult("v")
         assertEquals(SlotResult.DONE, r.status)
         assertTrue("not counted", r.soft)
         assertTrue(TestEnv.store.allResults("v").isEmpty())

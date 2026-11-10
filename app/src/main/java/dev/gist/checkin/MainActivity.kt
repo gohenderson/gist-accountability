@@ -255,8 +255,7 @@ class MainActivity : BaseActivity() {
 
     /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
     private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = card().apply {
-        checkinBackground(this, score)
-        setPadding(dp(16), dp(10), dp(16), dp(12))
+        checkinBackground(this, score) // same padding as an open card, so nothing shifts when folding
         tag = "row:${c.id}"
         isClickable = true
         setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
