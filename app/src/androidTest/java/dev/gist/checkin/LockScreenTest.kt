@@ -68,6 +68,24 @@ class LockScreenTest {
         return device.wait(Until.findObject(By.text(text)), 2_000)
     }
 
+    /** What's on screen, for failure messages. */
+    private fun diagnose(): String = try {
+        val focus = TestEnv.shell("dumpsys window").lines().firstOrNull { "mCurrentFocus" in it }?.trim()
+        val page = try {
+            onMain {
+                val a = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .firstOrNull { it is CheckinEditActivity }
+                val sv = a?.findViewById<android.view.ViewGroup>(android.R.id.content)?.getChildAt(0) as? android.widget.ScrollView
+                if (sv == null) "no page" else "page scrollY=${sv.scrollY} pending=${(sv as? PageScrollView)?.pendingY} " +
+                    "height=${sv.height} content=${sv.getChildAt(0)?.height} shown=${sv.isShown} focus=${a.hasWindowFocus()}"
+            }
+        } catch (e: Throwable) { "main thread: ${e.message}" }
+        val texts = device.findObjects(By.textContains("")).mapNotNull { it.text }.filter { it.isNotBlank() }.take(12)
+        "[$focus] [$page] [on screen: $texts]"
+    } catch (e: Throwable) {
+        "(diagnose failed: $e)"
+    }
+
     /** The resumed activities. Fails (instead of hanging) if the app's main thread is stuck. */
     private fun resumed(): List<Activity> = onMain { ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList() }
 
@@ -177,7 +195,7 @@ class LockScreenTest {
         assertNotNull("the page is drawn", device.wait(Until.findObject(By.scrollable(true)), 10_000))
         // Scroll back to the top (a hung page wouldn't move).
         val category = scrollTo("Category: none", androidx.test.uiautomator.Direction.UP)
-        assertNotNull("the page scrolls back to the top", category)
+        assertNotNull("the page scrolls back to the top. ${diagnose()}", category)
         category!!.click()
         assertNotNull("and takes taps (the category dialog opens)", device.wait(Until.findObject(By.text("New category…")), 10_000))
         device.pressBack()
