@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- A page's scroll position still waiting to be restored (see Ui.kt restoreScroll). -->
-    <item name="pending_scroll" type="id" />
-</resources>

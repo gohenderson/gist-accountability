@@ -40,20 +40,45 @@ class LockScreenTest {
         pin = false
         TestEnv.allowOverlay(false)
         TestEnv.readyDevice()
-        TestEnv.instrumentation.runOnMainSync {
-            for (stage in listOf(Stage.RESUMED, Stage.PAUSED, Stage.STOPPED)) {
-                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(stage).forEach { it.finish() }
+        try {
+            onMain {
+                for (stage in listOf(Stage.RESUMED, Stage.PAUSED, Stage.STOPPED)) {
+                    ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(stage).forEach { it.finish() }
+                }
             }
+        } catch (e: AssertionError) {
+            // Stuck: the test has already failed; don't hang here too.
         }
         TestEnv.reset(emptyList())
     }
 
-    private fun resumed(): List<Activity> {
-        var list: List<Activity> = emptyList()
-        TestEnv.instrumentation.runOnMainSync {
-            list = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList()
+    /**
+     * Scrolls the page toward [direction] until [text] shows, looking the page up afresh each
+     * time (it's rebuilt now and then, which makes an old reference stale).
+     */
+    private fun scrollTo(text: String, direction: androidx.test.uiautomator.Direction): androidx.test.uiautomator.UiObject2? {
+        repeat(8) {
+            device.findObject(By.text(text))?.let { return it }
+            try {
+                device.findObject(By.scrollable(true))?.scroll(direction, 1f)
+            } catch (e: androidx.test.uiautomator.StaleObjectException) {
+            }
+            Thread.sleep(500)
         }
-        return list
+        return device.wait(Until.findObject(By.text(text)), 2_000)
+    }
+
+    /** The resumed activities. Fails (instead of hanging) if the app's main thread is stuck. */
+    private fun resumed(): List<Activity> = onMain { ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList() }
+
+    private fun <T> onMain(block: () -> T): T {
+        val done = java.util.concurrent.CountDownLatch(1)
+        var result: T? = null
+        android.os.Handler(android.os.Looper.getMainLooper()).post { result = block(); done.countDown() }
+        assertTrue("the app's main thread is stuck (it would show \"Gist isn't responding\")",
+            done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        @Suppress("UNCHECKED_CAST")
+        return result as T
     }
 
     @Test
@@ -73,6 +98,16 @@ class LockScreenTest {
     @Test
     fun sameDuringAMathStepWithAPinLock() = endTestWhileLocked(securePin = true, overlay = true, math = true)
 
+    /**
+     * As on a phone: scroll down the check-in's page and tap its Test button. A scrolled page is
+     * put back in place when it's redrawn after unlocking, and that used to hang the app.
+     */
+    @Test
+    fun sameFromTheTestButtonOnAScrolledPage() = endTestWhileLocked(securePin = false, overlay = false, fromButton = true)
+
+    @Test
+    fun sameFromTheTestButtonWithAPinLock() = endTestWhileLocked(securePin = true, overlay = true, fromButton = true)
+
     private fun unlockWithPin() {
         TestEnv.shell("input keyevent KEYCODE_WAKEUP")
         Thread.sleep(500)
@@ -83,7 +118,9 @@ class LockScreenTest {
         Thread.sleep(1_500)
     }
 
-    private fun endTestWhileLocked(securePin: Boolean, overlay: Boolean, video: Boolean = false, math: Boolean = false) {
+    private fun endTestWhileLocked(
+        securePin: Boolean, overlay: Boolean, video: Boolean = false, math: Boolean = false, fromButton: Boolean = false,
+    ) {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         if (overlay) TestEnv.allowOverlay(true)
         val c = TestEnv.checkin("t", "Test me", listOf(Question("q", "Q?")), mathCount = if (math) 3 else 0)
@@ -98,7 +135,16 @@ class LockScreenTest {
         TestEnv.eventually(10_000) { assertTrue(resumed().any { it is CheckinEditActivity }) }
 
         // Test, then lock the phone.
-        AlarmScheduler.scheduleTest(TestEnv.ctx, "t", 3_000)
+        if (fromButton) {
+            val button = scrollTo("Test: ring in 10 seconds", androidx.test.uiautomator.Direction.DOWN)
+            assertNotNull("the Test button", button)
+            val a = resumed().first { it is CheckinEditActivity }
+            val scrolled = onMain { a.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0).scrollY }
+            assertTrue("the page is scrolled down ($scrolled)", scrolled > 0)
+            button!!.click()
+        } else {
+            AlarmScheduler.scheduleTest(TestEnv.ctx, "t", 3_000)
+        }
         TestEnv.shell("input keyevent KEYCODE_SLEEP")
         TestEnv.eventually(30_000) { assertTrue("the test should ring over the lock screen", CheckinActivity.visible) }
 
@@ -128,17 +174,15 @@ class LockScreenTest {
         }
         TestEnv.readyDevice()
         TestEnv.eventually(15_000) { assertTrue("the check-in's page is in front", resumed().any { it is CheckinEditActivity }) }
-        val category = device.wait(Until.findObject(By.text("Category: none")), 10_000)
-        assertNotNull("the page is drawn", category)
-        category.click()
+        assertNotNull("the page is drawn", device.wait(Until.findObject(By.scrollable(true)), 10_000))
+        // Scroll back to the top (a hung page wouldn't move).
+        val category = scrollTo("Category: none", androidx.test.uiautomator.Direction.UP)
+        assertNotNull("the page scrolls back to the top", category)
+        category!!.click()
         assertNotNull("and takes taps (the category dialog opens)", device.wait(Until.findObject(By.text("New category…")), 10_000))
         device.pressBack()
         assertTrue("the dialog closes with Back", device.wait(Until.gone(By.text("New category…")), 10_000))
-        // And it scrolls.
-        val page = device.wait(Until.findObject(By.scrollable(true)), 5_000)
-        assertNotNull("a scrollable page", page)
-        page.scroll(androidx.test.uiautomator.Direction.DOWN, 1f)
-        page.scroll(androidx.test.uiautomator.Direction.DOWN, 1f)
-        assertNotNull("scrolled to the bottom", device.wait(Until.findObject(By.text("Delete this check-in")), 5_000))
+        // And it scrolls down again.
+        assertNotNull("scrolled to the bottom", scrollTo("Delete this check-in", androidx.test.uiautomator.Direction.DOWN))
     }
 }

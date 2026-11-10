@@ -214,7 +214,7 @@ fun applySystemBarInsets(view: View, basePad: Int) {
 }
 
 /** Standard scrolling screen: content padded and inset for the system bars. */
-fun Context.screen(content: View): android.widget.ScrollView = android.widget.ScrollView(this).apply {
+fun Context.screen(content: View): android.widget.ScrollView = PageScrollView(this).apply {
     clipToPadding = false
     isFillViewport = true
     addView(content)
@@ -222,26 +222,37 @@ fun Context.screen(content: View): android.widget.ScrollView = android.widget.Sc
 }
 
 /**
- * Puts [this] back at scroll position [y] after the page was rebuilt. Done just before the
- * new page's first frame, once it has been laid out: restoring it a frame later (with post)
- * briefly showed the top of the page first, a visible flicker when scrolled down.
+ * A page's scroll view. After the page is rebuilt it's put back at the old position at the end
+ * of its first layout, before anything is drawn: no flash of the top of the page.
+ *
+ * (It used to be done in a pre-draw listener that skipped that frame. On a Pixel 8 Pro, a
+ * scrolled check-in page redrawn on unlocking, after ending a test ring on the lock screen,
+ * then hung: "Gist isn't responding". Skipping a frame Android is waiting for is risky; this
+ * skips nothing.)
  */
-fun android.widget.ScrollView.restoreScroll(y: Int) {
-    if (y <= 0) return
-    setTag(R.id.pending_scroll, y)
-    viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
-        override fun onPreDraw(): Boolean {
-            viewTreeObserver.removeOnPreDrawListener(this)
-            setTag(R.id.pending_scroll, null)
-            scrollTo(0, y)
-            return false // skip this frame (drawn at the top); the next one is drawn in place
+class PageScrollView(context: Context) : android.widget.ScrollView(context) {
+    /** The position to put back at the next layout, or 0. */
+    var pendingY = 0
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        if (pendingY > 0 && height > 0 && childCount > 0 && getChildAt(0).height > 0) {
+            val y = pendingY
+            pendingY = 0
+            scrollTo(0, y) // clamped to the page's height
         }
-    })
+    }
 }
 
-/** Where the page is scrolled to, counting a position that hasn't been restored yet. */
+/** Puts a rebuilt page back at scroll position [y] (see [PageScrollView]). */
+fun android.widget.ScrollView.restoreScroll(y: Int) {
+    if (y <= 0) return
+    if (this is PageScrollView) pendingY = y else post { scrollTo(0, y) }
+}
+
+/** Where the page is scrolled to, counting a position that hasn't been put back yet. */
 val android.widget.ScrollView.pageScrollY: Int
-    get() = getTag(R.id.pending_scroll) as? Int ?: scrollY
+    get() = (this as? PageScrollView)?.pendingY?.takeIf { it > 0 } ?: scrollY
 
 // ------------------------------------------------------------------ dialogs
 //
