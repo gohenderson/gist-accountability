@@ -23,6 +23,13 @@ object TestEnv {
 
     fun today(): String = Days.today()
 
+    /**
+     * The one result [checkinId] has logged, whatever day it went under. A ring before 4 AM is
+     * filed under the previous day, so looking under [today] fails for tests run after midnight.
+     */
+    fun onlyResult(checkinId: String): SlotResult =
+        store.allResults(checkinId, includeSoft = true).values.flatMap { it.values }.single()
+
     /** Screen on, unlocked, no system dialog in front: otherwise test screens never get focus. */
     fun readyDevice() {
         shell("input keyevent KEYCODE_WAKEUP")
