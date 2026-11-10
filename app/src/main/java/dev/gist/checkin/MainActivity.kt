@@ -81,11 +81,16 @@ class MainActivity : BaseActivity() {
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (checkins.size > 1) {
-            // View options: grouping, and expand / collapse all (groups and check-ins).
-            val controls = row()
-            controls.addWrapped(textButton("${if (grouped) "Grouped by category" else "Ungrouped"} ▾") { pickView() }.apply {
+            // View options: grouping and sort, then expand / collapse all (groups and check-ins).
+            val options = row()
+            options.addWrapped(textButton("${if (grouped) "Grouped" else "Ungrouped"} ▾") { pickView() }.apply {
                 tag = "view-mode"
             })
+            options.addWrapped(textButton("Sort: ${Grouping.sortName(store.sort)} ▾") { pickSort() }.apply {
+                tag = "sort-mode"
+            })
+            col.add(options, dp(4))
+            val controls = row()
             val keys = groups.map { Grouping.key(it.first) }.toSet()
             val ids = checkins.map { it.id }.toSet()
             val allFolded = Grouping.allFolded(keys, store.collapsed, ids, store.collapsedCheckins)
@@ -99,7 +104,7 @@ class MainActivity : BaseActivity() {
                 }
                 render()
             }.apply { tag = "toggle-all" })
-            col.add(controls, dp(4))
+            col.add(controls, 0)
         }
         if (grouped) {
             // Each group can be dragged above / below the others by its ≡, and tapped to fold.
@@ -163,8 +168,15 @@ class MainActivity : BaseActivity() {
      * One check-in: name with its on/off switch, times and steps, last-7-days stat, the next
      * ring (with Do it now / Skip), anything already done early or skipped, and History / Edit.
      */
-    /** [members] as cards that can be dragged up and down by their ≡ handle (within this list). */
-    private fun checkinList(all: List<Checkin>, members: List<Checkin>): ReorderList {
+    /**
+     * [members] as cards, in the chosen sort. In My order they can be dragged up and down by
+     * their ≡ handle (within this list); sorted any other way there are no handles.
+     */
+    private fun checkinList(all: List<Checkin>, unsorted: List<Checkin>): ReorderList {
+        val how = store.sort
+        val members = Grouping.sort(unsorted, how,
+            next = { c -> if (c.enabled) AlarmScheduler.nextOpenOccurrence(store, c)?.at else null },
+            score = { c -> if (c.enabled) Score.of(c, store.allResults(c.id)) else null })
         val list = ReorderList(this) { from, to ->
             store.reorder(Grouping.reorderWithin(all.map { it.id }, members.map { it.id }, from, to))
             render()
@@ -175,7 +187,7 @@ class MainActivity : BaseActivity() {
                 tag = "drag-checkin:${c.id}"
                 contentDescription = "Drag to reorder ${c.name}"
             }
-            val h = if (members.size > 1) handle else null
+            val h = if (members.size > 1 && how == Grouping.SORT_CUSTOM) handle else null
             val score = if (c.enabled) Score.of(c, store.allResults(c.id)) else null
             val folded = c.id in store.collapsedCheckins
             val v = if (folded) checkinRow(c, h, score) else checkinCard(c, h, score)
@@ -187,11 +199,25 @@ class MainActivity : BaseActivity() {
     private fun pickView() {
         val values = listOf(Grouping.UNGROUPED, Grouping.BY_CATEGORY)
         val options = listOf(
-            DialogOption("Ungrouped", "One list, in your order", "view:ungrouped"),
+            DialogOption("Ungrouped", "One list", "view:ungrouped"),
             DialogOption("Grouped by category", "A section per category; set a check-in's category on its page", "view:category"),
         )
         pickDialog("View", options, values.indexOf(store.view)) { i ->
             store.view = values[i]
+            render()
+        }
+    }
+
+    private fun pickSort() {
+        val values = Grouping.SORTS
+        val options = listOf(
+            DialogOption("My order", "As you've dragged them", "sort:custom"),
+            DialogOption("Next alarm", "Soonest first; ones without a set time go last", "sort:next"),
+            DialogOption("Needs attention", "Lowest on-track score first; ones without a score go last", "sort:attention"),
+            DialogOption("Name", "A to Z", "sort:name"),
+        )
+        pickDialog("Sort", options, values.indexOf(store.sort)) { i ->
+            store.sort = values[i]
             render()
         }
     }

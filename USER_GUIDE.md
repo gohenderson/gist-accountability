@@ -67,6 +67,15 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - you can drag cards within a section;
   - drag a **group** by the ≡ on its header to move it above or below the others;
   - tap a group's header to collapse or expand it.
+- **Sort** (next to View) orders the check-ins, within each group when grouped:
+  - **My order** (the default): as you've dragged them.
+  - **Next alarm:** soonest ring first.
+  - **Needs attention:** lowest on-track score first, so what's slipping comes to the top.
+  - **Name:** A to Z.
+
+  Check-ins without a next ring (switched off, or only place or run triggers) or without
+  a score go last, in your order. While sorted, cards can't be dragged; switch back to My
+  order to rearrange them. Your order is kept underneath, and the choice is remembered.
 - **Collapse all / Expand all** folds or unfolds everything: groups and check-ins.
 - **On-track colors.** Each check-in's card is outlined in a color from red (0%) through
   amber to green (100%) by its score (see [History, scores and

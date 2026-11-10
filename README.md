@@ -84,6 +84,9 @@ to green.
 - **Run the monthly chores.** A money check on the 1st, bills on the 15th and the last
   day of the month.
 
+The start page shows them all, colored by score. Group them by category, sort them by
+next alarm or by what needs attention, and fold the ones you don't need to see.
+
 A library of ready-made check-ins (Food, Wake-up, Health, Fitness, Mind, Money) gets you
 started. Copy one and adjust it, or start from scratch.
 

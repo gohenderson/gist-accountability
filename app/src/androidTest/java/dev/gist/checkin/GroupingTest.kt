@@ -40,6 +40,7 @@ class GroupingTest {
         TestEnv.allowOverlay(false)
         TestEnv.store.view = Grouping.UNGROUPED
         TestEnv.store.collapsedCheckins = emptySet()
+        TestEnv.store.sort = Grouping.SORT_CUSTOM
         TestEnv.store.groupOrder = emptyList()
         TestEnv.store.collapsed = emptySet()
         TestEnv.reset(emptyList())
@@ -242,6 +243,72 @@ class GroupingTest {
                 assertEquals("name position", titleOffset("card:b", "checkin-title:b"), titleOffset("row:a", "checkin-title:a"))
             }
         }
+    }
+
+    /** Ids of the check-in cards on screen, top to bottom. */
+    private fun cardOrder(scenario: ActivityScenario<MainActivity>, ids: List<String>): List<String> {
+        var order = emptyList<String>()
+        scenario.onActivity { a ->
+            val root = a.window.decorView
+            order = ids.mapNotNull { id ->
+                val v = root.findViewWithTag<View>("card:$id") ?: root.findViewWithTag<View>("row:$id") ?: return@mapNotNull null
+                val xy = IntArray(2).also { v.getLocationInWindow(it) }
+                id to xy[1]
+            }.sortedBy { it.second }.map { it.first }
+        }
+        return order
+    }
+
+    @Test
+    fun sortingReordersTheListAndHidesTheHandles() {
+        // My order: Zed, apple, Mid. Next rings: Mid soonest, then Zed; apple is off (no next).
+        val now = java.time.LocalTime.now()
+        fun at(min: Long) = now.plusMinutes(min).let { AlarmTime(it.hour, it.minute) }
+        TestEnv.reset(listOf(
+            TestEnv.checkin("z", "Zed").copy(times = listOf(at(120))),
+            TestEnv.checkin("a", "apple").copy(enabled = false),
+            TestEnv.checkin("m", "Mid").copy(times = listOf(at(30))),
+        ))
+        TestEnv.store.collapsedCheckins = setOf("z", "a", "m") // short rows, all on screen
+        val ids = listOf("z", "a", "m")
+        main().use { scenario ->
+            assertEquals(ids, cardOrder(scenario, ids))
+            onView(tagged("sort-mode")).check(matches(withText("Sort: My order ▾")))
+            onView(tagged("drag-checkin:z")).check(matches(isDisplayed()))
+
+            onView(tagged("sort-mode")).perform(scrollTo(), click())
+            onView(tagged("sort:next")).inRoot(isDialog()).perform(click())
+            onView(tagged("sort-mode")).check(matches(withText("Sort: Next alarm ▾")))
+            assertEquals(listOf("m", "z", "a"), cardOrder(scenario, ids))
+            onView(tagged("drag-checkin:z")).check(doesNotExist()) // no dragging while sorted
+
+            onView(tagged("sort-mode")).perform(scrollTo(), click())
+            onView(tagged("sort:name")).inRoot(isDialog()).perform(click())
+            assertEquals(listOf("a", "m", "z"), cardOrder(scenario, ids))
+        }
+        assertEquals("remembered", Grouping.SORT_NAME, TestEnv.store.sort)
+        assertEquals("your order is kept", ids, TestEnv.store.checkins.map { it.id })
+    }
+
+    @Test
+    fun needsAttentionSortsWithinEachGroup() {
+        val q = Question("soda", "Soda?")
+        TestEnv.reset(listOf(
+            TestEnv.checkin("g", "Good", listOf(q)).copy(category = "Health"),
+            TestEnv.checkin("b", "Bad", listOf(q)).copy(category = "Health"),
+            TestEnv.checkin("o", "Other one", listOf(q)).copy(category = "Fitness"),
+        ))
+        history("g", 4) // all on track
+        history("b", 0) // all off track
+        TestEnv.store.view = Grouping.BY_CATEGORY
+        TestEnv.store.sort = Grouping.SORT_ATTENTION
+        TestEnv.store.collapsedCheckins = setOf("g", "b", "o")
+        val ids = listOf("g", "b", "o")
+        main().use { scenario ->
+            // Groups stay A–Z (Fitness, Health); within Health the worst comes first.
+            assertEquals(listOf("o", "b", "g"), cardOrder(scenario, ids))
+        }
+        TestEnv.store.view = Grouping.UNGROUPED
     }
 
     @Test

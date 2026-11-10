@@ -614,6 +614,37 @@ class RunDetectorTest {
     }
 }
 
+class SortTest {
+    private fun c(id: String, name: String = id) = Checkin(id = id, name = name)
+    private val list = listOf(c("a", "walk"), c("b", "Bed"), c("c", "Coffee"), c("d", "ab"))
+
+    @Test
+    fun myOrderIsUntouched() {
+        assertEquals(list, Grouping.sort(list, Grouping.SORT_CUSTOM, { 1L }, { 0.5 }))
+    }
+
+    @Test
+    fun nextAlarmIsSoonestFirstWithNoTimeLastInYourOrder() {
+        val next = mapOf("a" to 300L, "b" to null, "c" to 100L, "d" to null)
+        val sorted = Grouping.sort(list, Grouping.SORT_NEXT, { next[it.id] }, { null })
+        assertEquals(listOf("c", "a", "b", "d"), sorted.map { it.id })
+    }
+
+    @Test
+    fun needsAttentionIsLowestScoreFirstWithNoScoreLast() {
+        val score = mapOf("a" to 0.9, "b" to 0.2, "c" to null, "d" to 0.2)
+        val sorted = Grouping.sort(list, Grouping.SORT_ATTENTION, { null }, { score[it.id] })
+        assertEquals("ties keep your order", listOf("b", "d", "a", "c"), sorted.map { it.id })
+    }
+
+    @Test
+    fun nameIgnoresCase() {
+        assertEquals(listOf("d", "b", "c", "a"), Grouping.sort(list, Grouping.SORT_NAME, { null }, { null }).map { it.id })
+        assertEquals("Needs attention", Grouping.sortName(Grouping.SORT_ATTENTION))
+        assertEquals("My order", Grouping.sortName("nonsense"))
+    }
+}
+
 class CommitmentTest {
     @Test
     fun onlyStrictCheckinsCount() {

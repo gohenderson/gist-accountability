@@ -48,6 +48,8 @@ the phone you rely on for alarms.
   voice check-in says.
 - **Scores and grouping:** on-track scores and colors, categories and their order,
   folding and Expand all / Collapse all.
+- **Sorting:** My order, Next alarm (no next ring last), Needs attention (no score last;
+  ties keep your order), Name (ignoring case).
 - **Commitment:** strict, soft and voice, and which ones count.
 - **Library:** the templates are well formed, and copies get free names.
 - **README:** keeps the `## Donate` heading the app's Donate button links to.
@@ -152,6 +154,9 @@ the phone you rely on for alarms.
     back. Collapse all / Expand all folds groups and check-ins, also when ungrouped. The
     old Compact setting starts everything folded.
   - **Card styles:** folded and open cards share their background, corners and name size.
+  - **Sorting:** Next alarm and Name reorder the list (switched-off check-ins last) and
+    hide the drag handles, and your own order is kept. Needs attention sorts within each
+    group. The choice is remembered.
   - **Scrolling:** folding while scrolled down never draws a frame at the top.
   - **Scores:** check-ins and groups show their score as color only (screen readers read
     the number); the overall score is at the top; a check-in's page shows its own; no
