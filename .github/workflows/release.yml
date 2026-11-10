@@ -1,20 +1,22 @@
 name: Release
 
-# Two ways to release:
-#   - Actions → Release → Run workflow, enter a version like v1.0.0. If that tag doesn't
-#     exist yet, it's created on the commit you run from (normally main's latest).
-#   - Or push a tag yourself: git tag v1.0.0 && git push origin v1.0.0
+# The Android app. Two ways to release:
+#   - Actions → Release → Run workflow, enter a version like android-v1.0.0. If that tag
+#     doesn't exist yet, it's created on the commit you run from (normally main's latest).
+#   - Or push a tag yourself: git tag android-v1.0.0 && git push origin android-v1.0.0
+# Tags are prefixed by platform (android-v…, later ios-v…). Older plain v… tags still work,
+# e.g. to rebuild a release made before the prefix.
 # Requires the signing secrets in the "release" environment (RELEASING.md);
 # each run waits for approval under Actions before it can use them. The full test suite
 # (Build workflow) runs first; the approval request only appears once it passes.
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["android-v*", "v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version tag, e.g. v1.0.0 (created on this commit if it doesn't exist)"
+        description: "Version tag, e.g. android-v1.0.0 (created on this commit if it doesn't exist)"
         required: true
 
 permissions:
@@ -53,8 +55,8 @@ jobs:
       - name: Validate and check out tag
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}([-.][0-9A-Za-z.]+)?$ ]]; then
-            echo "::error title=Bad tag::'$TAG' doesn't look like a version tag (expected e.g. v1.0.0)."
+          if [[ ! "$TAG" =~ ^(android-)?v[0-9]+(\.[0-9]+){0,2}([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "::error title=Bad tag::'$TAG' doesn't look like an Android version tag (expected e.g. android-v1.0.0)."
             exit 1
           fi
           if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
@@ -64,10 +66,13 @@ jobs:
             echo "Creating tag $TAG at $(git rev-parse HEAD)"
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" -m "Gist $TAG"
+            git tag -a "$TAG" -m "Gist for Android ${TAG#android-}"
             git push origin "refs/tags/$TAG"
           fi
-          echo "VERSION_NAME=${TAG#v}" >> "$GITHUB_ENV"
+          version="${TAG#android-}"
+          echo "VERSION_NAME=${version#v}" >> "$GITHUB_ENV"
+          # Releases tagged before the move to android/ have the project at the root.
+          if [[ -f android/settings.gradle.kts ]]; then echo "ANDROID_DIR=android" >> "$GITHUB_ENV"; else echo "ANDROID_DIR=." >> "$GITHUB_ENV"; fi
           echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Check signing secrets
@@ -126,9 +131,9 @@ jobs:
       - name: Verify signature and package
         run: |
           set -euo pipefail
-          apk=app/build/outputs/apk/release/app-release.apk
+          apk="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
           if [[ ! -f "$apk" ]]; then
-            echo "::error title=No signed APK::Expected $apk. Found:"; ls -R app/build/outputs/apk || true
+            echo "::error title=No signed APK::Expected $apk. Found:"; ls -R "$ANDROID_DIR/app/build/outputs/apk" || true
             exit 1
           fi
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
@@ -144,12 +149,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          notes="Signed APK for Android 10+. Verify the download with the .sha256 file."
+          notes="Gist for Android: signed APK for Android 10+. Verify the download with the .sha256 file."
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG exists; replacing its files."
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "Gist $TAG" --notes "$notes" --generate-notes
+            gh release create "$TAG" dist/* --title "Gist for Android ${TAG#android-}" --notes "$notes" --generate-notes
           fi
           echo "### ✅ Released [$TAG](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
 
@@ -162,6 +167,8 @@ jobs:
           name: release-logs
           path: |
             build-logs/
+            android/app/build/reports/
+            android/build/reports/
             app/build/reports/
             build/reports/
           if-no-files-found: ignore

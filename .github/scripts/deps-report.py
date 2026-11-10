@@ -3,7 +3,7 @@
 
 Checks, and writes a Markdown report:
   1. Outdated build tools and libraries: Gradle, the Android Gradle Plugin, Kotlin, and every
-     library in app/build.gradle.kts, against the latest stable versions on Google Maven /
+     library in android/app/build.gradle.kts, against the latest stable versions on Google Maven /
      Maven Central / services.gradle.org.
   2. Outdated GitHub Actions: each `uses: owner/repo@vN` against the action's latest release,
      plus actions still running on an old Node.js runtime (node16/node20).
@@ -76,10 +76,10 @@ def read(path):
 
 
 def check_build_tools(findings, rows):
-    root = read("build.gradle.kts")
-    app = read("app/build.gradle.kts")
+    root = read("android/build.gradle.kts")
+    app = read("android/app/build.gradle.kts")
     wf = "\n".join(read(f) for f in glob.glob(".github/workflows/*.yml"))
-    wrapper = read("gradle/wrapper/gradle-wrapper.properties")
+    wrapper = read("android/gradle/wrapper/gradle-wrapper.properties")
 
     items = []
     m = re.search(r'GRADLE_VERSION:\s*"([^"]+)"', wf)

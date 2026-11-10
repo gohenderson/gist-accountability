@@ -44,7 +44,9 @@ How Gist is put together, for anyone reading or changing the code. To build it, 
 
 ## Files
 
-All code is in `app/src/main/java/dev/gist/checkin/`.
+The repository holds one folder per platform: `android/` (this app), `ios/` (the iPhone
+app, coming next) and `shared/` (sample backups both apps' tests import). The Android code
+is in `android/app/src/main/java/dev/gist/checkin/`.
 
 **Screens**
 
@@ -118,8 +120,9 @@ All code is in `app/src/main/java/dev/gist/checkin/`.
 
 | Path | What it is |
 |---|---|
-| `app/src/test/` | JVM unit tests ([TESTING.md](TESTING.md)) |
-| `app/src/androidTest/` | Espresso and UI Automator tests on an emulator |
-| `app/src/debug/AndroidManifest.xml` | lets the screenshot script open screens directly (debug builds only) |
+| `android/app/src/test/` | JVM unit tests ([TESTING.md](TESTING.md)) |
+| `android/app/src/androidTest/` | Espresso and UI Automator tests on an emulator |
+| `android/app/src/debug/AndroidManifest.xml` | lets the screenshot script open screens directly (debug builds only) |
+| `shared/backups/` | sample backups that both apps' tests import, so they stay compatible |
 | `.github/workflows/` | Build, Release, Screenshots, CodeQL, Security report ([RELEASING.md](RELEASING.md), [SECURITY.md](SECURITY.md)) |
 | `.github/scripts/` | Gradle runner, UI test runner, screenshot script and demo data, test and dependency reports |

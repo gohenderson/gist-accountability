@@ -12,6 +12,10 @@ android {
     namespace = "dev.gist.checkin"
     compileSdk = 36
 
+    // Sample backups shared with the iOS app (repo root shared/backups): the UI tests
+    // import them (SharedBackupTest), so both apps read the same files the same way.
+    sourceSets["androidTest"].assets.srcDir("../../shared/backups")
+
     defaultConfig {
         applicationId = "dev.gist.checkin"
         minSdk = 29          // Android 10+

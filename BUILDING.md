@@ -1,6 +1,14 @@
 # Building Gist
 
-Most people should install a signed APK from
+The repository holds each platform's app in its own folder:
+
+| Folder | What's in it |
+|---|---|
+| `android/` | the Android app (Kotlin, Gradle) |
+| `ios/` | the iPhone app (Swift), coming next |
+| `shared/` | files both apps use in their tests, such as sample backups |
+
+This page covers the Android app. Most people should install a signed APK from
 [Releases](https://github.com/gohenderson/gist-accountability/releases) (see the
 [README](README.md#get-it)). This page covers building it yourself.
 
@@ -17,7 +25,8 @@ downloads Gradle itself, and CI installs the version it needs.
 ## With Android Studio
 
 1. Install [Android Studio](https://developer.android.com/studio).
-2. **File → Open** and choose this folder. Let Gradle sync. Android Studio downloads
+2. **File → Open** and choose the repository's **`android`** folder (not the repository
+   root). Let Gradle sync. Android Studio downloads
    Gradle and the Android SDK itself. If it offers to upgrade the Android Gradle Plugin,
    accepting is fine.
 3. On your phone: **Settings → About phone**, then tap **Build number** 7 times to enable
@@ -26,9 +35,12 @@ downloads Gradle itself, and CI installs the version it needs.
 
 ## From the command line
 
+From the repository root (`-p android` points Gradle at the Android project), or run the
+same commands without `-p android` from inside `android/`:
+
 ```
-gradle assembleDebug                  # app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+gradle -p android assembleDebug       # android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Local builds are versioned `dev`. CI passes `-PversionCode=… -PversionName=…` for

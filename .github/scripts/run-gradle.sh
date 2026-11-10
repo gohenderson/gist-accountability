@@ -8,6 +8,9 @@
 # - Any unexpected error in this script itself is reported with its line number.
 #
 # Usage: .github/scripts/run-gradle.sh <gradle args...>
+#
+# Run from the repository root. The Android project is android/ (or the root itself in
+# tags from before the move to android/); set GRADLE_PROJECT_DIR to override.
 
 set -Eeuo pipefail
 on_crash() { echo "::error title=run-gradle.sh crashed::line $1: $2 (exit $3)"; }
@@ -18,14 +21,17 @@ mkdir -p "$LOG_DIR"
 name="$(printf '%s' "$*" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-80)"
 LOG="$LOG_DIR/gradle-${name}.log"
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+if [[ -z "${GRADLE_PROJECT_DIR:-}" ]]; then
+  if [[ -f android/settings.gradle.kts ]]; then GRADLE_PROJECT_DIR=android; else GRADLE_PROJECT_DIR=.; fi
+fi
 
-echo "Gradle: gradle $*"
+echo "Gradle: gradle -p $GRADLE_PROJECT_DIR $*"
 echo "Full log: $LOG"
 
 # Gradle failing is expected to be handled below, not reported as a script crash.
 trap - ERR
 set +e
-gradle "$@" \
+gradle -p "$GRADLE_PROJECT_DIR" "$@" \
   --stacktrace \
   --console=plain \
   --warning-mode=summary \
