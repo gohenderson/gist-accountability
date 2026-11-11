@@ -30,7 +30,16 @@ struct RootView: View {
             .onChange(of: phase) { _, now in
                 if now == .active { Task { await model.refresh() } }
             }
-            .task { await model.refresh() }
+            .task {
+                #if DEBUG
+                let args = ProcessInfo.processInfo.arguments
+                if args.contains("-gist-demo") { model.loadDemo() }
+                if let i = args.firstIndex(of: "-gist-route"), i + 1 < args.count {
+                    model.debugRoute = args[i + 1]
+                }
+                #endif
+                await model.refresh()
+            }
             .alert("Gist", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {

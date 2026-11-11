@@ -53,6 +53,21 @@ struct StartView: View {
             }
             .sheet(isPresented: $reordering) { ReorderView() }
         }
+        .onChange(of: model.debugRoute) { _, route in
+            guard let route else { return }
+            model.debugRoute = nil
+            let parts = route.split(separator: ":", maxSplits: 1).map(String.init)
+            switch parts.first {
+            case "edit": if parts.count == 2 { path.append(Route.edit(parts[1])) }
+            case "history": if parts.count == 2 { path.append(Route.history(parts[1])) }
+            case "settings": path.append(Route.settings)
+            case "run":
+                if parts.count == 2 {
+                    model.running = RunRequest(pending: Pending(checkinId: parts[1], day: Days.today(), time: "07:00", practice: true), early: false)
+                }
+            default: break
+            }
+        }
     }
 
     // MARK: Top

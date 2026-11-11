@@ -73,6 +73,8 @@ jobs:
   app:
     name: App (simulator build)
     runs-on: macos-26
+    permissions:
+      contents: write   # publishes the screenshots to the ios-screenshots branch
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -121,11 +123,44 @@ jobs:
           xcrun simctl boot "$udid" || true
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl install "$udid" build/Build/Products/Debug-iphonesimulator/Gist.app
-          xcrun simctl launch "$udid" dev.gist.checkin
-          sleep 8
           mkdir -p "$GITHUB_WORKSPACE/screenshots"
-          xcrun simctl io "$udid" screenshot "$GITHUB_WORKSPACE/screenshots/ios-start.png"
-          echo "### 📱 Screenshot taken (see the ios-screenshots artifact)" >> "$GITHUB_STEP_SUMMARY"
+          # Each screen, opened by a debug-only launch argument, with demo data.
+          shot() {
+            local name="$1"; shift
+            xcrun simctl terminate "$udid" dev.gist.checkin 2>/dev/null || true
+            xcrun simctl launch "$udid" dev.gist.checkin -gist-demo "$@"
+            sleep 6
+            xcrun simctl io "$udid" screenshot "$GITHUB_WORKSPACE/screenshots/$name.png"
+          }
+          xcrun simctl ui "$udid" appearance light
+          shot 01-start
+          shot 02-checkin -gist-route edit:wake
+          shot 03-run -gist-route run:evening
+          shot 04-history -gist-route history:evening
+          shot 05-settings -gist-route settings
+          xcrun simctl ui "$udid" appearance dark
+          shot 06-start-dark
+          echo "### 📱 $(ls "$GITHUB_WORKSPACE/screenshots" | wc -l | tr -d ' ') screenshots (ios-screenshots artifact, and the ios-screenshots branch)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish screenshots to the ios-screenshots branch
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(screenshots/*.png)
+          (( ${#files[@]} )) || { echo "No screenshots."; exit 0; }
+          tmp="$(mktemp -d)"
+          cp "${files[@]}" "$tmp/"
+          cd "$tmp"
+          printf '# iPhone screenshots\n\nFrom %s @ %s\n' "$GITHUB_REF_NAME" "${GITHUB_SHA::7}" > README.md
+          git init -q -b ios-screenshots
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "iPhone screenshots: ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ios-screenshots
 
       - name: Upload screenshots
         if: always()

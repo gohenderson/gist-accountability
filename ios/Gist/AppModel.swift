@@ -25,6 +25,9 @@ final class AppModel {
     var alarmsAsked = false
     /// A short message to show (e.g. after an import).
     var notice: String?
+    /// A screen to open at launch (debug builds, for screenshots): "edit:<id>", "history:<id>",
+    /// "settings" or "run:<id>".
+    var debugRoute: String?
 
     private(set) var groupByCategory: Bool
     private(set) var sort: String
@@ -300,6 +303,33 @@ final class AppModel {
         rescheduleSoon()
         return written.count
     }
+
+    // MARK: - Screenshots (debug builds only)
+
+    #if DEBUG
+    /// Demo history for screenshots: the last 10 days of the default check-ins, mostly on track.
+    func loadDemo() {
+        data = GistData()
+        data.checkins[0].category = "Food"
+        data.checkins[1].category = "Food"
+        data.checkins.append(Checkin(id: "wake", name: "Wake up", times: [
+            AlarmTime(4, 0, days: Repeat(Repeat.weekly, [2])),
+            AlarmTime(4, 45, days: Repeat(Repeat.weekly, [1, 3, 4, 5, 6, 7])),
+        ], steps: [StepConfig(id: "wake-m", kind: StepConfig.math, mathCount: 10, mathLevel: 3)], category: "Morning"))
+        data.checkins.append(Checkin(id: "stretch", name: "Stand and stretch", times: [AlarmTime(15, 0)],
+                                     repeat: Repeat(Repeat.weekly, Repeat.weekdays), commitment: Checkin.soft))
+        for (i, day) in Days.lastN(10, calendar: calendar).enumerated() where i > 0 {
+            data.saveAnswers(day: day, checkinId: "morning", time: "07:00",
+                             answers: ["latefood": i % 4 == 0, "alcohol": false])
+            data.saveAnswers(day: day, checkinId: "evening", time: "21:30",
+                             answers: ["sweetdrink": i % 3 == 0, "fastfood": false, "sweets": i % 5 == 0, "veg": true, "homecooked": i % 2 == 0])
+            data.markDone(day: day, checkinId: "wake", time: "04:45")
+        }
+        waiting = []
+        practice = []
+        save()
+    }
+    #endif
 
     // MARK: - Saving
 
