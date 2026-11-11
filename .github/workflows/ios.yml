@@ -1,8 +1,11 @@
 name: iOS
 
-# The iPhone app (ios/). For now: GistCore, the app's logic as a Swift package, built and
-# tested with `swift test` (including importing the sample backups in shared/backups that
-# the Android tests import too). Runs only when ios/ or shared/ (or this file) changes.
+# The iPhone app (ios/):
+#  - GistCore, the app's logic as a Swift package: `swift test` (including importing the
+#    sample backups in shared/backups that the Android tests import too);
+#  - the app: its Xcode project is generated from ios/project.yml (XcodeGen), built for the
+#    simulator (no signing), then launched on a simulator for a screenshot.
+# Runs only when ios/ or shared/ (or this file) changes.
 
 on:
   push:
@@ -63,6 +66,83 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ios-logs
+          path: build-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  app:
+    name: App (simulator build)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build for the simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          xcodebuild -project Gist.xcodeproj -scheme Gist -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/xcodebuild.log" \
+            | grep -E "error:|warning: .*/ios/Gist/|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" "$GITHUB_WORKSPACE/build-logs/xcodebuild.log"
+
+      - name: Annotate compile errors
+        if: failure()
+        run: |
+          log=build-logs/xcodebuild.log
+          [[ -f "$log" ]] || exit 0
+          grep -E "^/.*:[0-9]+:[0-9]+: error: " "$log" | sort -u | head -n 60 | while IFS= read -r line; do
+            file="${line%%:*}"; rest="${line#*:}"; ln="${rest%%:*}"; rest="${rest#*:}"; col="${rest%%:*}"; msg="${rest#*: error: }"
+            echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=$ln,col=$col::$msg"
+          done
+          { echo "### App build failed"; echo '```'; grep -E "error:" "$log" | sort -u | head -n 60; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Screenshot on a simulator
+        continue-on-error: true
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          ios = sorted((k for k in d if 'iOS' in k), reverse=True)
+          print(next(x['udid'] for k in ios for x in d[k] if x['name'].startswith('iPhone')))")"
+          echo "Simulator: $udid"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" build/Build/Products/Debug-iphonesimulator/Gist.app
+          xcrun simctl launch "$udid" dev.gist.checkin
+          sleep 8
+          mkdir -p "$GITHUB_WORKSPACE/screenshots"
+          xcrun simctl io "$udid" screenshot "$GITHUB_WORKSPACE/screenshots/ios-start.png"
+          echo "### 📱 Screenshot taken (see the ios-screenshots artifact)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-app-logs
           path: build-logs/
           if-no-files-found: ignore
           retention-days: 14
