@@ -201,6 +201,23 @@ the phone you rely on for alarms.
   - **About:** it opens from the start page and shows the version, Donate and the source
     link.
 
+## iPhone app (GistCore)
+
+`ios/GistCore/Tests` runs with `swift test` (see [BUILDING.md](BUILDING.md)). The **iOS**
+workflow runs it on a macOS runner for pull requests and pushes that touch `ios/` or
+`shared/`. It covers:
+
+- **Shared backups:** every sample in `shared/backups/` parses, `every-feature.yaml`
+  imports with every setting intact (the same checks as Android's `SharedBackupTest`), and
+  import → export → import loses nothing.
+- **YAML:** the YAML 1.2 core schema (`20:09` and `2026-11-08` stay text), quoting text
+  that would read back as something else, key order, comments, bad or duplicate-key files.
+- **Backups:** the error messages, choosing what to export, media, and every import mode
+  (new, update, replace, copy as "… (imported)", matching by id then name).
+- **Logic** (ports of the Android unit tests): the 4 AM rollover, repeat rules, each time's
+  own days, the next alarm, daylight saving, monthly dates, math answers, day marks,
+  scores and colors, the logging rules, sorting and grouping.
+
 ## When a test fails
 
 - **The run page** lists each failure with its message, and links to the exact line of
