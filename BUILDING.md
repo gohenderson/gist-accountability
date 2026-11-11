@@ -5,7 +5,7 @@ The repository holds each platform's app in its own folder:
 | Folder | What's in it |
 |---|---|
 | `android/` | the Android app (Kotlin, Gradle) |
-| `ios/` | the iPhone app (Swift), coming next |
+| `ios/` | the iPhone app (Swift), in progress: so far `GistCore`, its logic |
 | `shared/` | files both apps use in their tests, such as sample backups |
 
 This page covers the Android app. Most people should install a signed APK from
@@ -62,6 +62,20 @@ Two small libraries, both open-source plain Java (Apache-2.0):
 
 Everything else (camera, UI, storage, video, text-to-speech, location, step counting)
 uses Android's built-in APIs. There's no AndroidX and no Google Play services.
+
+## The iPhone app (in progress)
+
+So far `ios/GistCore`: the app's logic as a Swift package (models, the backup format,
+scheduling, math problems, scores, sorting), ported from the Android app. It needs a Mac
+with Xcode 26 (Swift 6) and builds and tests with:
+
+```
+cd ios/GistCore
+swift test
+```
+
+Its one dependency is [Yams](https://github.com/jpsim/Yams) (MIT), for YAML. The app's
+screens come next.
 
 ## Next
 

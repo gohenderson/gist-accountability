@@ -45,7 +45,7 @@ How Gist is put together, for anyone reading or changing the code. To build it, 
 ## Files
 
 The repository holds one folder per platform: `android/` (this app), `ios/` (the iPhone
-app, coming next) and `shared/` (sample backups both apps' tests import). The Android code
+app, in progress; `ios/GistCore` is its logic, ported file by file from the Kotlin below) and `shared/` (sample backups both apps' tests import). The Android code
 is in `android/app/src/main/java/dev/gist/checkin/`.
 
 **Screens**

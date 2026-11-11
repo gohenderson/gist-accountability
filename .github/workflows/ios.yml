@@ -1,0 +1,68 @@
+name: iOS
+
+# The iPhone app (ios/). For now: GistCore, the app's logic as a Swift package, built and
+# tested with `swift test` (including importing the sample backups in shared/backups that
+# the Android tests import too). Runs only when ios/ or shared/ (or this file) changes.
+
+on:
+  push:
+    branches: [main]
+    paths: ["ios/**", "shared/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", "shared/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: GistCore (swift test)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build and test
+        working-directory: ios/GistCore
+        run: |
+          set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          swift test 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/swift-test.log"
+
+      - name: Summary
+        if: always()
+        run: |
+          log=build-logs/swift-test.log
+          [[ -f "$log" ]] || exit 0
+          {
+            echo "### GistCore tests"
+            echo '```'
+            grep -E "Executed [0-9]+ tests|error:|failed \(" "$log" | tail -n 40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Compile errors and failed assertions as annotations on the code.
+          grep -E "^/.*:[0-9]+:[0-9]+: error: " "$log" | head -n 50 | while IFS= read -r line; do
+            file="${line%%:*}"; rest="${line#*:}"; ln="${rest%%:*}"; rest="${rest#*:}"; col="${rest%%:*}"; msg="${rest#*: error: }"
+            echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=$ln,col=$col::$msg"
+          done || true
+
+      - name: Upload logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-logs
+          path: build-logs/
+          if-no-files-found: ignore
+          retention-days: 14
