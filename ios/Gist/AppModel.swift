@@ -325,6 +325,11 @@ final class AppModel {
                              answers: ["sweetdrink": i % 3 == 0, "fastfood": false, "sweets": i % 5 == 0, "veg": true, "homecooked": i % 2 == 0])
             data.markDone(day: day, checkinId: "wake", time: "04:45")
         }
+        // Whatever has already rung today is done, so screenshots show the start page (not a
+        // check-in catching up), whatever time CI runs.
+        for p in AlarmPlan.due(data, now: Date(), calendar: calendar) where data.checkin(p.checkinId)?.counted == true {
+            data.markDone(day: p.day, checkinId: p.checkinId, time: p.time)
+        }
         waiting = []
         practice = []
         save()
