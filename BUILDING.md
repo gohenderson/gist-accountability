@@ -84,9 +84,39 @@ open Gist.xcodeproj          # then pick an iPhone simulator and press Run
 (cd GistCore && swift test)  # the logic's tests
 ```
 
-To run it on your own iPhone, select the **Gist** target in Xcode, and under **Signing &
-Capabilities** choose your Apple ID as the team. A free Apple ID works for 7 days at a
-time; the Apple Developer Program ($99/year) removes that limit and adds TestFlight.
+It runs on iPhones and iPads.
+
+### On your iPhone or iPad, without a Mac
+
+Every run of the **iOS** workflow (Actions → iOS, for any change to `ios/` or `shared/`)
+builds **`Gist.ipa`**, unsigned, for real devices. Download it from the run's **Gist-ipa**
+artifact (it's a zip with `Gist.ipa` inside). Then sign and install it with your own Apple
+ID from a Windows PC or a Mac:
+
+1. On the computer, install [AltServer](https://altstore.io) (with AltStore) or
+   [Sideloadly](https://sideloadly.io). On Windows, also install iTunes and iCloud from
+   Apple's website (not the Microsoft Store versions), which these tools use to talk to
+   the device.
+2. Connect the iPhone or iPad with a cable and tap **Trust** on it.
+3. Sideload `Gist.ipa`: in Sideloadly, drag it in and press Start; with AltServer, install
+   AltStore first, then open AltStore on the device, go to **My Apps**, tap **+** and pick
+   the file. Sign in with your Apple ID when asked (it's only used to sign the app; a
+   separate Apple ID just for this is fine).
+4. On the device, open **Settings → General → VPN & Device Management**, tap your Apple ID
+   and **Trust** it. On iOS 16 and newer, also turn on **Developer Mode** (Settings →
+   Privacy & Security) when asked, and restart.
+5. Open Gist and tap **Allow alarms**.
+
+With a free Apple ID, apps signed this way stop opening after **7 days** until they're
+re-signed (AltStore does it in the background while AltServer runs on the same Wi-Fi), and
+at most three sideloaded apps can be active at once. The Apple Developer Program
+($99/year) removes both limits and allows TestFlight.
+
+### With a Mac
+
+Select the **Gist** target in Xcode, choose your Apple ID as the team under **Signing &
+Capabilities**, plug in the device and press Run. The same 7-day limit applies to a free
+Apple ID.
 
 ## Next
 

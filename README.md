@@ -117,8 +117,9 @@ Gist runs on **Android 10 or newer**.
 Or [build it yourself](BUILDING.md).
 
 **iPhone:** a version for iOS 26 is in progress. It already has check-ins, alarms, math and
-questions, history, scores and backups that move between phones. You can build it
-yourself for now ([BUILDING.md](BUILDING.md#the-iphone-app)).
+questions, history, scores and backups that move between phones, on iPhone and iPad. Until
+it's in the App Store, you can install it with your own Apple ID, no Mac needed
+([how](BUILDING.md#on-your-iphone-or-ipad-without-a-mac)).
 
 ## Documentation
 

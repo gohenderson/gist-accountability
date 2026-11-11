@@ -55,6 +55,8 @@ struct RunView: View {
             footer
         }
         .padding(20)
+        .frame(maxWidth: 640) // readable on an iPad
+        .frame(maxWidth: .infinity)
         .background(Theme.surfaceVariant.opacity(0.6).ignoresSafeArea())
         .onAppear { resetMath() }
     }
