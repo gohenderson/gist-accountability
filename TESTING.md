@@ -201,11 +201,18 @@ the phone you rely on for alarms.
   - **About:** it opens from the start page and shows the version, Donate and the source
     link.
 
-## iPhone app (GistCore)
+## iPhone app
 
-`ios/GistCore/Tests` runs with `swift test` (see [BUILDING.md](BUILDING.md)). The **iOS**
-workflow runs it on a macOS runner for pull requests and pushes that touch `ios/` or
-`shared/`. It covers:
+The **iOS** workflow runs on a macOS runner for pull requests and pushes that touch
+`ios/` or `shared/`:
+
+- **App (simulator build):** generates the Xcode project, builds the app for the
+  simulator, then opens each screen with demo data (debug builds only) and takes
+  screenshots: the start page (light and dark), a check-in's page, a test ring, History
+  and Settings. They're attached to the run and published to the `ios-screenshots` branch.
+- **GistCore (swift test):** the logic's tests, in `ios/GistCore/Tests`.
+
+The GistCore tests cover:
 
 - **Shared backups:** every sample in `shared/backups/` parses, `every-feature.yaml`
   imports with every setting intact (the same checks as Android's `SharedBackupTest`), and
@@ -217,6 +224,10 @@ workflow runs it on a macOS runner for pull requests and pushes that touch `ios/
 - **Logic** (ports of the Android unit tests): the 4 AM rollover, repeat rules, each time's
   own days, the next alarm, daylight saving, monthly dates, math answers, day marks,
   scores and colors, the logging rules, sorting and grouping.
+- **Alarm plan:** a strict check-in's next ring plus its re-rings every 3 minutes; soft
+  ones ring once; off and voice ones don't; done or skipped rings move to the next one;
+  waiting strict check-ins keep re-ringing until done; test rings; which rings are
+  waiting.
 
 ## When a test fails
 
