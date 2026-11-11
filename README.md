@@ -114,7 +114,11 @@ Gist runs on **Android 10 or newer**.
 3. Follow the start page's **Finish setup** card to grant what alarms need, then tap a
    check-in's **Test** button and lock your phone.
 
-Or [build it yourself](BUILDING.md). An iPhone version is in the works.
+Or [build it yourself](BUILDING.md).
+
+**iPhone:** a version for iOS 26 is in progress. It already has check-ins, alarms, math and
+questions, history, scores and backups that move between phones. You can build it
+yourself for now ([BUILDING.md](BUILDING.md#the-iphone-app)).
 
 ## Documentation
 

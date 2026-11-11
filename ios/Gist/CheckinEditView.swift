@@ -37,9 +37,17 @@ struct CheckinEditView: View {
                 }
             }
             Section {
-                TextField("Name", text: c.name).accessibilityIdentifier("checkin-name")
+                LabeledContent("Name") {
+                    TextField("Name", text: c.name)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("checkin-name")
+                }
                 Toggle("On", isOn: c.enabled)
-                TextField("Category (optional)", text: c.category)
+                LabeledContent("Category") {
+                    TextField("None", text: c.category)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("checkin-category")
+                }
                 Toggle("Answers count for the previous day", isOn: c.aboutYesterday)
             } footer: {
                 Text("For a morning check-in about last night.")
