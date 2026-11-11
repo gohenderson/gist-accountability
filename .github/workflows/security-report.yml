@@ -43,10 +43,10 @@ jobs:
         run: |
           mkdir -p build-logs
           for conf in releaseRuntimeClasspath debugAndroidTestRuntimeClasspath debugUnitTestRuntimeClasspath; do
-            gradle -q :app:dependencies --configuration "$conf" > "build-logs/deps-$conf.txt" \
+            gradle -p android -q :app:dependencies --configuration "$conf" > "build-logs/deps-$conf.txt" \
               || echo "::warning title=Couldn't list $conf::see build-logs/deps-$conf.txt"
           done
-          gradle -q buildEnvironment > build-logs/deps-buildscript.txt || true
+          gradle -p android -q buildEnvironment > build-logs/deps-buildscript.txt || true
           wc -l build-logs/deps-*.txt
 
       - name: Build the report

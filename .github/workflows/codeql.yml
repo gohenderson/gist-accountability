@@ -57,7 +57,7 @@ jobs:
 
       - name: Build (so CodeQL can see the Kotlin compiler's view of the code)
         if: matrix.build-mode == 'manual'
-        run: gradle assembleDebug --no-build-cache --rerun-tasks --console=plain
+        run: gradle -p android assembleDebug --no-build-cache --rerun-tasks --console=plain
 
       - name: Analyze
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4

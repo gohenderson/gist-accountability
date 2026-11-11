@@ -7,8 +7,8 @@ touches the repository, and every release waits for the owner's approval.
 
 | Workflow | Runs | Does |
 |---|---|---|
-| **Build** (`build.yml`) | every push to `main`, every pull request, on demand | debug APK, unit tests, lint, and UI tests on an emulator. The debug APK and all logs and reports are attached to the run. |
-| **Release** (`release.yml`) | on demand, or when a `v*` tag is pushed | the whole Build workflow first; if it passes, and once you approve, a signed APK published as a GitHub release with a `.sha256` checksum |
+| **Build** (`build.yml`) | every push to `main`, every pull request, on demand | debug APK, unit tests, lint, and UI tests on an emulator. The debug APK and all logs and reports are attached to the run. A first job checks what changed: if nothing in `android/`, `shared/` or `.github/` did, the build and tests are skipped (shown as skipped, which still satisfies required checks). |
+| **Release** (`release.yml`) | on demand, or when an `android-v*` tag is pushed | the whole Build workflow first; if it passes, and once you approve, a signed APK published as a GitHub release with a `.sha256` checksum |
 | **Screenshots** (`screenshots.yml`) | after each release, or on demand | the app on an emulator with demo data, captured page by page |
 | **CodeQL** (`codeql.yml`) | every push, every pull request, weekly | security scanning; see [SECURITY.md](SECURITY.md) |
 | **Security report** (`security-report.yml`) | Mondays, or on demand | outdated and vulnerable dependencies; see [SECURITY.md](SECURITY.md) |
@@ -19,10 +19,15 @@ All third-party Actions are pinned to commit SHAs. Dependabot keeps those pins u
 
 Start it either way:
 
-- **Actions → Release → Run workflow**, then enter a version like `v1.0.0`:
+Release tags carry the platform: `android-v1.2.3` for the Android app (and `ios-v…` for
+the iPhone app, once it exists), since the two won't always ship together. Releases are
+titled "Gist for Android 1.2.3". Releases made before the prefix keep their plain `v…`
+tags, and those still work for rebuilding them.
+
+- **Actions → Release → Run workflow**, then enter a version like `android-v1.0.0`:
   - if the tag doesn't exist, it's created on the latest `main`;
   - running it for an existing tag rebuilds that release.
-- or push a tag: `git tag v1.0.0 && git push origin v1.0.0`.
+- or push a tag: `git tag android-v1.0.0 && git push origin android-v1.0.0`.
 
 The run builds and tests everything, then **pauses for approval** (Actions → the run →
 **Review deployments**) before it can read the signing key. After approval it:
@@ -55,7 +60,7 @@ secrets in a protected `release` environment. It never needs to be in the reposi
      **Save protection rules**. Every release run then waits for your approval before it
      can read the signing key.
    - Optionally, under **Deployment branches and tags**, choose **Selected branches and
-     tags** and add a tag rule `v*`.
+     tags** and add tag rules `android-v*` (and `v*`, to rebuild older releases).
    - Under **Environment secrets → Add environment secret**, add:
 
    | Secret | Value |
@@ -90,7 +95,7 @@ If a secret is missing, the release run stops with an error naming it.
   empty.
 
 To make this possible, *debug* builds let these screens be opened directly from the
-command line (`app/src/debug/AndroidManifest.xml`). The release APK you install doesn't.
+command line (`android/app/src/debug/AndroidManifest.xml`). The release APK you install doesn't.
 
 ## When something fails
 

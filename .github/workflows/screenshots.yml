@@ -1,6 +1,6 @@
 name: Screenshots
 
-# Runs the app in an Android emulator and captures screenshots with demo data.
+# Runs the Android app in an emulator and captures screenshots with demo data.
 # - Called by the Release workflow after publishing: PNGs are attached to the release
 #   and shown in its notes.
 # - Or run it by hand (Actions → Screenshots → Run workflow). Leave "tag" empty to
@@ -47,14 +47,17 @@ jobs:
           path: ci
           sparse-checkout: |
             .github/scripts
-            app/src/debug
+            android/app/src/debug
 
-      - name: Add debug-only test manifest if the tag lacks it
+      - name: Find the Android project; add the debug-only test manifest if the tag lacks it
         run: |
-          if [[ ! -f app/src/debug/AndroidManifest.xml ]]; then
+          # Releases tagged before the move to android/ have the project at the root.
+          if [[ -f android/settings.gradle.kts ]]; then dir=android; else dir=.; fi
+          echo "ANDROID_DIR=$dir" >> "$GITHUB_ENV"
+          if [[ ! -f "$dir/app/src/debug/AndroidManifest.xml" ]]; then
             echo "Tag has no app/src/debug; using the current one (debug builds only)."
-            mkdir -p app/src
-            cp -r ci/app/src/debug app/src/
+            mkdir -p "$dir/app/src"
+            cp -r ci/android/app/src/debug "$dir/app/src/"
           fi
 
       - name: Set up JDK 17
@@ -90,7 +93,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-snapshot
           # One command only: the action runs each script line as a separate shell.
-          script: bash ci/.github/scripts/screenshots.sh app/build/outputs/apk/debug/app-debug.apk screenshots
+          script: bash ci/.github/scripts/screenshots.sh ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/app-debug.apk screenshots
 
       - name: Upload screenshots
 
@@ -163,7 +166,7 @@ jobs:
           name: screenshots-logs
           path: |
             build-logs/
-            app/build/reports/
+            ${{ env.ANDROID_DIR }}/app/build/reports/
           if-no-files-found: ignore
           retention-days: 14
 

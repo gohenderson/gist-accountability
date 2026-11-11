@@ -1,5 +1,10 @@
 name: Build
 
+# The Android app: build, unit tests, lint, and UI tests on an emulator.
+# A first "changes" job checks whether anything Android-related changed (android/, shared/,
+# .github/); if not (say, a docs-only or iOS-only PR), the jobs report as skipped, which
+# still satisfies required checks.
+
 on:
   push:
     branches: [main]
@@ -18,8 +23,47 @@ env:
   GRADLE_VERSION: "9.9.0"
 
 jobs:
+  changes:
+    name: Android changes?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.check.outputs.android }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Pushes to main, manual runs and releases (workflow_call) always build.
+          if [[ "$EVENT" == "pull_request" ]]; then
+            files="$(git diff --name-only "$BASE"...HEAD)"
+          elif [[ "$EVENT" == "push" && -n "$BEFORE" && "$BEFORE" != 0000000000000000000000000000000000000000 ]] \
+              && git cat-file -e "$BEFORE" 2>/dev/null; then
+            files="$(git diff --name-only "$BEFORE" HEAD)"
+          else
+            echo "android=true" >> "$GITHUB_OUTPUT"; echo "Always built for $EVENT."; exit 0
+          fi
+          echo "$files"
+          if grep -qE '^(android/|shared/|\.github/)' <<< "$files"; then
+            echo "android=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "android=false" >> "$GITHUB_OUTPUT"
+            echo "### Nothing Android-related changed: build and tests skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
     name: Build, unit tests, lint
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -54,7 +98,7 @@ jobs:
 
       - name: Unit test summary
         if: always()
-        run: python3 .github/scripts/test-summary.py "Unit tests" app/build/test-results
+        run: python3 .github/scripts/test-summary.py "Unit tests" android/app/build/test-results
 
       - name: Lint (report only)
         run: bash .github/scripts/run-gradle.sh lintDebug
@@ -62,7 +106,7 @@ jobs:
       - name: Show lint findings
         if: always()
         run: |
-          report=app/build/reports/lint-results-debug.txt
+          report=android/app/build/reports/lint-results-debug.txt
           if [[ ! -f "$report" ]]; then echo "No lint text report."; exit 0; fi
           cat "$report"
           {
@@ -79,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gist-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -92,9 +136,9 @@ jobs:
           name: build-logs
           path: |
             build-logs/
-            app/build/reports/
-            app/build/test-results/
-            build/reports/
+            android/app/build/reports/
+            android/app/build/test-results/
+            android/build/reports/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -113,6 +157,8 @@ jobs:
 
   ui-tests:
     name: UI tests (emulator)
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -157,7 +203,7 @@ jobs:
 
       - name: UI test summary
         if: always()
-        run: python3 .github/scripts/test-summary.py "UI tests" app/build/outputs/androidTest-results
+        run: python3 .github/scripts/test-summary.py "UI tests" android/app/build/outputs/androidTest-results
 
       - name: Upload logs, reports and failure screenshots
 
@@ -168,8 +214,8 @@ jobs:
           name: ui-test-logs
           path: |
             build-logs/
-            app/build/reports/androidTests/
-            app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
           if-no-files-found: ignore
           retention-days: 14
 

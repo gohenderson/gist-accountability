@@ -1,7 +1,8 @@
 # Testing
 
-There are two suites. GitHub Actions runs both on every push to `main` and every pull
-request, and **Release** runs them first and won't publish if any fail
+This page covers the Android app. There are two suites. GitHub Actions runs both on every
+push to `main` and every pull request that touches `android/`, `shared/` or `.github/`
+(other pull requests, like docs-only ones, skip them), and **Release** runs them first and won't publish if any fail
 ([RELEASING.md](RELEASING.md)). The test libraries are test-only; they're never
 included in the APK you install.
 
@@ -9,15 +10,17 @@ included in the APK you install.
 
 From Android Studio, or:
 
+From the repository root:
+
 ```
-gradle testDebugUnitTest            # unit tests, no device needed (seconds)
-gradle connectedDebugAndroidTest    # UI tests, with a phone or emulator connected (minutes)
+gradle -p android testDebugUnitTest            # unit tests, no device needed (seconds)
+gradle -p android connectedDebugAndroidTest    # UI tests, with a phone or emulator connected (minutes)
 ```
 
 To run one UI test class:
 
 ```
-gradle connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.gist.checkin.LockScreenTest
+gradle -p android connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.gist.checkin.LockScreenTest
 ```
 
 The UI tests change device state while they run: they lock and unlock the screen, set
@@ -26,7 +29,7 @@ the phone you rely on for alarms.
 
 ## Unit tests
 
-`app/src/test`, on the plain JVM. They cover:
+`android/app/src/test`, on the plain JVM. They cover:
 
 - **Next alarm:** with several times, the next alarm is the soonest one ahead and wraps to
   tomorrow's first. Daylight-saving changes are handled.
@@ -56,7 +59,12 @@ the phone you rely on for alarms.
 
 ## UI tests
 
-`app/src/androidTest`: Espresso and UI Automator on an Android 15 emulator. By area:
+`android/app/src/androidTest`: Espresso and UI Automator on an Android 15 emulator. By area:
+
+- **Shared backups:** every sample in `shared/backups/` imports with every setting intact
+  (times with their own days, a place condition, all step kinds, place and run triggers,
+  soft and voice check-ins, history with every status), and survives an export and
+  re-import. The iOS app's tests will import the same files.
 
 - **End to end:** a real alarm fires while the screen is off, the alarm screen takes
   over, the alarm rings until the question is answered, and the answer is saved.

@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 
 def find_source(file_name):
-    for root in ("app/src/test", "app/src/androidTest"):
+    for root in ("android/app/src/test", "android/app/src/androidTest", "app/src/test", "app/src/androidTest"):
         for path in glob.glob(f"{root}/**/{file_name}", recursive=True):
             return path
     return None

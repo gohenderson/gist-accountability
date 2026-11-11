@@ -106,14 +106,15 @@ It can't stop you from force-stopping or uninstalling it. The friction is the po
 
 Gist runs on **Android 10 or newer**.
 
-1. Download the latest `.apk` from [**Releases**](https://github.com/gohenderson/gist-accountability/releases).
+1. Download the latest `.apk` from [**Releases**](https://github.com/gohenderson/gist-accountability/releases)
+   (the newest "Gist for Android").
    Each release has a `.sha256` checksum next to it.
 2. Open it on your phone, and allow "Install unknown apps" for your browser or file
    manager when Android asks.
 3. Follow the start page's **Finish setup** card to grant what alarms need, then tap a
    check-in's **Test** button and lock your phone.
 
-Or [build it yourself](BUILDING.md).
+Or [build it yourself](BUILDING.md). An iPhone version is in the works.
 
 ## Documentation
 

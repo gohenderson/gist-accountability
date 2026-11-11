@@ -409,7 +409,9 @@ class StepsTest {
 class LinksTest {
     @Test
     fun donateButtonPointsAtTheReadmesDonateSection() {
-        val readme = java.io.File("../README.md").takeIf { it.exists() } ?: java.io.File("README.md")
+        // Tests run in android/app; the README is at the repository root.
+        val readme = listOf("../../README.md", "../README.md", "README.md").map { java.io.File(it) }.firstOrNull { it.exists() }
+            ?: java.io.File("../../README.md")
         assertTrue("README.md should be found", readme.exists())
         assertTrue("README needs a '## Donate' heading", readme.readLines().any { it.trim() == "## Donate" })
         assertEquals(Links.REPO + "#donate", Links.DONATE)
