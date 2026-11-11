@@ -41,6 +41,8 @@ struct StartView: View {
                     .padding(.top, 16)
                 }
                 .padding(16)
+                .frame(maxWidth: 720) // readable on an iPad
+                .frame(maxWidth: .infinity)
             }
             .background(Theme.surfaceVariant.opacity(0.6).ignoresSafeArea())
             .navigationTitle("Gist")

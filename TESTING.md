@@ -209,7 +209,9 @@ The **iOS** workflow runs on a macOS runner for pull requests and pushes that to
 - **App (simulator build):** generates the Xcode project, builds the app for the
   simulator, then opens each screen with demo data (debug builds only) and takes
   screenshots: the start page (light and dark), a check-in's page, a test ring, History
-  and Settings. They're attached to the run and published to the `ios-screenshots` branch.
+  and Settings, and the start page and a test ring on an iPad. They're attached to the run
+  and published to the `ios-screenshots` branch. It also builds the unsigned **Gist.ipa**
+  for real devices (the Gist-ipa artifact).
 - **GistCore (swift test):** the logic's tests, in `ios/GistCore/Tests`.
 
 The GistCore tests cover:
