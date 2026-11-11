@@ -1,3 +1,5 @@
 Gist.xcodeproj/
 Gist/Info.plist
 build/
+build-device/
+ipa/

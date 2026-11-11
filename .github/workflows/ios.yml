@@ -109,6 +109,36 @@ jobs:
           done
           { echo "### App build failed"; echo '```'; grep -E "error:" "$log" | sort -u | head -n 60; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build Gist.ipa for iPhones and iPads (unsigned)
+        working-directory: ios
+        run: |
+          # A Release build for real devices, without signing. Sideload it with your own Apple
+          # ID (AltServer or Sideloadly sign it as they install it): see BUILDING.md.
+          set -o pipefail
+          xcodebuild -project Gist.xcodeproj -scheme Gist -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/xcodebuild-device.log" | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" "$GITHUB_WORKSPACE/build-logs/xcodebuild-device.log"
+          app=build-device/Build/Products/Release-iphoneos/Gist.app
+          mkdir -p ipa/Payload "$GITHUB_WORKSPACE/dist"
+          cp -R "$app" ipa/Payload/
+          (cd ipa && zip -qry "$GITHUB_WORKSPACE/dist/Gist.ipa" Payload)
+          version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist")"
+          size="$(du -h "$GITHUB_WORKSPACE/dist/Gist.ipa" | cut -f1)"
+          {
+            echo "### 📦 Gist.ipa ($version, $size, unsigned)"
+            echo "Download the **Gist-ipa** artifact below, then sideload it with AltServer or Sideloadly (see BUILDING.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Gist.ipa
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Gist-ipa
+          path: dist/Gist.ipa
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Screenshot on a simulator
         continue-on-error: true
         working-directory: ios
@@ -140,6 +170,22 @@ jobs:
           shot 05-settings -gist-route settings
           xcrun simctl ui "$udid" appearance dark
           shot 06-start-dark
+          # And on an iPad.
+          ipad="$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          ios = sorted((k for k in d if 'iOS' in k), reverse=True)
+          print(next((x['udid'] for k in ios for x in d[k] if x['name'].startswith('iPad')), ''))")"
+          if [[ -n "$ipad" ]]; then
+            xcrun simctl shutdown "$udid" || true
+            udid="$ipad"
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl install "$udid" build/Build/Products/Debug-iphonesimulator/Gist.app
+            xcrun simctl ui "$udid" appearance light
+            shot 07-ipad-start
+            shot 08-ipad-run -gist-route run:evening
+          fi
           echo "### 📱 $(ls "$GITHUB_WORKSPACE/screenshots" | wc -l | tr -d ' ') screenshots (ios-screenshots artifact, and the ios-screenshots branch)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish screenshots to the ios-screenshots branch
