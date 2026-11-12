@@ -28,8 +28,11 @@ struct BackupDocument: FileDocument {
 /// Backups (the same files as the Android app's) and About.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var choosingExport = false
     @State private var exporting: BackupDocument?
+    @State private var exportName = "gist-backup.yaml"
     @State private var importing = false
+    @State private var imported: Backup.Contents?
 
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -40,20 +43,14 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Button("Export backup…") {
-                    do {
-                        exporting = BackupDocument(text: try model.backupText())
-                    } catch {
-                        model.notice = "Couldn't make the backup: \(error)"
-                    }
-                }
+                Button("Export backup…") { choosingExport = true }
                 .accessibilityIdentifier("export")
                 Button("Import backup…") { importing = true }
                     .accessibilityIdentifier("import")
             } header: {
                 Text("Backup")
             } footer: {
-                Text("Everything, with history, as one file. It's the same format as Gist for Android, so a backup moves between phones either way. Importing updates check-ins you already have and adds the rest. Photos, videos and voice clips stay on Android for now.")
+                Text("Choose which check-ins go in or come in, with their history or without. It's the same format as Gist for Android, so a backup moves between phones either way.")
             }
 
             Section("About") {
@@ -73,8 +70,26 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $choosingExport) {
+            ExportChoicesView { choices in
+                do {
+                    exportName = model.backupName(choices)
+                    let text = try model.backupText(choices)
+                    // After the sheet has gone, or the file panel won't show.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        exporting = BackupDocument(text: text)
+                    }
+                } catch {
+                    model.notice = "Couldn't make the backup: \(error)"
+                }
+            }
+        }
+        .sheet(isPresented: Binding(get: { imported != nil }, set: { if !$0 { imported = nil } })) {
+            if let imported { ImportChoicesView(contents: imported) }
+        }
         .fileExporter(isPresented: Binding(get: { exporting != nil }, set: { if !$0 { exporting = nil } }),
-                      document: exporting, contentType: .yaml, defaultFilename: "gist-backup-\(Days.today()).yaml") { result in
+                      document: exporting, contentType: .yaml, defaultFilename: exportName) { result in
             if case .failure(let error) = result { model.notice = "Couldn't save the backup: \(error.localizedDescription)" }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: BackupDocument.readableContentTypes) { result in
@@ -84,8 +99,11 @@ struct SettingsView: View {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 do {
                     let text = try String(contentsOf: url, encoding: .utf8)
-                    let n = try model.importBackup(text)
-                    model.notice = "Imported \(n) check-in\(n == 1 ? "" : "s")."
+                    let contents = try Backup.parse(text)
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        imported = contents
+                    }
                 } catch let e as BackupError {
                     model.notice = e.message
                 } catch {

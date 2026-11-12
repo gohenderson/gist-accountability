@@ -21,6 +21,7 @@ struct StartView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     overall
                     if !model.alarmsAllowed { setupCard }
+                    if model.usesPlaces && !PlaceMonitor.shared.always { locationCard }
                     waitingCards
                     if model.checkins.count > 1 { controls }
                     list
@@ -110,6 +111,20 @@ struct StartView: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("allow-alarms")
             }
+        }
+        .card()
+    }
+
+    private var locationCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Places need location").font(.headline)
+            Text(PlaceMonitor.shared.denied
+                 ? "Location is off for Gist. In Settings → Gist → Location, choose Always so places ring while Gist is closed."
+                 : "Allow location Always so arriving and leaving places ring while Gist is closed. Your location never leaves the phone.")
+                .foregroundStyle(Theme.muted)
+            Button(PlaceMonitor.shared.denied ? "Open Settings" : "Allow location") { PlaceMonitor.shared.requestAlways() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("allow-location-card")
         }
         .card()
     }
@@ -307,13 +322,18 @@ enum CheckinSummary {
     /// e.g. "7:00 AM, 9:30 PM · Mon–Fri · 3 × Medium, 2 questions"
     static func oneLine(_ c: Checkin) -> String {
         var parts: [String] = []
-        if c.times.isEmpty {
-            parts.append(c.events.isEmpty ? "No triggers" : "\(c.events.count) place or run trigger\(c.events.count == 1 ? "" : "s") (Android only)")
-        } else {
+        if c.times.isEmpty && c.events.isEmpty {
+            parts.append("No triggers")
+        }
+        if !c.times.isEmpty {
             parts.append(c.times.map { t in
                 TimeText.of(t) + (t.days.map { " \($0.describe())" } ?? "")
+                    + (t.usesLocation ? " \(Places.whereText(t.where, t.place))" : "")
             }.joined(separator: ", "))
             if c.repeat != .everyDay { parts.append(c.repeat.describe()) }
+        }
+        for t in c.events {
+            parts.append(t.isPlace ? PlaceText.describe(t).lowercasedFirst : "\(PlaceText.describe(t).lowercasedFirst) (Android only)")
         }
         parts.append(steps(c))
         return parts.joined(separator: " · ")
@@ -332,4 +352,9 @@ enum CheckinSummary {
         default: return "\(s.questions.count) question\(s.questions.count == 1 ? "" : "s")"
         }
     }
+}
+
+extension String {
+    /// "When you arrive" → "when you arrive"
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }

@@ -3,7 +3,8 @@ import SwiftUI
 
 @main
 struct GistApp: App {
-    @State private var model = AppModel()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var model = AppModel.shared
 
     var body: some Scene {
         WindowGroup {

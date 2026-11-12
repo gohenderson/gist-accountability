@@ -4,7 +4,8 @@ name: iOS
 #  - GistCore, the app's logic as a Swift package: `swift test` (including importing the
 #    sample backups in shared/backups that the Android tests import too);
 #  - the app: its Xcode project is generated from ios/project.yml (XcodeGen), built for the
-#    simulator (no signing), then launched on a simulator for a screenshot.
+#    simulator (no signing), then launched on a simulator for screenshots;
+#  - the app's UI tests (ios/GistUITests), on a simulator.
 # Runs only when ios/ or shared/ (or this file) changes.
 
 on:
@@ -225,6 +226,64 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ios-app-logs
+          path: build-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ui:
+    name: App UI tests (simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Run the UI tests
+        working-directory: ios
+        run: |
+          set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          udid="$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          ios = sorted((k for k in d if 'iOS' in k), reverse=True)
+          print(next(x['udid'] for k in ios for x in d[k] if x['name'].startswith('iPhone')))")"
+          echo "Simulator: $udid"
+          xcodebuild -project Gist.xcodeproj -scheme Gist -configuration Debug \
+            -destination "id=$udid" -derivedDataPath build -resultBundlePath "$GITHUB_WORKSPACE/build-logs/ui-tests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/ui-tests.log" \
+            | grep -E "error:|Test Case .* (passed|failed)|\*\* TEST" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" "$GITHUB_WORKSPACE/build-logs/ui-tests.log"
+
+      - name: Summary
+        if: always()
+        run: |
+          log=build-logs/ui-tests.log
+          [[ -f "$log" ]] || exit 0
+          {
+            echo "### App UI tests"
+            echo '```'
+            grep -E "Test Case .* (passed|failed)|error:|\*\* TEST" "$log" | sed -E 's/^.*Test Case //' | sort -u | head -n 60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^/.*:[0-9]+: error: " "$log" | sort -u | head -n 40 | while IFS= read -r line; do
+            file="${line%%:*}"; rest="${line#*:}"; ln="${rest%%:*}"; msg="${rest#*: error: }"
+            echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=$ln::$msg"
+          done || true
+
+      - name: Upload the test results
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-ui-test-results
           path: build-logs/
           if-no-files-found: ignore
           retention-days: 14

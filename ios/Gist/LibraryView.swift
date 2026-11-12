@@ -21,7 +21,7 @@ struct LibraryView: View {
             ForEach(Library.categories, id: \.self) { category in
                 Section(category) {
                     ForEach(Library.templates.filter { $0.category == category }) { t in
-                        if t.worksOnIPhone(places: false) {
+                        if t.worksOnIPhone(places: true) {
                             Button {
                                 onAdd(model.addCheckin(from: t))
                             } label: {
@@ -63,7 +63,6 @@ struct LibraryView: View {
     }
 
     private func unavailable(_ c: Checkin) -> String {
-        if c.isVoice || c.events.contains(where: { $0.isMovement }) { return "Android only (needs run tracking)" }
-        return "Coming to iPhone (needs places)"
+        c.isVoice ? "Android only (voice check-ins)" : "Android only (needs run tracking)"
     }
 }
