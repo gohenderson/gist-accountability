@@ -190,9 +190,9 @@ final class GistUITests: XCTestCase {
         export.tap()
         waitFor(element("export-include:morning"))
         XCTAssertTrue(element("export-history:morning").exists, "history is offered for included check-ins")
-        XCTAssertTrue(element("export-go").isEnabled)
+        XCTAssertTrue(app.buttons["export-go"].firstMatch.isEnabled)
         app.buttons["export-all"].firstMatch.tap()
-        XCTAssertFalse(element("export-go").isEnabled, "nothing to export")
+        XCTAssertFalse(app.buttons["export-go"].firstMatch.isEnabled, "nothing to export")
         app.buttons["Cancel"].tap()
     }
 }
