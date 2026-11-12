@@ -15,10 +15,15 @@ struct RunRequest: Identifiable, Equatable {
 @MainActor
 @Observable
 final class AppModel {
+    /// The one model: the app's views, and place crossings that wake Gist in the background.
+    static let shared = AppModel()
+
     private(set) var data: GistData
     /// Rings that went off and aren't done yet, oldest first.
     private(set) var waiting: [Pending] = []
     private(set) var practice: [PracticeRing] = []
+    /// Recent place crossings: where you were, for places' rings.
+    private(set) var places = PlaceLog()
     /// What's showing full screen.
     var running: RunRequest?
     var alarmsAllowed = false
@@ -56,6 +61,7 @@ final class AppModel {
         groupOrder = defaults.stringArray(forKey: "groupOrder") ?? []
         waiting = Self.decode([Pending].self, defaults.data(forKey: "waiting")) ?? []
         practice = Self.decode([PracticeRing].self, defaults.data(forKey: "practice")) ?? []
+        places = Self.decode(PlaceLog.self, defaults.data(forKey: "places")) ?? PlaceLog()
         alarmsAllowed = AlarmService.authorized
         alarmsAsked = !AlarmService.notDetermined
     }
@@ -99,7 +105,11 @@ final class AppModel {
         alarmsAllowed = AlarmService.authorized
         alarmsAsked = !AlarmService.notDetermined
         let now = Date()
-        let due = AlarmPlan.due(data, now: now, calendar: calendar)
+        // Times that only ring at (or away from) a place, when you weren't: skipped.
+        for p in AlarmPlan.placeSkips(data, now: now, places: places, calendar: calendar) {
+            data.markSkipped(day: p.day, checkinId: p.checkinId, time: p.time)
+        }
+        let due = AlarmPlan.due(data, now: now, places: places, calendar: calendar)
         for p in due { data.markRang(day: p.day, checkinId: p.checkinId, time: p.time) }
         let practiceDue = AlarmPlan.duePractice(practice, now: now, calendar: calendar)
         practice.removeAll { $0.at <= now }
@@ -132,15 +142,57 @@ final class AppModel {
     }
 
     func reschedule() async {
-        let plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, snoozed: SnoozeStore.all(),
-                                  now: Date(), calendar: calendar)
+        let plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, oneOff: OneOffStore.all(),
+                                  places: places, now: Date(), calendar: calendar)
         let checkins = Dictionary(data.checkins.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         await AlarmService.replaceAll(with: plan, checkins: checkins)
     }
 
     private func rescheduleSoon() {
-        Task { await reschedule() }
+        Task {
+            await reschedule()
+            await PlaceMonitor.shared.sync(Places.watched(data.checkins))
+        }
     }
+
+    // MARK: - Places
+
+    /// iOS says you went into or out of a place (maybe with Gist in the background). Logs
+    /// it, rings check-ins that arrive / leave there, and resets alarms that depend on
+    /// where you are. [settling]: the place was only just added, so it doesn't ring.
+    func placeCrossed(_ crossing: PlaceCrossing, settling: Bool) async {
+        guard places.record(crossing) else { return }
+        places.prune(keeping: Set(Places.watched(data.checkins).keys), now: Date())
+        if !settling { ringForPlace(crossing) }
+        save()
+        await reschedule()
+    }
+
+    private func ringForPlace(_ crossing: PlaceCrossing) {
+        let now = Date()
+        for c in data.checkins {
+            let day = Days.forAlarm(aboutYesterday: c.aboutYesterday, at: now, calendar: calendar)
+            let rang = Places.rang(data, checkinId: c.id, day: day, waiting: waiting)
+            guard Places.eventRings(c, key: crossing.key, entering: crossing.inside, now: now,
+                                    rangToday: rang, calendar: calendar) != nil else { continue }
+            let time = AlarmTime(calendar.component(.hour, from: now), calendar.component(.minute, from: now)).description
+            guard !data.isClosed(day: day, checkinId: c.id, time: time) else { continue }
+            data.markRang(day: day, checkinId: c.id, time: time)
+            let p = Pending(checkinId: c.id, day: day, time: time)
+            if !waiting.contains(p) { waiting.append(p) }
+            // Rings through AlarmKit a moment from now, like any other alarm.
+            OneOffStore.add(OneOffRing(checkinId: c.id, day: day, time: time, at: now.addingTimeInterval(3)))
+        }
+    }
+
+    /// Location permission changed, or check-ins' places did.
+    func placesChanged() async {
+        await PlaceMonitor.shared.sync(Places.watched(data.checkins))
+        await reschedule()
+    }
+
+    /// Do any check-ins that are on use places?
+    var usesPlaces: Bool { !Places.watched(data.checkins).isEmpty }
 
     /// A test ring in 10 seconds: it runs the steps, logs nothing, and leaves real rings alone.
     func testRing(_ c: Checkin) {
@@ -283,16 +335,28 @@ final class AppModel {
 
     // MARK: - Backups
 
-    /// Everything, with history, as a backup file (the same format as the Android app's).
-    func backupText() throws -> String { try Backup.export(data) }
+    /// The chosen check-ins (everything, with history, by default) as a backup file, in the
+    /// same format as the Android app's.
+    func backupText(_ choices: [Backup.ExportChoice]? = nil) throws -> String {
+        try Backup.export(data, choices: choices)
+    }
 
-    /// Imports every check-in in [text]: ones you have (same id or name) are updated, with the
-    /// file's history added; the rest are added. Returns how many.
-    func importBackup(_ text: String) throws -> Int {
-        let contents = try Backup.parse(text)
-        let choices = contents.checkins.map { c in
-            Backup.ImportChoice(c.id, mode: Backup.match(data.checkins, c) == nil ? .new : .update, withHistory: true)
+    /// The file name for a backup: named after the check-in when there's only one.
+    func backupName(_ choices: [Backup.ExportChoice]) -> String {
+        var slug = "backup"
+        if choices.count == 1, let c = data.checkin(choices[0].checkinId) {
+            let s = c.name.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            if !s.isEmpty { slug = s }
         }
+        return "gist-\(slug)-\(Days.today()).yaml"
+    }
+
+    /// The check-in of yours that the file's [c] would update or replace, if any.
+    func match(_ c: Checkin) -> Checkin? { Backup.match(data.checkins, c) }
+
+    /// Imports a backup's chosen check-ins. Returns how many.
+    func importBackup(_ contents: Backup.Contents, choices: [Backup.ImportChoice]) -> Int {
         let written = Backup.importing(contents, choices: choices, into: &data)
         // Photos, video and voice clips aren't on iPhone yet: show none rather than a broken one.
         for w in written where w.checkin.background.hasMedia {
@@ -309,6 +373,13 @@ final class AppModel {
     /// Demo history for screenshots: the last 10 days of the default check-ins, mostly on track.
     func loadDemo() {
         data = GistData()
+        // Default view settings too, so screenshots and UI tests start the same every time.
+        setGroupByCategory(false)
+        setSort(Grouping.sortCustom)
+        setAllFolded(false, groups: foldedGroups, ids: foldedCheckins)
+        groupOrder = []
+        defaults.removeObject(forKey: "groupOrder")
+        places = PlaceLog()
         data.checkins[0].category = "Food"
         data.checkins[1].category = "Food"
         data.checkins.append(Checkin(id: "wake", name: "Wake up", times: [
@@ -343,6 +414,7 @@ final class AppModel {
         }
         defaults.set(try? JSONEncoder().encode(waiting), forKey: "waiting")
         defaults.set(try? JSONEncoder().encode(practice), forKey: "practice")
+        defaults.set(try? JSONEncoder().encode(places), forKey: "places")
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, _ data: Data?) -> T? {

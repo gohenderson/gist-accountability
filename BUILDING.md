@@ -72,6 +72,7 @@ AlarmKit, new in iOS 26).
   scheduling, math problems, scores, sorting), ported from the Android app. Its one
   dependency is [Yams](https://github.com/jpsim/Yams) (MIT), for YAML.
 - `ios/Gist`: the SwiftUI app.
+- `ios/GistUITests`: its UI tests (in Xcode: Product → Test).
 - `ios/project.yml`: the Xcode project's definition, for
   [XcodeGen](https://github.com/yonaskolb/XcodeGen). The generated `Gist.xcodeproj` isn't
   committed.

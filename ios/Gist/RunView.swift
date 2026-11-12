@@ -147,6 +147,9 @@ struct RunView: View {
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 .accessibilityIdentifier("math-problem")
+                #if DEBUG
+                .accessibilityValue(String(problem.answer)) // so UI tests can solve it
+                #endif
             TextField("Answer", text: $input)
                 .keyboardType(.numberPad)
                 .font(.title)

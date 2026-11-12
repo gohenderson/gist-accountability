@@ -108,10 +108,12 @@ struct CheckinEditView: View {
                     } label: {
                         LabeledContent("Days", value: c.wrappedValue.daysFor(t).describe())
                     }
-                    if t.usesLocation, let place = t.place {
-                        Text("Only when \(t.where == Trigger.at ? "at" : "away from") \(place.name) (Android only for now)")
-                            .font(.footnote).foregroundStyle(Theme.muted)
+                    NavigationLink {
+                        WhereEditor(time: timeAt(c, i))
+                    } label: {
+                        LabeledContent("Where", value: t.usesLocation ? Places.whereText(t.where, t.place) : "Anywhere")
                     }
+                    .accessibilityIdentifier("where:\(i)")
                 }
             }
             .onDelete { c.wrappedValue.times.remove(atOffsets: $0) }
@@ -126,11 +128,78 @@ struct CheckinEditView: View {
         } header: {
             Text("Rings at")
         } footer: {
-            if !c.wrappedValue.events.isEmpty {
-                Text("Also set off by \(c.wrappedValue.events.count) place or run trigger\(c.wrappedValue.events.count == 1 ? "" : "s"), which only work on Android for now.")
-            } else if c.wrappedValue.times.isEmpty {
-                Text("No times: it only rings when you test it.")
+            if c.wrappedValue.times.isEmpty && c.wrappedValue.events.isEmpty {
+                Text("No times or places: it only rings when you test it.")
             }
+        }
+        placesSection(c)
+    }
+
+    /// Arrive and leave triggers (run triggers are shown, but only work on Android).
+    @ViewBuilder private func placesSection(_ c: Binding<Checkin>) -> some View {
+        Section {
+            ForEach(Array(c.wrappedValue.events.enumerated()), id: \.offset) { i, t in
+                if t.isPlace {
+                    NavigationLink {
+                        PlaceTriggerEditor(trigger: eventAt(c, i))
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(PlaceText.describe(t))
+                            if let w = windowText(t) {
+                                Text(w).font(.footnote).foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("place-trigger:\(i)")
+                } else {
+                    VStack(alignment: .leading) {
+                        Text(PlaceText.describe(t))
+                        Text("Android only (needs run tracking)").font(.footnote).foregroundStyle(Theme.muted)
+                    }
+                }
+            }
+            .onDelete { c.wrappedValue.events.remove(atOffsets: $0) }
+            Button("Add arrive or leave") {
+                c.wrappedValue.events.append(Trigger(kind: Trigger.arrive))
+            }
+            .disabled(c.wrappedValue.events.filter { $0.isPlace }.count >= 10)
+            .accessibilityIdentifier("add-place-trigger")
+        } header: {
+            Text("Also rings")
+        } footer: {
+            if c.wrappedValue.events.contains(where: { $0.isPlace && $0.place == nil }) {
+                Text("Choose a place for each, or it won't ring.")
+            }
+        }
+    }
+
+    private func windowText(_ t: Trigger) -> String? {
+        var parts: [String] = []
+        if let s = t.windowStart, let e = t.windowEnd {
+            parts.append("\(TimeText.of(s.description))–\(TimeText.of(e.description))")
+        }
+        if t.days != .everyDay { parts.append(t.days.describe()) }
+        if !t.oncePerDay { parts.append("every time") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func timeAt(_ c: Binding<Checkin>, _ i: Int) -> Binding<AlarmTime> {
+        Binding {
+            i < c.wrappedValue.times.count ? c.wrappedValue.times[i] : AlarmTime(12, 0)
+        } set: { t in
+            guard i < c.wrappedValue.times.count else { return }
+            var t = t
+            if t.where == Trigger.anywhere { t.place = nil }
+            c.wrappedValue.times[i] = t
+        }
+    }
+
+    private func eventAt(_ c: Binding<Checkin>, _ i: Int) -> Binding<Trigger> {
+        Binding {
+            i < c.wrappedValue.events.count ? c.wrappedValue.events[i] : Trigger(kind: Trigger.arrive)
+        } set: { t in
+            guard i < c.wrappedValue.events.count else { return }
+            c.wrappedValue.events[i] = t
         }
     }
 

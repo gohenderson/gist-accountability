@@ -27,17 +27,17 @@ public struct PlannedAlarm: Equatable {
     public let at: Date
     public let nag: Int
     public let practice: Bool
-    /// A soft alarm ringing again after Snooze.
-    public let snoozed: Bool
+    /// A one-off ring: a snoozed soft alarm, or arriving at or leaving a place.
+    public let oneOff: Bool
 
-    public init(checkinId: String, day: String, time: String, at: Date, nag: Int = 0, practice: Bool = false, snoozed: Bool = false) {
+    public init(checkinId: String, day: String, time: String, at: Date, nag: Int = 0, practice: Bool = false, oneOff: Bool = false) {
         self.checkinId = checkinId
         self.day = day
         self.time = time
         self.at = at
         self.nag = nag
         self.practice = practice
-        self.snoozed = snoozed
+        self.oneOff = oneOff
     }
 
     public var pending: Pending { Pending(checkinId: checkinId, day: day, time: time, practice: practice) }
@@ -54,8 +54,9 @@ public struct PracticeRing: Equatable, Codable {
     }
 }
 
-/// A soft alarm snoozed from its alarm: it rings again at [at], for the same day and time.
-public struct Snooze: Equatable, Codable {
+/// A ring outside the check-in's set times, for [day] and [time]: a soft alarm snoozed
+/// from its alarm, or one set off by arriving at or leaving a place.
+public struct OneOffRing: Equatable, Codable {
     public let checkinId: String
     public let day: String
     public let time: String
@@ -81,12 +82,14 @@ public enum AlarmPlan {
     /// Every alarm to schedule now: each ringing check-in's next open ring (strict ones with
     /// their re-rings after it), re-rings for strict check-ins still [waiting], and [practice]
     /// rings still ahead. Voice check-ins (Android only for now) and ones that are off don't ring.
-    public static func plan(_ data: GistData, waiting: [Pending], practice: [PracticeRing], snoozed: [Snooze] = [],
-                            now: Date, calendar: Calendar = .current) -> [PlannedAlarm] {
+    /// A time that rings only at (or away from) a place is left out while you're known not
+    /// to be (per [places], as of now); crossing into or out of the place reschedules.
+    public static func plan(_ data: GistData, waiting: [Pending], practice: [PracticeRing], oneOff: [OneOffRing] = [],
+                            places: PlaceLog = PlaceLog(), now: Date, calendar: Calendar = .current) -> [PlannedAlarm] {
         var out: [PlannedAlarm] = []
         for c in data.checkins where c.enabled && !c.isVoice {
             let next = Scheduler.next(c, now: now, calendar: calendar) {
-                data.isClosed(day: $0.day, checkinId: c.id, time: $0.timeKey)
+                data.isClosed(day: $0.day, checkinId: c.id, time: $0.timeKey) || !Places.allows($0.time, at: now, log: places)
             }
             guard let next else { continue }
             out.append(PlannedAlarm(checkinId: c.id, day: next.day, time: next.timeKey, at: next.at))
@@ -111,29 +114,42 @@ public enum AlarmPlan {
                                     time: AlarmTime(calendar.component(.hour, from: r.at), calendar.component(.minute, from: r.at)).description,
                                     at: r.at, practice: true))
         }
-        // Snoozed soft alarms that aren't done or dismissed yet.
-        for z in snoozed where z.at > now {
+        // Snoozed soft alarms and place rings that aren't done or dismissed yet.
+        for z in oneOff where z.at > now {
             guard let c = data.checkin(z.checkinId), c.enabled,
                   !data.isClosed(day: z.day, checkinId: z.checkinId, time: z.time) else { continue }
-            out.append(PlannedAlarm(checkinId: z.checkinId, day: z.day, time: z.time, at: z.at, snoozed: true))
+            out.append(PlannedAlarm(checkinId: z.checkinId, day: z.day, time: z.time, at: z.at, oneOff: true))
         }
         return out.sorted { $0.at < $1.at }
     }
 
     /// Rings since [since] (default: [lookbackHours] ago) up to [now] that aren't done or
     /// skipped: these are waiting. Each check-in's soonest first; check-ins that are off,
-    /// and voice ones, never wait.
-    public static func due(_ data: GistData, now: Date, since: Date? = nil, calendar: Calendar = .current) -> [Pending] {
+    /// and voice ones, never wait. Times whose place condition didn't hold then (per
+    /// [places]) aren't included: see [placeSkips].
+    public static func due(_ data: GistData, now: Date, since: Date? = nil, places: PlaceLog = PlaceLog(),
+                           calendar: Calendar = .current) -> [Pending] {
+        openRings(data, now: now, since: since, calendar: calendar).filter { Places.allows($0.0, at: $0.1, log: places) }.map { $0.2 }
+    }
+
+    /// Times that came due without their place condition holding (you weren't at, or were
+    /// at, the place): these are marked skipped, as on Android.
+    public static func placeSkips(_ data: GistData, now: Date, since: Date? = nil, places: PlaceLog,
+                                  calendar: Calendar = .current) -> [Pending] {
+        openRings(data, now: now, since: since, calendar: calendar).filter { !Places.allows($0.0, at: $0.1, log: places) }.map { $0.2 }
+    }
+
+    private static func openRings(_ data: GistData, now: Date, since: Date?, calendar: Calendar) -> [(AlarmTime, Date, Pending)] {
         let from = since ?? now.addingTimeInterval(-Double(lookbackHours * 3600))
-        var out: [(Date, Pending)] = []
+        var out: [(AlarmTime, Date, Pending)] = []
         for c in data.checkins where c.enabled && !c.isVoice {
             for o in Scheduler.occurrences(c, now: from, calendar: calendar, count: 50) where o.at <= now {
                 if !data.isClosed(day: o.day, checkinId: c.id, time: o.timeKey) {
-                    out.append((o.at, Pending(checkinId: c.id, day: o.day, time: o.timeKey)))
+                    out.append((o.time, o.at, Pending(checkinId: c.id, day: o.day, time: o.timeKey)))
                 }
             }
         }
-        return out.sorted { $0.0 < $1.0 }.map { $0.1 }
+        return out.sorted { $0.1 < $1.1 }
     }
 
     /// Practice rings that have gone off by [now].

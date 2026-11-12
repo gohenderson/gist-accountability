@@ -107,16 +107,16 @@ struct CheckInIntent: LiveActivityIntent {
 }
 
 /// Snoozes saved for Gist to keep setting (every reschedule replaces all its alarms).
-enum SnoozeStore {
+enum OneOffStore {
     private static let key = "snoozes"
 
-    static func all(now: Date = Date()) -> [Snooze] {
+    static func all(now: Date = Date()) -> [OneOffRing] {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let list = try? JSONDecoder().decode([Snooze].self, from: data) else { return [] }
+              let list = try? JSONDecoder().decode([OneOffRing].self, from: data) else { return [] }
         return list.filter { $0.at > now }
     }
 
-    static func add(_ z: Snooze) {
+    static func add(_ z: OneOffRing) {
         var list = all().filter { !($0.checkinId == z.checkinId && $0.day == z.day && $0.time == z.time) }
         list.append(z)
         UserDefaults.standard.set(try? JSONEncoder().encode(list), forKey: key)
@@ -159,10 +159,10 @@ struct SnoozeIntent: LiveActivityIntent {
         if let id = UUID(uuidString: alarmID) {
             try? AlarmManager.shared.stop(id: id)
         }
-        let z = Snooze(checkinId: checkinId, day: day, time: time,
+        let z = OneOffRing(checkinId: checkinId, day: day, time: time,
                        at: Date().addingTimeInterval(TimeInterval(max(1, minutes) * 60)))
-        SnoozeStore.add(z)
-        await AlarmService.schedule(PlannedAlarm(checkinId: z.checkinId, day: z.day, time: z.time, at: z.at, snoozed: true),
+        OneOffStore.add(z)
+        await AlarmService.schedule(PlannedAlarm(checkinId: z.checkinId, day: z.day, time: z.time, at: z.at, oneOff: true),
                                     title: alarmTitle, snoozeMinutes: minutes)
         return .result()
     }

@@ -26,6 +26,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSAlarmKitUsageDescription: Gist rings your check-ins as alarms, even in Silent mode or a Focus.
         NSCameraUsageDescription: Gist uses the camera to scan the code for a check-in's scan step.
+        NSLocationWhenInUseUsageDescription: Gist uses your location to set up places for check-ins that ring when you arrive or leave. It never leaves your phone.
+        NSLocationAlwaysAndWhenInUseUsageDescription: To ring check-ins when you arrive at or leave a place while Gist is closed. Your location never leaves your phone.
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
@@ -48,3 +50,19 @@ targets:
         ENABLE_PREVIEWS: YES
     scheme:
       gatherCoverageData: false
+      testTargets:
+        - GistUITests
+  GistUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: GistUITests
+    dependencies:
+      - target: Gist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.gist.checkin.uitests
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Gist
