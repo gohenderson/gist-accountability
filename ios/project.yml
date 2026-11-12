@@ -25,6 +25,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSAlarmKitUsageDescription: Gist rings your check-ins as alarms, even in Silent mode or a Focus.
+        NSCameraUsageDescription: Gist uses the camera to scan the code for a check-in's scan step.
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

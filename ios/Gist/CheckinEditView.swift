@@ -61,9 +61,15 @@ struct CheckinEditView: View {
                     Text("Soft").tag(Checkin.soft)
                     if c.wrappedValue.isVoice { Text("Voice (Android only)").tag(Checkin.voice) }
                 }
+                if c.wrappedValue.isSoft {
+                    Picker("Snooze", selection: c.snoozeMinutes) {
+                        ForEach(Checkin.snoozeChoices, id: \.self) { Text("\($0) minutes").tag($0) }
+                    }
+                    .accessibilityIdentifier("snooze-minutes")
+                }
             } footer: {
                 Text(c.wrappedValue.isSoft
-                     ? "Rings once. Its steps are optional, and it isn't counted in your stats."
+                     ? "Rings once, with Snooze. Open Gist to do its steps or dismiss it. Not counted in your stats."
                      : "Until the steps are done, it rings again every \(AlarmPlan.nagMinutes) minutes (up to \(AlarmPlan.nagCount) times). Counted in your stats.")
             }
 
@@ -208,8 +214,28 @@ enum StepText {
 /// One step's settings.
 struct StepEditView: View {
     @Binding var step: StepConfig
+    @State private var registering = false
 
     var body: some View {
+        form
+            .sheet(isPresented: $registering) {
+                NavigationStack {
+                    ScannerPanel { code in
+                        step.scanCode = code
+                        registering = false
+                    }
+                    .padding()
+                    .navigationTitle("Scan the code")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { registering = false } }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+    }
+
+    private var form: some View {
         Form {
             switch step.kind {
             case StepConfig.math:
@@ -227,12 +253,17 @@ struct StepEditView: View {
             case StepConfig.scan:
                 Section {
                     TextField("Where it is, e.g. Bathroom sink", text: $step.scanLabel)
+                    Button(step.scanCode == nil ? "Scan the code to use" : "Scan a different code") { registering = true }
+                        .disabled(!CodeScanner.supported)
+                        .accessibilityIdentifier("register-code")
                     TextField("The code's text", text: Binding(get: { step.scanCode ?? "" },
                                                                set: { step.scanCode = $0.isEmpty ? nil : $0 }))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } footer: {
-                    Text("Scanning with the camera is coming to iPhone. Until then a scan step is replaced by 5 very hard math problems when it rings.")
+                    Text(CodeScanner.supported
+                         ? "Put a QR code or barcode somewhere you have to walk to (any product's barcode works) and scan it here. When it rings, you scan the same code to finish. If you can't after \(Int(Scan.fallbackAfter) / 60) minutes, you can solve \(Scan.fallbackProblems) very hard problems instead."
+                         : "This device can't scan codes, so this step is \(Scan.fallbackProblems) very hard math problems when it rings.")
                 }
             default:
                 Section {

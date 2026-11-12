@@ -132,9 +132,10 @@ final class AppModel {
     }
 
     func reschedule() async {
-        let plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, now: Date(), calendar: calendar)
-        let names = Dictionary(data.checkins.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        await AlarmService.replaceAll(with: plan, names: names)
+        let plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, snoozed: SnoozeStore.all(),
+                                  now: Date(), calendar: calendar)
+        let checkins = Dictionary(data.checkins.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        await AlarmService.replaceAll(with: plan, checkins: checkins)
     }
 
     private func rescheduleSoon() {
@@ -225,11 +226,9 @@ final class AppModel {
         rescheduleSoon()
     }
 
-    /// A new check-in, ringing at noon with no steps yet.
-    func addCheckin() -> Checkin {
-        let names = Set(data.checkins.map { $0.name.lowercased() })
-        let name = (["New check-in"] + (2...99).map { "New check-in \($0)" }).first { !names.contains($0.lowercased()) } ?? "New check-in"
-        let c = Checkin(name: name)
+    /// Adds a copy of a library template, or a blank check-in (ringing at noon, no steps yet).
+    func addCheckin(from template: Library.Template? = nil) -> Checkin {
+        let c = template.map { Library.instantiate($0, existing: data.checkins) } ?? Library.blank(existing: data.checkins)
         save(c)
         return c
     }

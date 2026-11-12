@@ -208,8 +208,8 @@ The **iOS** workflow runs on a macOS runner for pull requests and pushes that to
 
 - **App (simulator build):** generates the Xcode project, builds the app for the
   simulator, then opens each screen with demo data (debug builds only) and takes
-  screenshots: the start page (light and dark), a check-in's page, a test ring, History
-  and Settings, and the start page and a test ring on an iPad. They're attached to the run
+  screenshots: the start page (light and dark), a check-in's page, a test ring, History,
+  Settings and the Add check-in library, and the start page and a test ring on an iPad. They're attached to the run
   and published to the `ios-screenshots` branch. It also builds the unsigned **Gist.ipa**
   for real devices (the Gist-ipa artifact).
 - **GistCore (swift test):** the logic's tests, in `ios/GistCore/Tests`.
@@ -229,7 +229,12 @@ The GistCore tests cover:
 - **Alarm plan:** a strict check-in's next ring plus its re-rings every 3 minutes; soft
   ones ring once; off and voice ones don't; done or skipped rings move to the next one;
   waiting strict check-ins keep re-ringing until done; test rings; which rings are
-  waiting.
+  waiting; snoozed soft alarms ring again (unless dismissed or already past).
+- **Library and scanning:** the 19 templates (like Android's), which work on iPhone, adding
+  a copy ("Water 2"), and matching scanned codes (UPC-A as 12 or 13 digits).
+
+Camera scanning needs a real device, so check it by hand: register a code on a scan step,
+test-ring the check-in, scan a different code (it says so), then the right one.
 
 ## When a test fails
 
