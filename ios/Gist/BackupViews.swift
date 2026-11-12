@@ -36,6 +36,7 @@ struct ExportChoicesView: View {
                             included = included.count == model.checkins.count ? [] : Set(model.checkins.map { $0.id })
                         }
                         .font(.footnote)
+                        .accessibilityIdentifier("export-all")
                     }
                 } footer: {
                     Text("Settings and history, as one .yaml file you can read and edit. It's the same format as Gist for Android, so it moves between phones either way. With one check-in, the file is named after it: handy for sharing a check-in.")

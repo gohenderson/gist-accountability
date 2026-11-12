@@ -213,6 +213,13 @@ The **iOS** workflow runs on a macOS runner for pull requests and pushes that to
   and published to the `ios-screenshots` branch. It also builds the unsigned **Gist.ipa**
   for real devices (the Gist-ipa artifact).
 - **GistCore (swift test):** the logic's tests, in `ios/GistCore/Tests`.
+- **App UI tests (simulator):** `ios/GistUITests`, the app driven like a person would,
+  starting from the demo data each time: the start page, folding a check-in, adding one
+  from the library or blank, answering questions, solving math (debug builds expose each
+  problem's answer to the tests), a wrong answer, ending a test, adding an arrive trigger
+  and a time that only rings at a place (by coordinates), and choosing what to export. On
+  a failure, the **ios-ui-test-results** artifact has the `.xcresult` bundle (open it in
+  Xcode for screenshots of each step) and the log.
 
 The GistCore tests cover:
 
@@ -230,11 +237,20 @@ The GistCore tests cover:
   ones ring once; off and voice ones don't; done or skipped rings move to the next one;
   waiting strict check-ins keep re-ringing until done; test rings; which rings are
   waiting; snoozed soft alarms ring again (unless dismissed or already past).
+- **Places:** the crossing log (where you were at any moment, repeats ignored, pruning),
+  times at or away from a place (unknown rings anyway), the alarm plan leaving out and
+  then adding a place-dependent time as you cross, due times skipped when the place
+  didn't hold, arrive / leave with days, windows (across midnight) and once a day, and
+  which places get watched.
 - **Library and scanning:** the 19 templates (like Android's), which work on iPhone, adding
   a copy ("Water 2"), and matching scanned codes (UPC-A as 12 or 13 digits).
 
-Camera scanning needs a real device, so check it by hand: register a code on a scan step,
-test-ring the check-in, scan a different code (it says so), then the right one.
+Some things need a real device, so check them by hand:
+
+- **Camera scanning:** register a code on a scan step, test-ring the check-in, scan a
+  different code (it says so), then the right one.
+- **Places:** add an arrive trigger for where you are, allow location Always, walk out of
+  the circle and back in (or use Xcode's location simulation) with Gist closed.
 
 ## When a test fails
 

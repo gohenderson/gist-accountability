@@ -103,7 +103,8 @@ final class GistUITests: XCTestCase {
         }
         let submit = element("submit")
         scrollTo(submit)
-        XCTAssertTrue(submit.isEnabled)
+        if !submit.isEnabled { print("GIST-DEBUG\n" + app.debugDescription) }
+        XCTAssertTrue(submit.isEnabled, "every question is answered")
         submit.tap()
         // A test ring: done, back on the start page.
         waitFor(element("checkin-title:evening"))
@@ -190,7 +191,7 @@ final class GistUITests: XCTestCase {
         waitFor(element("export-include:morning"))
         XCTAssertTrue(element("export-history:morning").exists, "history is offered for included check-ins")
         XCTAssertTrue(element("export-go").isEnabled)
-        app.buttons["None"].tap()
+        element("export-all").tap()
         XCTAssertFalse(element("export-go").isEnabled, "nothing to export")
         app.buttons["Cancel"].tap()
     }

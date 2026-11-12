@@ -278,6 +278,15 @@ jobs:
             echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=$ln::$msg"
           done || true
 
+      - name: Show the failed tests' steps
+        if: failure()
+        run: |
+          log=build-logs/ui-tests.log
+          [[ -f "$log" ]] || exit 0
+          # Each failed test's own output: what it tapped and saw, up to the failure.
+          awk '/Test Case .* started/ { buf = "" } { buf = buf $0 "\n" } /Test Case .* failed/ { printf "%s\n", buf }' "$log" \
+            | grep -vE "^\s*$" | cut -c1-400 | head -n 600
+
       - name: Upload the test results
         if: failure()
         continue-on-error: true

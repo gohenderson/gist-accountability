@@ -270,6 +270,7 @@ struct CheckinCard: View {
             }
         }
         .card(score: score)
+        .accessibilityElement(children: .contain) // keeps the title's and buttons' own ids
         .accessibilityIdentifier(folded ? "row:\(c.id)" : "card:\(c.id)")
     }
 

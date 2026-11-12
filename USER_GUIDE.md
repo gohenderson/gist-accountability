@@ -355,11 +355,17 @@ these differences:
 - **Scan steps** use the camera. On the step's page, tap **Scan the code to use**; when it
   rings, scan the same code. A product's barcode works whether it reads as 12 or 13 digits.
   After 2 minutes, **Can't scan?** swaps the scan for 5 very hard problems.
-- **Add check-in** opens the same library of ready-made check-ins. Ones that need places
-  are coming; ones that need run tracking or voice are Android only.
-- **Not on iPhone yet:** places (arrive and leave), choosing what goes in a backup,
-  photo, video and voice-clip backgrounds, run triggers and voice check-ins. A backup from
-  Android imports with those left out or off.
+- **Add check-in** opens the same library of ready-made check-ins. Ones that need run
+  tracking or voice are Android only.
+- **Places** work as on Android: **Also rings → Add arrive or leave**, and each time's
+  **Where** (anywhere, or only when you're at or away from a place). Pick a place with
+  your current location, coordinates from a maps app, or one you've used. iOS itself
+  watches the places, even with Gist closed, so allow location **Always** (the start page
+  asks). A place you just added waits about 90 seconds before it can ring. iOS watches up
+  to 18 places across all check-ins.
+- **Backups** let you choose what goes in and comes in, as on Android.
+- **Not on iPhone yet:** photo, video and voice-clip backgrounds, run triggers and voice
+  check-ins. A backup from Android imports with those left out or off.
 
 ## Honest limits
 
