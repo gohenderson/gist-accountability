@@ -69,13 +69,13 @@ final class SnoozeTests: XCTestCase {
         var soft = Checkin(id: "s", name: "Stretch", times: [AlarmTime(15, 0)])
         soft.commitment = Checkin.soft
         var data = GistData(checkins: [soft])
-        let z = Snooze(checkinId: "s", day: "2026-11-12", time: "15:00", at: at(15, 10))
-        let plan = AlarmPlan.plan(data, waiting: [], practice: [], snoozed: [z], now: at(15, 1), calendar: cal)
-        XCTAssertEqual(plan.filter { $0.snoozed }.map { $0.at }, [at(15, 10)])
-        XCTAssertTrue(AlarmPlan.plan(data, waiting: [], practice: [], snoozed: [z], now: at(15, 11), calendar: cal)
-            .filter { $0.snoozed }.isEmpty, "past")
+        let z = OneOffRing(checkinId: "s", day: "2026-11-12", time: "15:00", at: at(15, 10))
+        let plan = AlarmPlan.plan(data, waiting: [], practice: [], oneOff: [z], now: at(15, 1), calendar: cal)
+        XCTAssertEqual(plan.filter { $0.oneOff }.map { $0.at }, [at(15, 10)])
+        XCTAssertTrue(AlarmPlan.plan(data, waiting: [], practice: [], oneOff: [z], now: at(15, 11), calendar: cal)
+            .filter { $0.oneOff }.isEmpty, "past")
         data.markDismissed(day: "2026-11-12", checkinId: "s", time: "15:00")
-        XCTAssertTrue(AlarmPlan.plan(data, waiting: [], practice: [], snoozed: [z], now: at(15, 1), calendar: cal)
-            .filter { $0.snoozed }.isEmpty, "dismissed")
+        XCTAssertTrue(AlarmPlan.plan(data, waiting: [], practice: [], oneOff: [z], now: at(15, 1), calendar: cal)
+            .filter { $0.oneOff }.isEmpty, "dismissed")
     }
 }
