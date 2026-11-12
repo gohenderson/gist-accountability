@@ -15,10 +15,16 @@ struct RunView: View {
     @State private var input = ""
     @State private var wrong = false
     @FocusState private var answerFocused: Bool
+    /// The scan step gave way to math ("Can't scan?").
+    @State private var scanFallback = false
+    @State private var canFallback = false
+    @State private var wrongCode = false
 
-    /// What runs. A scan step becomes 5 very hard problems (no camera scanning on iPhone yet).
+    /// What runs. A scan step that can't work here (no code registered, or no camera
+    /// scanning on this device) becomes 5 very hard problems.
     enum RunStep: Equatable {
         case math(count: Int, level: Int, note: String?)
+        case scan(label: String, code: String)
         case questions([Question])
     }
 
@@ -29,7 +35,12 @@ struct RunView: View {
             switch s.kind {
             case StepConfig.math: return .math(count: s.mathCount, level: s.mathLevel, note: nil)
             case StepConfig.scan:
-                return .math(count: 5, level: 4, note: "Scanning \(s.scanLabel.isEmpty ? "a code" : "at \(s.scanLabel)") isn't on iPhone yet: 5 very hard problems instead.")
+                if let code = s.scanCode, !code.isEmpty, CodeScanner.supported {
+                    return .scan(label: s.scanLabel, code: code)
+                }
+                let why = CodeScanner.supported ? "No code is set up for this scan" : "This device can't scan codes"
+                return .math(count: Scan.fallbackProblems, level: Scan.fallbackLevel,
+                             note: "\(why): \(Scan.fallbackProblems) very hard problems instead.")
             default: return .questions(s.questions)
             }
         }
@@ -89,55 +100,94 @@ struct RunView: View {
 
     @ViewBuilder private func stepView(_ step: RunStep) -> some View {
         switch step {
-        case let .math(count, _, note):
+        case .scan where scanFallback:
+            mathView(count: Scan.fallbackProblems, note: "Instead of the scan: \(Scan.fallbackProblems) very hard problems.")
+        case let .scan(label, code):
             VStack(alignment: .leading, spacing: 14) {
-                if let note { Text(note).font(.footnote).foregroundStyle(Theme.muted) }
-                Text("Problem \(min(solved + 1, count)) of \(count)").foregroundStyle(Theme.muted)
-                Text(problem.text)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("math-problem")
-                TextField("Answer", text: $input)
-                    .keyboardType(.numberPad)
-                    .font(.title)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($answerFocused)
-                    .accessibilityIdentifier("math-answer")
-                if wrong {
-                    Text("Not quite. Here's a new one.").foregroundStyle(Theme.bad)
+                Text(label.isEmpty ? "Scan the code" : "Go to \(label) and scan the code").font(.title3)
+                let at = index
+                ScannerPanel { scanned in
+                    guard index == at, !scanFallback else { return }
+                    if Scan.matches(code, scanned) {
+                        wrongCode = false
+                        advance()
+                    } else {
+                        wrongCode = true
+                    }
                 }
-                Button {
-                    check(count: count)
-                } label: {
-                    Text("Check").frame(maxWidth: .infinity).padding(.vertical, 8)
+                .id(index)
+                if wrongCode {
+                    Text("That's a different code.").foregroundStyle(Theme.bad)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(input.isEmpty)
-                .accessibilityIdentifier("math-check")
+                if canFallback {
+                    Button("Can't scan? Solve \(Scan.fallbackProblems) very hard problems instead") {
+                        scanFallback = true
+                        resetMath()
+                    }
+                    .accessibilityIdentifier("scan-fallback")
+                }
             }
-            .onAppear { answerFocused = true }
+            .task(id: index) {
+                try? await Task.sleep(for: .seconds(Scan.fallbackAfter))
+                if !Task.isCancelled { canFallback = true }
+            }
+        case let .math(count, _, note):
+            mathView(count: count, note: note)
         case let .questions(questions):
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(questions) { q in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(q.text).font(.title3)
-                            HStack {
-                                answerButton(q, true)
-                                answerButton(q, false)
-                            }
+            questionsView(questions)
+        }
+    }
+
+    private func mathView(count: Int, note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let note { Text(note).font(.footnote).foregroundStyle(Theme.muted) }
+            Text("Problem \(min(solved + 1, count)) of \(count)").foregroundStyle(Theme.muted)
+            Text(problem.text)
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .accessibilityIdentifier("math-problem")
+            TextField("Answer", text: $input)
+                .keyboardType(.numberPad)
+                .font(.title)
+                .textFieldStyle(.roundedBorder)
+                .focused($answerFocused)
+                .accessibilityIdentifier("math-answer")
+            if wrong {
+                Text("Not quite. Here's a new one.").foregroundStyle(Theme.bad)
+            }
+            Button {
+                check(count: count)
+            } label: {
+                Text("Check").frame(maxWidth: .infinity).padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(input.isEmpty)
+            .accessibilityIdentifier("math-check")
+        }
+        .onAppear { answerFocused = true }
+    }
+
+    @ViewBuilder private func questionsView(_ questions: [Question]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(questions) { q in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(q.text).font(.title3)
+                        HStack {
+                            answerButton(q, true)
+                            answerButton(q, false)
                         }
                     }
-                    Button {
-                        advance()
-                    } label: {
-                        Text("Submit").frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(questions.contains { answers[$0.id] == nil })
-                    .accessibilityIdentifier("submit")
                 }
+                Button {
+                    advance()
+                } label: {
+                    Text("Submit").frame(maxWidth: .infinity).padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(questions.contains { answers[$0.id] == nil })
+                .accessibilityIdentifier("submit")
             }
         }
     }
@@ -173,12 +223,19 @@ struct RunView: View {
     }
 
     private var currentLevel: Int {
-        if index < steps.count, case let .math(_, level, _) = steps[index] { return level }
-        return 2
+        guard index < steps.count else { return 2 }
+        switch steps[index] {
+        case let .math(_, level, _): return level
+        case .scan: return Scan.fallbackLevel
+        default: return 2
+        }
     }
 
     private func advance() {
         index += 1
+        scanFallback = false
+        canFallback = false
+        wrongCode = false
         resetMath()
         if index >= steps.count && !steps.isEmpty {
             model.finish(request, answers: answers)

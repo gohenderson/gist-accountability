@@ -340,6 +340,27 @@ A voice check-in has **Play it now** instead.
 - links to the source code and to report a problem;
 - **Donate**, which opens the [Donate](README.md#donate) section of the README.
 
+## On iPhone and iPad
+
+The iPhone app (iOS 26 or newer, [still in progress](README.md)) works the same way, with
+these differences:
+
+- **Alarms** are iOS alarms (AlarmKit): they sound in Silent mode and Focus, and show on
+  the Lock Screen with **Stop** and **Check in**. iOS doesn't let an app lock the screen
+  until you're done, so a strict check-in rings again every 3 minutes (up to 5 times)
+  instead, and opens full screen when you open Gist.
+- **Soft alarms** show **Stop** and **Snooze** (5 to 30 minutes, set on the check-in's
+  page). To do the steps, open Gist: the check-in waits on the start page with
+  **Check in** and **Dismiss**.
+- **Scan steps** use the camera. On the step's page, tap **Scan the code to use**; when it
+  rings, scan the same code. A product's barcode works whether it reads as 12 or 13 digits.
+  After 2 minutes, **Can't scan?** swaps the scan for 5 very hard problems.
+- **Add check-in** opens the same library of ready-made check-ins. Ones that need places
+  are coming; ones that need run tracking or voice are Android only.
+- **Not on iPhone yet:** places (arrive and leave), choosing what goes in a backup,
+  photo, video and voice-clip backgrounds, run triggers and voice check-ins. A backup from
+  Android imports with those left out or off.
+
 ## Honest limits
 
 - Like Alarmy, Gist can't stop you from force-stopping or uninstalling it in Android's

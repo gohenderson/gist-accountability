@@ -5,6 +5,7 @@ enum Route: Hashable {
     case edit(String)
     case history(String)
     case settings
+    case library
 }
 
 /// The start page: setup, what's waiting, the overall score, and every check-in as a card
@@ -24,8 +25,7 @@ struct StartView: View {
                     if model.checkins.count > 1 { controls }
                     list
                     Button {
-                        let c = model.addCheckin()
-                        path.append(Route.edit(c.id))
+                        path.append(Route.library)
                     } label: {
                         Label("Add check-in", systemImage: "plus")
                             .frame(maxWidth: .infinity)
@@ -51,6 +51,11 @@ struct StartView: View {
                 case .edit(let id): CheckinEditView(checkinId: id)
                 case .history(let id): HistoryView(checkinId: id)
                 case .settings: SettingsView()
+                case .library:
+                    LibraryView { c in
+                        path.removeLast()
+                        path.append(Route.edit(c.id))
+                    }
                 }
             }
             .sheet(isPresented: $reordering) { ReorderView() }
@@ -63,6 +68,7 @@ struct StartView: View {
             case "edit": if parts.count == 2 { path.append(Route.edit(parts[1])) }
             case "history": if parts.count == 2 { path.append(Route.history(parts[1])) }
             case "settings": path.append(Route.settings)
+            case "library": path.append(Route.library)
             case "run":
                 if parts.count == 2 {
                     model.running = RunRequest(pending: Pending(checkinId: parts[1], day: Days.today(), time: "07:00", practice: true), early: false)
@@ -118,6 +124,11 @@ struct StartView: View {
                         Text("Waiting since \(TimeText.of(p.time))").foregroundStyle(Theme.muted)
                     }
                     Spacer()
+                    if c.isSoft && !p.practice {
+                        Button("Dismiss") { model.dismiss(RunRequest(pending: p, early: false)) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("dismiss:\(c.id)")
+                    }
                     Button("Check in") { model.start(p) }
                         .buttonStyle(.borderedProminent)
                 }
