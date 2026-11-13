@@ -158,9 +158,9 @@ final class GistUITests: XCTestCase {
 
     func testSettingACaption() {
         launch("edit:wake")
+        waitFor(element("checkin-name"))
         let link = element("while-it-rings")
-        waitFor(link)
-        scrollTo(link)
+        scrollTo(link) // below the fold: the list only makes it when it's near
         link.tap()
         let caption = element("background-caption")
         waitFor(caption)
