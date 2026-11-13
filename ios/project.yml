@@ -26,8 +26,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSAlarmKitUsageDescription: Gist rings your check-ins as alarms, even in Silent mode or a Focus.
         NSCameraUsageDescription: Gist uses the camera to scan the code for a check-in's scan step.
+        NSMotionUsageDescription: Gist counts your steps to notice when you start and finish a run, for check-ins with run triggers. Nothing leaves your phone.
+        NSMicrophoneUsageDescription: To record a voice check-in's clip.
+        UIBackgroundModes: [location, audio]
         NSLocationWhenInUseUsageDescription: Gist uses your location to set up places for check-ins that ring when you arrive or leave. It never leaves your phone.
-        NSLocationAlwaysAndWhenInUseUsageDescription: To ring check-ins when you arrive at or leave a place while Gist is closed. Your location never leaves your phone.
+        NSLocationAlwaysAndWhenInUseUsageDescription: To ring check-ins when you arrive at or leave a place, and to keep counting steps for run triggers, while Gist is closed. Your location never leaves your phone.
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

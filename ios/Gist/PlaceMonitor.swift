@@ -138,11 +138,15 @@ final class PlaceMonitor: NSObject, CLLocationManagerDelegate {
     }
 }
 
-/// Starts watching places at launch, so a crossing that woke Gist is heard.
+/// Starts watching places and runs at launch (including when iOS wakes Gist in the
+/// background), so a crossing or a run is heard.
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        MainActor.assumeIsolated { PlaceMonitor.shared.start() }
+        MainActor.assumeIsolated {
+            PlaceMonitor.shared.start()
+            RunWatcher.shared.sync(AppModel.shared.checkins)
+        }
         return true
     }
 }

@@ -369,7 +369,15 @@ these differences:
   background appears once you open the check-in, with **Start check-in** at the bottom.
   Videos are converted to MP4 so they play on Android too, and backups carry the media
   both ways.
-- **Not on iPhone yet:** run triggers and voice check-ins.
+- **Run triggers** (starting a run, finishing one, or so many minutes into one) work as
+  on Android: Gist counts steps all day while any check-in has one. iOS only lets an app
+  keep counting in the background with location on, so Gist keeps location on at its
+  lowest accuracy (cell towers and Wi-Fi, no GPS) and ignores where you are. Allow
+  **Motion & Fitness** and location **Always** (the start page asks). It uses some battery;
+  turn off the check-ins with run triggers to stop it.
+- **Voice check-ins** speak (or play your clip) through your headphones, with your music
+  dipping, as on Android. Runs and places set them off any time. Their set times speak
+  only while Gist is awake: open, or watching for runs.
 
 ## Honest limits
 

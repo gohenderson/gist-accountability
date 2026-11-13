@@ -206,6 +206,46 @@ final class GistUITests: XCTestCase {
         waitFor(showing("51.50070, -0.12460"))
     }
 
+    func testAddingARunTrigger() {
+        launch("edit:wake")
+        waitFor(element("checkin-name"))
+        let add = element("add-run-trigger")
+        scrollTo(add)
+        add.tap()
+        let trigger = element("run-trigger:0")
+        scrollTo(trigger)
+        XCTAssertTrue(trigger.label.contains("finish a run"), trigger.label)
+        trigger.tap()
+        let into = app.buttons["I've been running for…"]
+        waitFor(into)
+        into.tap()
+        waitFor(element("run-minutes"))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        waitFor(trigger)
+        XCTAssertTrue(trigger.label.contains("into a run"), trigger.label)
+    }
+
+    func testMakingAVoiceCheckin() {
+        launch("library")
+        let blank = element("library:blank")
+        waitFor(blank)
+        blank.tap()
+        waitFor(element("checkin-name"))
+        let commitment = element("commitment")
+        scrollTo(commitment)
+        commitment.tap()
+        let voice = app.buttons["Voice"]
+        waitFor(voice)
+        voice.tap()
+        let text = element("voice-text")
+        scrollTo(text)
+        text.tap()
+        text.typeText("Halfway there")
+        XCTAssertFalse(element("while-it-rings").exists, "a voice check-in doesn't ring")
+        let play = element("test-voice")
+        scrollTo(play)
+    }
+
     // MARK: Backups
 
     func testExportChoices() {

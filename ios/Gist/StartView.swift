@@ -22,6 +22,7 @@ struct StartView: View {
                     overall
                     if !model.alarmsAllowed { setupCard }
                     if model.usesPlaces && !PlaceMonitor.shared.always { locationCard }
+                    if model.usesRuns && !RunWatcher.shared.problem.isEmpty { runsCard }
                     waitingCards
                     if model.checkins.count > 1 { controls }
                     list
@@ -125,6 +126,29 @@ struct StartView: View {
             Button(PlaceMonitor.shared.denied ? "Open Settings" : "Allow location") { PlaceMonitor.shared.requestAlways() }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("allow-location-card")
+        }
+        .card()
+    }
+
+    private var runsCard: some View {
+        let w = RunWatcher.shared
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Runs need a couple of permissions").font(.headline)
+            Text(w.problem).foregroundStyle(Theme.muted)
+            if w.supported {
+                Button(w.motionDenied || PlaceMonitor.shared.denied ? "Open Settings"
+                       : w.motion == .notDetermined ? "Allow Motion & Fitness" : "Allow location") {
+                    if w.motionDenied || PlaceMonitor.shared.denied {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    } else if w.motion == .notDetermined {
+                        w.requestMotion()
+                    } else {
+                        PlaceMonitor.shared.requestAlways()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("allow-runs-card")
+            }
         }
         .card()
     }
@@ -255,7 +279,7 @@ struct CheckinCard: View {
                 if c.isSoft {
                     Text("Soft alarm · not counted in stats").font(.footnote).foregroundStyle(Theme.muted)
                 } else if c.isVoice {
-                    Text("Voice check-ins only work on Android for now.").font(.footnote).foregroundStyle(Theme.muted)
+                    Text("Voice · speaks through your headphones · not counted in stats").font(.footnote).foregroundStyle(Theme.muted)
                 } else if !c.questions.isEmpty {
                     Text(model.statsLine(c)).font(.footnote).foregroundStyle(Theme.muted)
                 }
@@ -334,7 +358,7 @@ enum CheckinSummary {
             if c.repeat != .everyDay { parts.append(c.repeat.describe()) }
         }
         for t in c.events {
-            parts.append(t.isPlace ? PlaceText.describe(t).lowercasedFirst : "\(PlaceText.describe(t).lowercasedFirst) (Android only)")
+            parts.append(t.kind == Trigger.runFor ? "\(Trigger.runForText(t.minRunMinutes)) into a run" : PlaceText.describe(t).lowercasedFirst)
         }
         parts.append(steps(c))
         return parts.joined(separator: " · ")
