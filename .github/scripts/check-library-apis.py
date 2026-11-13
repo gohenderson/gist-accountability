@@ -76,6 +76,8 @@ def main():
     api = load_api(tool("platforms/android-*/data/api-versions.xml"))
     problems = {}  # (api, since) -> set of library classes
     checked = 0
+    newest = 0  # the newest API level any call needs, to show the check is really looking
+    unknown = 0
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(apk) as z:
         for name in z.namelist():
             if not re.fullmatch(r"classes\d*\.dex", name):
@@ -106,7 +108,11 @@ def main():
                     cs = api.get(owner)
                     s = cs[0] if cs else None
                 checked += 1
-                if s is not None and s > min_sdk:
+                if s is None:
+                    unknown += 1
+                    continue
+                newest = max(newest, s)
+                if s > min_sdk:
                     pretty = owner.replace("/", ".") + "." + member
                     problems.setdefault((pretty, s), set()).add(cls[1:-1].replace("/", "."))
 
@@ -118,7 +124,8 @@ def main():
             where = ", ".join(sorted(classes)[:3]) + (f" (+{len(classes) - 3})" if len(classes) > 3 else "")
             lines.append(f"| `{pretty}` | {s} | {where} |")
     else:
-        lines.append(f"✓ {checked} calls from libraries into Java APIs, all available on API {min_sdk}.")
+        lines.append(f"✓ {checked} calls from libraries into Java APIs, all available on API {min_sdk} "
+                     f"(the newest needs API {newest}; {unknown} not in the API database).")
     report = "\n".join(lines) + "\n"
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
