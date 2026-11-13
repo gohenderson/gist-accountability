@@ -288,6 +288,7 @@ final class AppModel {
     func delete(_ id: String) {
         data.checkins.removeAll { $0.id == id }
         data.deleteHistory(id)
+        MediaStore.clearAll(id)
         waiting.removeAll { $0.checkinId == id }
         practice.removeAll { $0.checkinId == id }
         save()
@@ -338,7 +339,7 @@ final class AppModel {
     /// The chosen check-ins (everything, with history, by default) as a backup file, in the
     /// same format as the Android app's.
     func backupText(_ choices: [Backup.ExportChoice]? = nil) throws -> String {
-        try Backup.export(data, choices: choices)
+        try Backup.export(data, choices: choices, media: MediaStore.media)
     }
 
     /// The file name for a backup: named after the check-in when there's only one.
@@ -358,9 +359,9 @@ final class AppModel {
     /// Imports a backup's chosen check-ins. Returns how many.
     func importBackup(_ contents: Backup.Contents, choices: [Backup.ImportChoice]) -> Int {
         let written = Backup.importing(contents, choices: choices, into: &data)
-        // Photos, video and voice clips aren't on iPhone yet: show none rather than a broken one.
-        for w in written where w.checkin.background.hasMedia {
-            data.update(w.checkin.id) { $0.background.kind = Background.none }
+        for w in written {
+            if let m = contents.media[w.sourceId] { MediaStore.store(m, for: w.checkin.id) }
+            MediaStore.keepOnly(w.checkin)
         }
         save()
         rescheduleSoon()
@@ -386,8 +387,21 @@ final class AppModel {
             AlarmTime(4, 0, days: Repeat(Repeat.weekly, [2])),
             AlarmTime(4, 45, days: Repeat(Repeat.weekly, [1, 3, 4, 5, 6, 7])),
         ], steps: [StepConfig(id: "wake-m", kind: StepConfig.math, mathCount: 10, mathLevel: 3)], category: "Morning"))
-        data.checkins.append(Checkin(id: "stretch", name: "Stand and stretch", times: [AlarmTime(15, 0)],
-                                     repeat: Repeat(Repeat.weekly, Repeat.weekdays), commitment: Checkin.soft))
+        var stretch = Checkin(id: "stretch", name: "Stand and stretch", times: [AlarmTime(15, 0)],
+                              repeat: Repeat(Repeat.weekly, Repeat.weekdays), commitment: Checkin.soft)
+        // A drawn sunrise as its background photo, with a caption.
+        stretch.background = Background(kind: Background.photo, caption: "Future you says thanks")
+        let sunrise = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 1200)).image { ctx in
+            let colors = [UIColor(red: 0.13, green: 0.16, blue: 0.35, alpha: 1).cgColor,
+                          UIColor(red: 0.93, green: 0.45, blue: 0.33, alpha: 1).cgColor,
+                          UIColor(red: 0.99, green: 0.80, blue: 0.45, alpha: 1).cgColor]
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 0.6, 1])!
+            ctx.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: 1200), options: [])
+            UIColor(red: 1, green: 0.93, blue: 0.7, alpha: 1).setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 200, y: 760, width: 200, height: 200))
+        }
+        if let jpeg = sunrise.jpegData(compressionQuality: 0.9) { try? MediaStore.setPhotos("stretch", [jpeg]) }
+        data.checkins.append(stretch)
         for (i, day) in Days.lastN(10, calendar: calendar).enumerated() where i > 0 {
             data.saveAnswers(day: day, checkinId: "morning", time: "07:00",
                              answers: ["latefood": i % 4 == 0, "alcohol": false])

@@ -170,6 +170,7 @@ jobs:
           shot 04-history -gist-route history:evening
           shot 05-settings -gist-route settings
           shot 09-library -gist-route library
+          shot 10-opening -gist-route run:stretch
           xcrun simctl ui "$udid" appearance dark
           shot 06-start-dark
           # And on an iPad.

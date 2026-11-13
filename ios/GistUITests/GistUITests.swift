@@ -144,7 +144,32 @@ final class GistUITests: XCTestCase {
         waitFor(element("checkin-title:wake"))
     }
 
+    func testOpeningWithABackgroundAndCaption() {
+        launch("run:stretch")
+        waitFor(showing("Future you says thanks"))
+        let start = element("start-checkin")
+        waitFor(start)
+        start.tap()
+        // No steps: straight to dismissing it.
+        waitFor(element("finish"))
+    }
+
     // MARK: Editing
+
+    func testSettingACaption() {
+        launch("edit:wake")
+        waitFor(element("checkin-name"))
+        let link = element("while-it-rings")
+        scrollTo(link) // below the fold: the list only makes it when it's near
+        link.tap()
+        let caption = element("background-caption")
+        waitFor(caption)
+        caption.tap()
+        caption.typeText("Up and at it")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        waitFor(link)
+        XCTAssertFalse(link.label.contains("None"), "now has a caption: \(link.label)")
+    }
 
     func testAddingAPlaceTrigger() {
         launch("edit:morning")

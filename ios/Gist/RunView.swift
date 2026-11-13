@@ -19,6 +19,8 @@ struct RunView: View {
     @State private var scanFallback = false
     @State private var canFallback = false
     @State private var wrongCode = false
+    /// Past the opening screen (background and caption), into the steps.
+    @State private var started = false
 
     /// What runs. A scan step that can't work here (no code registered, or no camera
     /// scanning on this device) becomes 5 very hard problems.
@@ -46,7 +48,62 @@ struct RunView: View {
         }
     }
 
+    /// Does it open on a screen with its background or caption first (like Android's
+    /// ringing screen)?
+    private var hasOpening: Bool {
+        guard let c = checkin else { return false }
+        let media = c.background.hasMedia && MediaStore.ready(c.id, c.background)
+        return media || !c.background.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
+        if hasOpening && !started {
+            opening
+        } else {
+            stepsScreen
+        }
+    }
+
+    /// The background full screen, with the time, name and caption at the top and one big
+    /// Start check-in button at the bottom, out of the picture's way.
+    private var opening: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let c = checkin {
+                BackgroundMedia(checkin: c).ignoresSafeArea()
+            }
+            LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.1), .black.opacity(0.65)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 10) {
+                if request.pending.practice {
+                    Text("TEST RING · NOTHING IS LOGGED").font(.caption.bold()).foregroundStyle(.orange)
+                }
+                Text(TimeText.of(request.pending.time)).font(.system(size: 56, weight: .bold)).foregroundStyle(.white)
+                Text(checkin?.name ?? "Check-in").font(.title.bold()).foregroundStyle(.white)
+                if let caption = checkin?.background.caption, !caption.isEmpty {
+                    Text(caption).font(.title2.bold()).foregroundStyle(.white)
+                        .accessibilityIdentifier("caption")
+                }
+                Spacer()
+                Button {
+                    withAnimation { started = true }
+                } label: {
+                    Text(steps.isEmpty ? "Continue" : "Start check-in")
+                        .font(.title3.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("start-checkin")
+                footer.tint(.white)
+            }
+            .padding(24)
+            .frame(maxWidth: 640)
+        }
+    }
+
+    private var stepsScreen: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
             if index < steps.count {

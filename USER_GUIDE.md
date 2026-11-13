@@ -364,8 +364,12 @@ these differences:
   asks). A place you just added waits about 90 seconds before it can ring. iOS watches up
   to 18 places across all check-ins.
 - **Backups** let you choose what goes in and comes in, as on Android.
-- **Not on iPhone yet:** photo, video and voice-clip backgrounds, run triggers and voice
-  check-ins. A backup from Android imports with those left out or off.
+- **Backgrounds and captions** (a photo, a slideshow or a muted looping video) are set
+  under **While it rings**, as on Android. iOS shows its own alarm screen, so the
+  background appears once you open the check-in, with **Start check-in** at the bottom.
+  Videos are converted to MP4 so they play on Android too, and backups carry the media
+  both ways.
+- **Not on iPhone yet:** run triggers and voice check-ins.
 
 ## Honest limits
 

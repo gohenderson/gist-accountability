@@ -121,7 +121,7 @@ struct ImportChoicesView: View {
                 } header: {
                     Text("In this file")
                 } footer: {
-                    Text("Check-ins you don't pick, and yours that aren't in the file, are left alone. Photos, videos and voice clips stay on Android for now.")
+                    Text("Check-ins you don't pick, and yours that aren't in the file, are left alone. Photos, videos and voice clips come with them.")
                 }
             }
             .navigationTitle("Import backup")
