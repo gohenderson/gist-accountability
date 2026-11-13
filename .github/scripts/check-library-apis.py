@@ -81,7 +81,7 @@ def main():
             if not re.fullmatch(r"classes\d*\.dex", name):
                 continue
             path = z.extract(name, tmp)
-            out = subprocess.run([dexdump, "-d", path], capture_output=True, text=True, check=True).stdout
+            out = subprocess.run([dexdump, "-d", path], capture_output=True, check=True).stdout.decode("utf-8", "replace")
             cls = ""
             for line in out.splitlines():
                 m = CLASS.search(line)
