@@ -24,8 +24,8 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(try works("wake-up"))
         XCTAssertFalse(try works("gym"), "places come later")
         XCTAssertTrue(try works("gym", places: true))
-        XCTAssertFalse(try works("after-run", places: true), "runs are Android only")
-        XCTAssertFalse(try works("run-cheer", places: true), "voice is Android only")
+        XCTAssertTrue(try works("after-run"))
+        XCTAssertTrue(try works("run-cheer"))
     }
 
     func testAddingACopy() throws {
