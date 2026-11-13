@@ -76,6 +76,17 @@ struct CheckinEditView: View {
             stepsSection(c)
 
             Section {
+                NavigationLink {
+                    BackgroundEditView(checkin: c)
+                } label: {
+                    LabeledContent("Background and caption", value: backgroundText(c.wrappedValue))
+                }
+                .accessibilityIdentifier("while-it-rings")
+            } header: {
+                Text("While it rings")
+            }
+
+            Section {
                 Button("Test: ring in 10 seconds") { model.testRing(c.wrappedValue) }
                     .accessibilityIdentifier("test-ring")
             } footer: {
@@ -94,6 +105,19 @@ struct CheckinEditView: View {
                 dismiss()
             }
         }
+    }
+
+    private func backgroundText(_ c: Checkin) -> String {
+        var parts: [String] = []
+        switch c.background.kind {
+        case Background.photo: parts.append("Photo")
+        case Background.slideshow: parts.append("Slideshow · \(MediaStore.photos(c.id).count) photos")
+        case Background.video: parts.append("Video")
+        default: break
+        }
+        if c.background.hasMedia && !MediaStore.ready(c.id, c.background) { parts[0] += " (not chosen)" }
+        if !c.background.caption.isEmpty { parts.append("caption") }
+        return parts.isEmpty ? "None" : parts.joined(separator: ", ")
     }
 
     // MARK: Times

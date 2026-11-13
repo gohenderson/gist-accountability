@@ -217,7 +217,8 @@ The **iOS** workflow runs on a macOS runner for pull requests and pushes that to
   starting from the demo data each time: the start page, folding a check-in, adding one
   from the library or blank, answering questions, solving math (debug builds expose each
   problem's answer to the tests), a wrong answer, ending a test, adding an arrive trigger
-  and a time that only rings at a place (by coordinates), and choosing what to export. On
+  and a time that only rings at a place (by coordinates), a caption, the opening screen with
+  a background, and choosing what to export. On
   a failure, the **ios-ui-test-results** artifact has the `.xcresult` bundle (open it in
   Xcode for screenshots of each step) and the log.
 
