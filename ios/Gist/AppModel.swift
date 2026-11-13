@@ -116,6 +116,7 @@ final class AppModel {
         var all: [Pending] = []
         for p in waiting + due + practiceDue where stillWaiting(p) && !all.contains(p) { all.append(p) }
         waiting = all
+        speakDueVoices()
         save()
         presentNext()
         await reschedule()
@@ -152,6 +153,7 @@ final class AppModel {
         Task {
             await reschedule()
             await PlaceMonitor.shared.sync(Places.watched(data.checkins))
+            RunWatcher.shared.sync(data.checkins)
         }
     }
 
@@ -175,27 +177,102 @@ final class AppModel {
             let rang = Places.rang(data, checkinId: c.id, day: day, waiting: waiting)
             guard Places.eventRings(c, key: crossing.key, entering: crossing.inside, now: now,
                                     rangToday: rang, calendar: calendar) != nil else { continue }
-            let time = AlarmTime(calendar.component(.hour, from: now), calendar.component(.minute, from: now)).description
-            guard !data.isClosed(day: day, checkinId: c.id, time: time) else { continue }
-            data.markRang(day: day, checkinId: c.id, time: time)
-            let p = Pending(checkinId: c.id, day: day, time: time)
-            if !waiting.contains(p) { waiting.append(p) }
-            // Rings through AlarmKit a moment from now, like any other alarm.
-            OneOffStore.add(OneOffRing(checkinId: c.id, day: day, time: time, at: now.addingTimeInterval(3)))
+            ringNow(c, day: day, at: now)
         }
+    }
+
+    /// Rings [c] now for a place or a run: through AlarmKit a moment from now, like any other
+    /// alarm; a voice check-in just speaks. (A voice one can speak again within the same
+    /// minute: places and runs have their own once-a-day / once-per-run rules.)
+    private func ringNow(_ c: Checkin, day: String, at now: Date) {
+        let time = AlarmTime(calendar.component(.hour, from: now), calendar.component(.minute, from: now)).description
+        if c.isVoice {
+            data.markDone(day: day, checkinId: c.id, time: time) // not counted; for "once a day"
+            VoicePlayer.shared.play(c)
+            return
+        }
+        guard !data.isClosed(day: day, checkinId: c.id, time: time) else { return }
+        data.markRang(day: day, checkinId: c.id, time: time)
+        let p = Pending(checkinId: c.id, day: day, time: time)
+        if !waiting.contains(p) { waiting.append(p) }
+        OneOffStore.add(OneOffRing(checkinId: c.id, day: day, time: time, at: now.addingTimeInterval(3)))
+    }
+
+    // MARK: - Runs and voice
+
+    /// A run started ([finishedMinutes] nil) or finished: ring every check-in that wants it.
+    func runEvent(finishedMinutes: Int?) {
+        let now = Date()
+        var rang = false
+        for c in data.checkins {
+            let day = Days.forAlarm(aboutYesterday: c.aboutYesterday, at: now, calendar: calendar)
+            let today = Places.rang(data, checkinId: c.id, day: day, waiting: waiting)
+            guard Runs.eventRings(c, finishedMinutes: finishedMinutes, now: now, rangToday: today, calendar: calendar) else { continue }
+            ringNow(c, day: day, at: now)
+            rang = true
+        }
+        if rang { afterEventRings() }
+    }
+
+    /// The current run has lasted [minutes]: rings "N minutes into a run" check-ins not rung
+    /// this run yet ([fired]). Returns the milestones it rang.
+    func runProgress(minutes: Int, fired: Set<String>) -> [String] {
+        let now = Date()
+        var keys: [String] = []
+        for c in data.checkins {
+            let day = Days.forAlarm(aboutYesterday: c.aboutYesterday, at: now, calendar: calendar)
+            let today = Places.rang(data, checkinId: c.id, day: day, waiting: waiting)
+            let due = Runs.progressRings(c, minutes: minutes, fired: fired, now: now, rangToday: today, calendar: calendar)
+            guard !due.isEmpty else { continue }
+            ringNow(c, day: day, at: now)
+            keys += due
+        }
+        if !keys.isEmpty { afterEventRings() }
+        return keys
+    }
+
+    /// Voice check-ins whose time just came: speak them (called while Gist is awake).
+    func speakDueVoices() {
+        let due = Voice.due(data, now: Date(), calendar: calendar)
+        guard !due.isEmpty else { return }
+        for p in due {
+            data.markDone(day: p.day, checkinId: p.checkinId, time: p.time)
+            if let c = data.checkin(p.checkinId) { VoicePlayer.shared.play(c) }
+        }
+        save()
+    }
+
+    /// Plays a voice check-in now (the check-in page's "Play it now"). Nothing is logged.
+    func playVoice(_ c: Checkin) {
+        if !VoicePlayer.shared.play(c) {
+            notice = "Connect headphones first, or turn off \"Only through headphones\"."
+        }
+    }
+
+    private func afterEventRings() {
+        save()
+        Task { await reschedule() }
     }
 
     /// Location permission changed, or check-ins' places did.
     func placesChanged() async {
         await PlaceMonitor.shared.sync(Places.watched(data.checkins))
+        RunWatcher.shared.sync(data.checkins)
         await reschedule()
     }
 
     /// Do any check-ins that are on use places?
     var usesPlaces: Bool { !Places.watched(data.checkins).isEmpty }
 
+    /// Do any check-ins that are on have run triggers?
+    var usesRuns: Bool { Runs.anyUse(data.checkins) }
+
     /// A test ring in 10 seconds: it runs the steps, logs nothing, and leaves real rings alone.
     func testRing(_ c: Checkin) {
+        if c.isVoice {
+            playVoice(c)
+            return
+        }
         practice.append(PracticeRing(checkinId: c.id, at: Date().addingTimeInterval(10)))
         save()
         rescheduleSoon()

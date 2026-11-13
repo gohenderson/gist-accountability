@@ -136,7 +136,6 @@ struct WhereEditor: View {
 /// An arrive or leave trigger.
 struct PlaceTriggerEditor: View {
     @Binding var trigger: Trigger
-    @State private var editingDays = false
 
     var body: some View {
         Form {
@@ -149,40 +148,11 @@ struct PlaceTriggerEditor: View {
                 .labelsHidden()
             }
             PlacePicker(place: $trigger.place)
-            Section {
-                Toggle("Only between two times", isOn: Binding(
-                    get: { trigger.windowStart != nil && trigger.windowEnd != nil },
-                    set: { on in
-                        trigger.windowStart = on ? AlarmTime(6, 0) : nil
-                        trigger.windowEnd = on ? AlarmTime(10, 0) : nil
-                    }))
-                if trigger.windowStart != nil {
-                    DatePicker("From", selection: windowBinding(\.windowStart), displayedComponents: .hourAndMinute)
-                    DatePicker("To", selection: windowBinding(\.windowEnd), displayedComponents: .hourAndMinute)
-                }
-                NavigationLink {
-                    DaysEditor(days: $trigger.days)
-                } label: {
-                    LabeledContent("Days", value: trigger.days.describe())
-                }
-                Toggle("At most once a day", isOn: $trigger.oncePerDay)
-            } footer: {
-                Text("A window can cross midnight (10:00 PM to 2:00 AM).")
-            }
+            TriggerConditions(trigger: $trigger)
             LocationPermissionSection()
         }
         .navigationTitle(trigger.kind == Trigger.arrive ? "Arrive" : "Leave")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func windowBinding(_ key: WritableKeyPath<Trigger, AlarmTime?>) -> Binding<Date> {
-        Binding {
-            let t = trigger[keyPath: key] ?? AlarmTime(12, 0)
-            return Calendar.current.date(bySettingHour: t.hour, minute: t.minute, second: 0, of: Date()) ?? Date()
-        } set: { date in
-            let c = Calendar.current.dateComponents([.hour, .minute], from: date)
-            trigger[keyPath: key] = AlarmTime(c.hour ?? 0, c.minute ?? 0)
-        }
     }
 }
 
@@ -204,6 +174,45 @@ struct LocationPermissionSection: View {
     }
 }
 
+/// When an event trigger may ring: a time window, days, and at most once a day.
+struct TriggerConditions: View {
+    @Binding var trigger: Trigger
+
+    var body: some View {
+        Section {
+            Toggle("Only between two times", isOn: Binding(
+                get: { trigger.windowStart != nil && trigger.windowEnd != nil },
+                set: { on in
+                    trigger.windowStart = on ? AlarmTime(6, 0) : nil
+                    trigger.windowEnd = on ? AlarmTime(10, 0) : nil
+                }))
+            if trigger.windowStart != nil {
+                DatePicker("From", selection: windowBinding(\.windowStart), displayedComponents: .hourAndMinute)
+                DatePicker("To", selection: windowBinding(\.windowEnd), displayedComponents: .hourAndMinute)
+            }
+            NavigationLink {
+                DaysEditor(days: $trigger.days)
+            } label: {
+                LabeledContent("Days", value: trigger.days.describe())
+            }
+            Toggle("At most once a day", isOn: $trigger.oncePerDay)
+                .accessibilityIdentifier("once-a-day")
+        } footer: {
+            Text("A window can cross midnight (10:00 PM to 2:00 AM).")
+        }
+    }
+
+    private func windowBinding(_ key: WritableKeyPath<Trigger, AlarmTime?>) -> Binding<Date> {
+        Binding {
+            let t = trigger[keyPath: key] ?? AlarmTime(12, 0)
+            return Calendar.current.date(bySettingHour: t.hour, minute: t.minute, second: 0, of: Date()) ?? Date()
+        } set: { date in
+            let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+            trigger[keyPath: key] = AlarmTime(c.hour ?? 0, c.minute ?? 0)
+        }
+    }
+}
+
 enum PlaceText {
     /// "When you arrive at Gym", "When you leave Home"
     static func describe(_ t: Trigger) -> String {
@@ -212,7 +221,8 @@ enum PlaceText {
         case Trigger.arrive: return "When you arrive at \(name)"
         case Trigger.leave: return "When you leave \(name)"
         case Trigger.runStart: return "When you start running"
-        case Trigger.runEnd: return "When you finish running"
+        case Trigger.runEnd:
+            return t.minRunMinutes > 0 ? "When you finish a run of \(t.minRunMinutes)+ minutes" : "When you finish running"
         default: return "\(Trigger.runForText(t.minRunMinutes)) into a run"
         }
     }

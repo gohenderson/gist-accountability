@@ -11,11 +11,9 @@ public enum Library {
         public let checkin: Checkin
         public var id: String { key }
 
-        /// Can the iPhone app do everything this template needs? (Run triggers and voice
-        /// check-ins are Android only; places come with [places].)
+        /// Can the iPhone app do everything this template needs? (Places need [places].)
         public func worksOnIPhone(places: Bool) -> Bool {
-            !checkin.isVoice
-                && checkin.events.allSatisfy { !$0.isMovement && (places || !$0.isPlace) }
+            checkin.events.allSatisfy { places || !$0.isPlace }
                 && (places || checkin.times.allSatisfy { $0.where == Trigger.anywhere })
         }
     }

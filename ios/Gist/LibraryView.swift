@@ -21,17 +21,12 @@ struct LibraryView: View {
             ForEach(Library.categories, id: \.self) { category in
                 Section(category) {
                     ForEach(Library.templates.filter { $0.category == category }) { t in
-                        if t.worksOnIPhone(places: true) {
-                            Button {
-                                onAdd(model.addCheckin(from: t))
-                            } label: {
-                                row(t.checkin.name, t.blurb, detail: summary(t.checkin))
-                            }
-                            .accessibilityIdentifier("library:\(t.key)")
-                        } else {
-                            row(t.checkin.name, t.blurb, detail: unavailable(t.checkin))
-                                .opacity(0.5)
+                        Button {
+                            onAdd(model.addCheckin(from: t))
+                        } label: {
+                            row(t.checkin.name, t.blurb, detail: summary(t.checkin))
                         }
+                        .accessibilityIdentifier("library:\(t.key)")
                     }
                 }
             }
@@ -58,11 +53,12 @@ struct LibraryView: View {
     }
 
     private func summary(_ c: Checkin) -> String {
-        let times = c.times.map { TimeText.of($0.description) }.joined(separator: ", ")
-        return c.isSoft ? "\(times) · soft" : times
-    }
-
-    private func unavailable(_ c: Checkin) -> String {
-        c.isVoice ? "Android only (voice check-ins)" : "Android only (needs run tracking)"
+        var parts = c.times.map { TimeText.of($0.description) }
+        parts += c.events.map { t in
+            t.kind == Trigger.runFor ? "\(Trigger.runForText(t.minRunMinutes)) into a run" : PlaceText.describe(t).lowercasedFirst
+        }
+        if c.isSoft { parts.append("soft") }
+        if c.isVoice { parts.append("voice") }
+        return parts.joined(separator: " · ")
     }
 }

@@ -59,8 +59,9 @@ struct CheckinEditView: View {
                 Picker("Commitment", selection: c.commitment) {
                     Text("Strict").tag(Checkin.strict)
                     Text("Soft").tag(Checkin.soft)
-                    if c.wrappedValue.isVoice { Text("Voice (Android only)").tag(Checkin.voice) }
+                    Text("Voice").tag(Checkin.voice)
                 }
+                .accessibilityIdentifier("commitment")
                 if c.wrappedValue.isSoft {
                     Picker("Snooze", selection: c.snoozeMinutes) {
                         ForEach(Checkin.snoozeChoices, id: \.self) { Text("\($0) minutes").tag($0) }
@@ -68,29 +69,36 @@ struct CheckinEditView: View {
                     .accessibilityIdentifier("snooze-minutes")
                 }
             } footer: {
-                Text(c.wrappedValue.isSoft
-                     ? "Rings once, with Snooze. Open Gist to do its steps or dismiss it. Not counted in your stats."
-                     : "Until the steps are done, it rings again every \(AlarmPlan.nagMinutes) minutes (up to \(AlarmPlan.nagCount) times). Counted in your stats.")
+                Text(commitmentText(c.wrappedValue))
             }
 
-            stepsSection(c)
+            if c.wrappedValue.isVoice {
+                VoiceSection(checkin: c)
+            } else {
+                stepsSection(c)
 
-            Section {
-                NavigationLink {
-                    BackgroundEditView(checkin: c)
-                } label: {
-                    LabeledContent("Background and caption", value: backgroundText(c.wrappedValue))
+                Section {
+                    NavigationLink {
+                        BackgroundEditView(checkin: c)
+                    } label: {
+                        LabeledContent("Background and caption", value: backgroundText(c.wrappedValue))
+                    }
+                    .accessibilityIdentifier("while-it-rings")
+                } header: {
+                    Text("While it rings")
                 }
-                .accessibilityIdentifier("while-it-rings")
-            } header: {
-                Text("While it rings")
             }
 
             Section {
-                Button("Test: ring in 10 seconds") { model.testRing(c.wrappedValue) }
-                    .accessibilityIdentifier("test-ring")
+                if c.wrappedValue.isVoice {
+                    Button("Play it now") { model.playVoice(c.wrappedValue) }
+                        .accessibilityIdentifier("test-voice")
+                } else {
+                    Button("Test: ring in 10 seconds") { model.testRing(c.wrappedValue) }
+                        .accessibilityIdentifier("test-ring")
+                }
             } footer: {
-                Text("A practice run: nothing is logged, and real alarms are left alone.")
+                Text(c.wrappedValue.isVoice ? "Nothing is logged." : "A practice run: nothing is logged, and real alarms are left alone.")
             }
 
             Section {
@@ -105,6 +113,14 @@ struct CheckinEditView: View {
                 dismiss()
             }
         }
+    }
+
+    private func commitmentText(_ c: Checkin) -> String {
+        if c.isVoice {
+            return "No alarm and nothing to tap: when a trigger fires, it says its line (or plays your clip) through your headphones, and your music dips while it talks. Not counted in your stats. On iPhone, its times speak only while Gist is awake (open, or watching for runs); runs and places always work."
+        }
+        if c.isSoft { return "Rings once, with Snooze. Open Gist to do its steps or dismiss it. Not counted in your stats." }
+        return "Until the steps are done, it rings again every \(AlarmPlan.nagMinutes) minutes (up to \(AlarmPlan.nagCount) times). Counted in your stats."
     }
 
     private func backgroundText(_ c: Checkin) -> String {
@@ -159,7 +175,7 @@ struct CheckinEditView: View {
         placesSection(c)
     }
 
-    /// Arrive and leave triggers (run triggers are shown, but only work on Android).
+    /// Arrive and leave, and run triggers.
     @ViewBuilder private func placesSection(_ c: Binding<Checkin>) -> some View {
         Section {
             ForEach(Array(c.wrappedValue.events.enumerated()), id: \.offset) { i, t in
@@ -176,10 +192,17 @@ struct CheckinEditView: View {
                     }
                     .accessibilityIdentifier("place-trigger:\(i)")
                 } else {
-                    VStack(alignment: .leading) {
-                        Text(PlaceText.describe(t))
-                        Text("Android only (needs run tracking)").font(.footnote).foregroundStyle(Theme.muted)
+                    NavigationLink {
+                        RunTriggerEditor(trigger: eventAt(c, i))
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(PlaceText.describe(t))
+                            if let w = windowText(t) {
+                                Text(w).font(.footnote).foregroundStyle(Theme.muted)
+                            }
+                        }
                     }
+                    .accessibilityIdentifier("run-trigger:\(i)")
                 }
             }
             .onDelete { c.wrappedValue.events.remove(atOffsets: $0) }
@@ -188,6 +211,14 @@ struct CheckinEditView: View {
             }
             .disabled(c.wrappedValue.events.filter { $0.isPlace }.count >= 10)
             .accessibilityIdentifier("add-place-trigger")
+            Button("Add a run trigger") {
+                c.wrappedValue.events.append(Trigger(kind: Trigger.runEnd, minRunMinutes: 20))
+            }
+            .disabled(c.wrappedValue.events.filter { $0.isMovement }.count >= 10)
+            .accessibilityIdentifier("add-run-trigger")
+            if c.wrappedValue.events.contains(where: { $0.isMovement }) && !RunWatcher.shared.problem.isEmpty {
+                Text(RunWatcher.shared.problem).font(.footnote).foregroundStyle(Theme.bad)
+            }
         } header: {
             Text("Also rings")
         } footer: {

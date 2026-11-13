@@ -218,7 +218,7 @@ The **iOS** workflow runs on a macOS runner for pull requests and pushes that to
   from the library or blank, answering questions, solving math (debug builds expose each
   problem's answer to the tests), a wrong answer, ending a test, adding an arrive trigger
   and a time that only rings at a place (by coordinates), a caption, the opening screen with
-  a background, and choosing what to export. On
+  a background, a run trigger, a voice check-in, and choosing what to export. On
   a failure, the **ios-ui-test-results** artifact has the `.xcresult` bundle (open it in
   Xcode for screenshots of each step) and the log.
 
@@ -243,6 +243,9 @@ The GistCore tests cover:
   then adding a place-dependent time as you cross, due times skipped when the place
   didn't hold, arrive / leave with days, windows (across midnight) and once a day, and
   which places get watched.
+- **Runs and voice:** the run detector (walking isn't running, a dash for the bus isn't a
+  run, a traffic light doesn't end one, a run ends when the steps stop), start / finish /
+  "N minutes into a run" with once-per-run milestones, and voice check-ins' times.
 - **Library and scanning:** the 19 templates (like Android's), which work on iPhone, adding
   a copy ("Water 2"), and matching scanned codes (UPC-A as 12 or 13 digits).
 
@@ -252,6 +255,8 @@ Some things need a real device, so check them by hand:
   different code (it says so), then the right one.
 - **Places:** add an arrive trigger for where you are, allow location Always, walk out of
   the circle and back in (or use Xcode's location simulation) with Gist closed.
+- **Runs and voice:** add the library's "30 minutes in" and change it to 5 minutes, put
+  headphones on, play music, lock the phone and jog for a few minutes.
 
 ## When a test fails
 
