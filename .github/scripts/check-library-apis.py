@@ -30,14 +30,19 @@ def tool(pattern):
     return found[-1]
 
 
+def level(value):
+    """An API level from api-versions.xml: "33", or newer files' "36.1" (major.minor)."""
+    return int(str(value).split(".")[0])
+
+
 def load_api(path):
     """{class: (since, {member: since}, [supertypes])} from api-versions.xml."""
     api = {}
     for c in ET.parse(path).getroot().iter("class"):
-        since = int(c.get("since", "1"))
+        since = level(c.get("since", "1"))
         members = {}
         for m in list(c.iter("method")) + list(c.iter("field")):
-            members[m.get("name")] = int(m.get("since", since))
+            members[m.get("name")] = level(m.get("since", since))
         supers = [e.get("name") for e in list(c.iter("extends")) + list(c.iter("implements"))]
         api[c.get("name")] = (since, members, supers)
     return api
