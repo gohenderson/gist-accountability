@@ -68,6 +68,8 @@ class CheckinActivity : BaseActivity() {
     private var problem: MathGen.Problem? = null
     private val fallbacks = mutableSetOf<Int>() // scan steps swapped for math ("can't scan")
     private val answers = mutableMapOf<String, Boolean>()
+    /** Typed answers (number and text questions), as typed. */
+    private val values = mutableMapOf<String, String>()
     private var scanner: ScannerView? = null
     private val ui = Handler(Looper.getMainLooper())
 
@@ -105,7 +107,10 @@ class CheckinActivity : BaseActivity() {
         }
 
         // Pre-fill when editing a past day.
-        if (!forced && !early) store.result(target.day, checkin.id, slot)?.answers?.let { answers.putAll(it) }
+        if (!forced && !early) store.result(target.day, checkin.id, slot)?.let {
+            answers.putAll(it.answers)
+            values.putAll(it.values)
+        }
         savedInstanceState?.let { s ->
             stepIndex = s.getInt(STATE_STEP, 0).coerceIn(0, steps.size - 1)
             solved = s.getInt(STATE_SOLVED, 0)
@@ -113,6 +118,8 @@ class CheckinActivity : BaseActivity() {
             answers.clear()
             s.getStringArrayList(STATE_YES)?.forEach { answers[it] = true }
             s.getStringArrayList(STATE_NO)?.forEach { answers[it] = false }
+            values.clear()
+            s.getBundle(STATE_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
         }
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -300,6 +307,7 @@ class CheckinActivity : BaseActivity() {
         outState.putIntArray(STATE_FALLBACK, fallbacks.toIntArray())
         outState.putStringArrayList(STATE_YES, ArrayList(answers.filterValues { it }.keys))
         outState.putStringArrayList(STATE_NO, ArrayList(answers.filterValues { !it }.keys))
+        outState.putBundle(STATE_VALUES, Bundle().apply { values.forEach { (k, v) -> putString(k, v) } })
     }
 
     // ------------------------------------------------------------ flow
@@ -767,15 +775,48 @@ class CheckinActivity : BaseActivity() {
     private fun surveyUi(col: LinearLayout, qs: List<Question>) {
         if (forced) col.add(muted("Be honest. This is just for you.", 14f), dp(10))
         lateinit var submit: Button
+        // Yes/no questions must be answered; typed ones are optional (empty is off track).
         fun refresh() {
-            val left = qs.count { !answers.containsKey(it.id) }
-            submit.isEnabled = left == 0
-            submit.text = if (left == 0) "Submit" else "$left left to answer"
+            val left = qs.count { !it.takesValue && !answers.containsKey(it.id) }
+            val badNumber = qs.any { it.type == Question.NUMBER && !values[it.id].isNullOrBlank() &&
+                Question.cleanNumber(values.getValue(it.id)) == null }
+            submit.isEnabled = left == 0 && !badNumber
+            submit.text = when {
+                left > 0 -> "$left left to answer"
+                badNumber -> "Fix the number"
+                else -> "Submit"
+            }
         }
 
         for (q in qs) {
             val box = card()
             box.add(label(q.text, 18f))
+            if (q.takesValue) {
+                val input = EditText(this).apply {
+                    inputType = if (q.type == Question.NUMBER) {
+                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+                    } else {
+                        InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    }
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                    setTextColor(colorText)
+                    hint = if (q.type == Question.NUMBER) "A number (optional)" else "Your answer (optional)"
+                    setText(values[q.id].orEmpty())
+                    tag = "q:${q.id}:value"
+                }
+                input.addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = keepQuiet()
+                    override fun afterTextChanged(s: Editable?) {
+                        values[q.id] = s?.toString().orEmpty()
+                        refresh()
+                    }
+                })
+                box.add(input, dp(8))
+                box.add(muted("Leave it empty if you can't answer: that counts as off track.", 13f), dp(4))
+                col.add(box, dp(12))
+                continue
+            }
             val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
             val yes = choiceTile("Yes").apply { id = View.generateViewId(); tag = "q:${q.id}:yes" }
             val no = choiceTile("No").apply { id = View.generateViewId(); tag = "q:${q.id}:no" }
@@ -791,12 +832,17 @@ class CheckinActivity : BaseActivity() {
         }
 
         submit = primaryButton("Submit") {
-            val clean = qs.associate { it.id to answers.getValue(it.id) }
-            val good = qs.count { it.isGood(clean.getValue(it.id)) }
+            val clean = qs.filter { !it.takesValue }.associate { it.id to answers.getValue(it.id) }
+            // Every typed question, empty ones as "" (clears a value saved before).
+            val typed = qs.filter { it.takesValue }.associate { q ->
+                val v = values[q.id].orEmpty().trim()
+                q.id to (if (q.type == Question.NUMBER) Question.cleanNumber(v) ?: "" else v)
+            }
+            val good = qs.count { q -> if (q.takesValue) typed[q.id].orEmpty().isNotEmpty() else q.isGood(clean.getValue(q.id)) }
             if (target.practice) {
                 toast("Test: $good of ${qs.size} on track (not logged)")
             } else {
-                store.saveAnswers(target.day, checkin.id, slot, clean, early)
+                store.saveAnswers(target.day, checkin.id, slot, clean, early, typed)
                 toast("Logged: $good of ${qs.size} on track")
             }
             nextStep()
@@ -833,6 +879,7 @@ class CheckinActivity : BaseActivity() {
         private const val STATE_FALLBACK = "fallback"
         private const val STATE_YES = "yes"
         private const val STATE_NO = "no"
+        private const val STATE_VALUES = "values"
         private const val FALLBACK_PROBLEMS = 5
         private const val FALLBACK_DELAY_MS = 2 * 60 * 1000L
 

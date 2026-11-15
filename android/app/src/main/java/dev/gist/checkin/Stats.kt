@@ -16,9 +16,9 @@ object Stats {
     fun dayMark(q: Question, day: Map<String, SlotResult>): Mark {
         val counted = day.values.filter { it.status != SlotResult.SKIPPED }
         if (counted.any { it.status == SlotResult.RANG }) return Mark.OFF_TRACK // missed
-        val answers = counted.mapNotNull { it.answers[q.id] }
-        if (answers.any { !q.isGood(it) }) return Mark.OFF_TRACK
-        if (answers.isNotEmpty()) return Mark.ON_TRACK
+        val marks = counted.mapNotNull { q.onTrack(it) }
+        if (marks.any { !it }) return Mark.OFF_TRACK
+        if (marks.isNotEmpty()) return Mark.ON_TRACK
         if (day.values.any { it.status == SlotResult.SKIPPED }) return Mark.SKIPPED
         return Mark.NONE
     }
@@ -46,7 +46,7 @@ object Stats {
         r.status == SlotResult.DISMISSED -> "dismissed (soft)"
         r.status == SlotResult.RANG -> "✗ missed"
         r.status == SlotResult.DONE -> "✓ done" + if (r.early) " early" else ""
-        c.questions.all { q -> r.answers[q.id]?.let { q.isGood(it) } != false } -> "✓ on track" + if (r.early) " (early)" else ""
+        c.questions.all { q -> q.onTrack(r) != false } -> "✓ on track" + if (r.early) " (early)" else ""
         else -> "✗ off track"
     }
 }

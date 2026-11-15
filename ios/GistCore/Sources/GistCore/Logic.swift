@@ -155,9 +155,9 @@ public enum Stats {
     public static func dayMark(_ q: Question, _ day: DayResults) -> Mark {
         let counted = day.values.filter { $0.status != SlotResult.skipped }
         if counted.contains(where: { $0.status == SlotResult.rang }) { return .offTrack } // missed
-        let answers = counted.compactMap { $0.answers[q.id] }
-        if answers.contains(where: { !q.isGood($0) }) { return .offTrack }
-        if !answers.isEmpty { return .onTrack }
+        let marks = counted.compactMap { q.onTrack($0) }
+        if marks.contains(false) { return .offTrack }
+        if !marks.isEmpty { return .onTrack }
         if day.values.contains(where: { $0.status == SlotResult.skipped }) { return .skipped }
         return .none
     }

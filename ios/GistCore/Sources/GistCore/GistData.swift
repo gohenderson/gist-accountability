@@ -57,10 +57,14 @@ public struct GistData: Equatable {
     // MARK: Logging
 
     /// Answers for one time, merged into any already saved for it.
-    public mutating func saveAnswers(day: String, checkinId: String, time: String, answers: [String: Bool], early: Bool = false) {
+    /// [values]: typed answers, "" for one left empty (which replaces one saved before).
+    public mutating func saveAnswers(day: String, checkinId: String, time: String, answers: [String: Bool], early: Bool = false,
+                                     values: [String: String] = [:]) {
         let prev = result(day: day, checkinId: checkinId, time: time)
         let merged = (prev?.answers ?? [:]).merging(answers) { _, new in new }
-        put(day, checkinId, time, SlotResult(SlotResult.answered, answers: merged, early: early || prev?.early == true))
+        let mergedValues = (prev?.values ?? [:]).merging(values) { _, new in new }
+        put(day, checkinId, time, SlotResult(SlotResult.answered, answers: merged, early: early || prev?.early == true,
+                                             values: mergedValues))
     }
 
     /// A check-in without questions was completed.

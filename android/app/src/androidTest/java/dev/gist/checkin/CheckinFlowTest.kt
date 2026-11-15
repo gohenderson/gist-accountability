@@ -66,6 +66,28 @@ class CheckinFlowTest {
     }
 
     @Test
+    fun typedAnswersAreOptionalAndLogged() {
+        val weight = Question("weight", "What did you weigh?", type = Question.NUMBER)
+        val note = Question("note", "Anything to remember?", type = Question.TEXT)
+        TestEnv.reset(listOf(TestEnv.checkin("eve", "Evening", listOf(soda, weight, note))), listOf(pendingToday("eve")))
+        launchAlarmScreen().use {
+            // Only the yes/no question has to be answered.
+            onView(withText("1 left to answer")).perform(scrollTo()).check(matches(not(isEnabled())))
+            onView(tagged("q:soda:no")).perform(scrollTo(), click())
+            onView(tagged("q:weight:value")).perform(scrollTo(), replaceText("182 lb"), closeSoftKeyboard())
+            onView(withText("Fix the number")).perform(scrollTo()).check(matches(not(isEnabled())))
+            onView(tagged("q:weight:value")).perform(scrollTo(), replaceText("182,40"), closeSoftKeyboard())
+            onView(withText("Submit")).perform(scrollTo()).check(matches(isEnabled())).perform(click())
+        }
+        val r = TestEnv.store.results(TestEnv.today(), "eve").values.single()
+        assertEquals(mapOf("soda" to false), r.answers)
+        // The number tidied up; the note left empty is kept as "" (asked, not answered: off track).
+        assertEquals(mapOf("weight" to "182.4", "note" to ""), r.values)
+        assertEquals(Mark.ON_TRACK, Stats.dayMark(weight, TestEnv.store.results(TestEnv.today(), "eve")))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(note, TestEnv.store.results(TestEnv.today(), "eve")))
+    }
+
+    @Test
     fun wrongMathAnswerGivesANewProblemAndRightAnswersFinish() {
         TestEnv.reset(listOf(TestEnv.checkin("wake", "Wake up", mathCount = 2, mathLevel = 4)), listOf(pendingToday("wake")))
         launchAlarmScreen().use {

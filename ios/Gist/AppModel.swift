@@ -292,13 +292,20 @@ final class AppModel {
     }
 
     /// The steps are done: log the answers (nothing for a test).
-    func finish(_ r: RunRequest, answers: [String: Bool]) {
+    /// [values]: typed answers as typed; every typed question is saved, "" when left empty.
+    func finish(_ r: RunRequest, answers: [String: Bool], values: [String: String] = [:]) {
         let p = r.pending
         if !p.practice, let c = data.checkin(p.checkinId) {
             if c.questions.isEmpty {
                 data.markDone(day: p.day, checkinId: p.checkinId, time: p.time, early: r.early)
             } else {
-                data.saveAnswers(day: p.day, checkinId: p.checkinId, time: p.time, answers: answers, early: r.early)
+                var typed: [String: String] = [:]
+                for q in c.questions where q.takesValue {
+                    let v = (values[q.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    typed[q.id] = q.type == Question.number ? (Question.cleanNumber(v) ?? "") : v
+                }
+                data.saveAnswers(day: p.day, checkinId: p.checkinId, time: p.time, answers: answers, early: r.early,
+                                 values: typed)
             }
         }
         close(r)

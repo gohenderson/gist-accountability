@@ -5,9 +5,46 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** A yes/no question. [yesIsGood] says which answer counts as "on track". */
-data class Question(val id: String, val text: String, val yesIsGood: Boolean = false) {
+/**
+ * A question a check-in asks. [type]:
+ *  - [YES_NO]: answered Yes or No; [yesIsGood] says which counts as "on track";
+ *  - [NUMBER] / [TEXT]: you type a value (a weight, a note). Always optional: answering is
+ *    on track, leaving it empty is off track. (A yes/no question changed to one of these
+ *    keeps its old yes/no answers, judged by [yesIsGood], so its history doesn't change.)
+ */
+data class Question(val id: String, val text: String, val yesIsGood: Boolean = false, val type: String = YES_NO) {
     fun isGood(answer: Boolean): Boolean = answer == yesIsGood
+
+    /** Answered by typing a value rather than Yes / No. */
+    val takesValue: Boolean get() = type != YES_NO
+
+    /** Was [r] (one time's result) on track for this question? null: it says nothing about it. */
+    fun onTrack(r: SlotResult): Boolean? = when {
+        !takesValue -> r.answers[id]?.let { isGood(it) }
+        r.values.containsKey(id) -> r.values.getValue(id).isNotBlank() // "": asked and left empty
+        else -> r.answers[id]?.let { isGood(it) } // answered back when it was yes/no; else not asked yet
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("text", text).put("yesIsGood", yesIsGood)
+        .apply { if (type != YES_NO) put("type", type) }
+
+    companion object {
+        const val YES_NO = "yesNo"
+        const val NUMBER = "number"
+        const val TEXT = "text"
+        val TYPES = listOf(YES_NO, NUMBER, TEXT)
+
+        fun fromJson(o: JSONObject, id: String = o.optString("id", "")): Question =
+            Question(id, o.optString("text", ""), o.optBoolean("yesIsGood", false),
+                o.optString("type", YES_NO).takeIf { it in TYPES } ?: YES_NO)
+
+        /** A typed number as Gist keeps it: "182.4", "-3", "1,5" → "1.5"; null if it isn't one. */
+        fun cleanNumber(input: String): String? {
+            val t = input.trim().replace(',', '.')
+            if (!Regex("""[+-]?(\d+\.?\d*|\.\d+)""").matches(t)) return null
+            return java.math.BigDecimal(t).stripTrailingZeros().toPlainString()
+        }
+    }
 }
 
 /** A time of day an alarm rings. */
@@ -126,8 +163,11 @@ data class Checkin(
  */
 data class Pending(val checkinId: String, val day: String, val time: String = "", val practice: Boolean = false)
 
-/** One time's answers: question id → answer. */
+/** One time's answers: question id → answer (yes/no questions). */
 typealias Answers = Map<String, Boolean>
+
+/** One time's typed answers: question id → value (number and text questions); "" when left empty. */
+typealias Values = Map<String, String>
 
 /**
  * What happened with one check-in at one time on one day.
@@ -140,6 +180,7 @@ data class SlotResult(
     val answers: Answers = emptyMap(),
     val early: Boolean = false,
     val soft: Boolean = false, // logged by a soft or voice check-in: kept for scheduling, left out of stats
+    val values: Values = emptyMap(),
 ) {
     /** Finished or skipped: the alarm for this time no longer needs to ring. */
     val closed: Boolean get() = status != RANG
@@ -156,7 +197,9 @@ data class SlotResult(
 /**
  * All app state, kept in one private SharedPreferences file on the phone.
  * Results are stored per day, check-in and time:
- *   { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": { "<questionId>": true }, "early": false } } } }
+ *   { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": { "<questionId>": true },
+ *                                                "v": { "<questionId>": 182.4 }, "early": false } } } }
+ * ("v": typed answers, numbers as numbers and text as text, "" when left empty; only when there are some.)
  */
 class Store(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gist", Context.MODE_PRIVATE)
@@ -246,10 +289,13 @@ class Store(context: Context) {
         result(day, checkinId, time)?.closed == true
 
     /** Answers for one time (merged into any already saved for it). */
-    fun saveAnswers(day: String, checkinId: String, time: String, answers: Answers, early: Boolean = false) {
+    fun saveAnswers(day: String, checkinId: String, time: String, answers: Answers, early: Boolean = false,
+                    values: Values = emptyMap()) {
         val prev = result(day, checkinId, time)
         val merged = (prev?.answers ?: emptyMap()) + answers
-        put(day, checkinId, time, SlotResult(SlotResult.ANSWERED, merged, early || prev?.early == true))
+        // An empty value ("" : asked, left empty) replaces one saved before (fixing a day in History).
+        val mergedValues = (prev?.values ?: emptyMap()) + values
+        put(day, checkinId, time, SlotResult(SlotResult.ANSWERED, merged, early || prev?.early == true, values = mergedValues))
     }
 
     /** A check-in without questions was completed. */
@@ -297,7 +343,10 @@ class Store(context: Context) {
         val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
         val a = JSONObject()
         r.answers.forEach { (k, v) -> a.put(k, v) }
-        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply { if (soft) put("soft", true) })
+        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply {
+            if (soft) put("soft", true)
+            if (r.values.isNotEmpty()) put("v", valuesToJson(r.values))
+        })
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
     }
 
@@ -308,7 +357,29 @@ class Store(context: Context) {
             val a = o.optJSONObject("a")
             val answers = mutableMapOf<String, Boolean>()
             a?.keys()?.forEach { k -> answers[k] = a.optBoolean(k) }
-            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false), o.optBoolean("soft", false))
+            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false),
+                o.optBoolean("soft", false), valuesFromJson(o.optJSONObject("v")))
+        }
+        return out
+    }
+
+    /** Numbers are kept as numbers (so a backup reads `weight: 182.4`), anything else as text. */
+    private fun valuesToJson(values: Values): JSONObject = JSONObject().apply {
+        values.forEach { (k, v) ->
+            val n = Question.cleanNumber(v)
+            if (n != null && n == v) put(k, java.math.BigDecimal(n)) else put(k, v)
+        }
+    }
+
+    private fun valuesFromJson(o: JSONObject?): Values {
+        if (o == null) return emptyMap()
+        val out = mutableMapOf<String, String>()
+        o.keys().forEach { k ->
+            when (val v = o.opt(k)) {
+                is Number -> out[k] = java.math.BigDecimal(v.toString()).stripTrailingZeros().toPlainString()
+                is String -> out[k] = v
+                else -> {}
+            }
         }
         return out
     }
@@ -410,8 +481,7 @@ class Store(context: Context) {
         prefs.edit().putString(K_ENTRIES, json.toString()).commit()
     }
 
-    private fun questionFromJson(o: JSONObject) =
-        Question(o.getString("id"), o.getString("text"), o.optBoolean("yesIsGood", false))
+    private fun questionFromJson(o: JSONObject) = Question.fromJson(o, o.getString("id"))
 
     /**
      * The step list. Check-ins saved before steps could repeat kept one math / scan /

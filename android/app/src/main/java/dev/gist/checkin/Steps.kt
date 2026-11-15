@@ -32,7 +32,7 @@ data class StepConfig(
             Steps.MATH -> put("mathCount", mathCount).put("mathLevel", mathLevel)
             Steps.SCAN -> put("scanCode", scanCode ?: "").put("scanLabel", scanLabel)
             Steps.QUESTIONS -> put("questions", JSONArray().apply {
-                questions.forEach { put(JSONObject().put("id", it.id).put("text", it.text).put("yesIsGood", it.yesIsGood)) }
+                questions.forEach { put(it.toJson()) }
             })
         }
     }
@@ -51,7 +51,7 @@ data class StepConfig(
                 questions = (0 until qs.length()).mapNotNull { i ->
                     qs.optJSONObject(i)?.let { q ->
                         q.optString("text", "").takeIf { it.isNotBlank() }?.let {
-                            Question(q.optString("id", "").ifEmpty { Store.newId() }, it, q.optBoolean("yesIsGood", false))
+                            Question.fromJson(q, q.optString("id", "").ifEmpty { Store.newId() })
                         }
                     }
                 },

@@ -10,6 +10,8 @@ struct RunView: View {
 
     @State private var index = 0
     @State private var answers: [String: Bool] = [:]
+    /// Typed answers (number and text questions), as typed.
+    @State private var values: [String: String] = [:]
     @State private var solved = 0
     @State private var problem = MathGen.make(2)
     @State private var input = ""
@@ -112,7 +114,7 @@ struct RunView: View {
             } else {
                 Spacer()
                 Button {
-                    model.finish(request, answers: answers)
+                    model.finish(request, answers: answers, values: values)
                 } label: {
                     Text(steps.isEmpty ? "Dismiss" : "Done").frame(maxWidth: .infinity).padding(.vertical, 12)
                 }
@@ -234,19 +236,37 @@ struct RunView: View {
                 ForEach(questions) { q in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(q.text).font(.title3)
-                        HStack {
-                            answerButton(q, true)
-                            answerButton(q, false)
+                        if q.takesValue {
+                            TextField(q.type == Question.number ? "A number (optional)" : "Your answer (optional)",
+                                      text: Binding(get: { values[q.id] ?? "" }, set: { values[q.id] = $0 }),
+                                      axis: q.type == Question.text ? .vertical : .horizontal)
+                                .keyboardType(q.type == Question.number ? .decimalPad : .default)
+                                .font(.title3)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("q:\(q.id):value")
+                            Text("Leave it empty if you can't answer: that counts as off track.")
+                                .font(.footnote).foregroundStyle(Theme.muted)
+                        } else {
+                            HStack {
+                                answerButton(q, true)
+                                answerButton(q, false)
+                            }
                         }
                     }
+                }
+                let left = questions.filter { !$0.takesValue && answers[$0.id] == nil }.count
+                let badNumber = questions.contains { q in
+                    q.type == Question.number && !(values[q.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+                        && Question.cleanNumber(values[q.id] ?? "") == nil
                 }
                 Button {
                     advance()
                 } label: {
-                    Text("Submit").frame(maxWidth: .infinity).padding(.vertical, 8)
+                    Text(left > 0 ? "\(left) left to answer" : badNumber ? "Fix the number" : "Submit")
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(questions.contains { answers[$0.id] == nil })
+                .disabled(left > 0 || badNumber)
                 .accessibilityIdentifier("submit")
             }
         }
@@ -298,7 +318,7 @@ struct RunView: View {
         wrongCode = false
         resetMath()
         if index >= steps.count && !steps.isEmpty {
-            model.finish(request, answers: answers)
+            model.finish(request, answers: answers, values: values)
         }
     }
 

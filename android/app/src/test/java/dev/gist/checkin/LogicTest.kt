@@ -798,3 +798,47 @@ class PerTimeDaysTest {
         assertTrue("same time, different days aren't the same", AlarmTime(4, 0) != AlarmTime(4, 0, Repeat.weekly(setOf(2))))
     }
 }
+
+class TypedQuestionTest {
+    private val weight = Question("w", "What did you weigh?", yesIsGood = true, type = Question.NUMBER)
+
+    @Test
+    fun cleansNumbers() {
+        assertEquals("182.4", Question.cleanNumber("182.4"))
+        assertEquals("182.4", Question.cleanNumber(" 182.40 "))
+        assertEquals("180", Question.cleanNumber("180.0"))
+        assertEquals("100", Question.cleanNumber("100"))
+        assertEquals("1.5", Question.cleanNumber("1,5"))
+        assertEquals("-3", Question.cleanNumber("-3"))
+        assertEquals("0.5", Question.cleanNumber(".5"))
+        assertNull(Question.cleanNumber("12 lb"))
+        assertNull(Question.cleanNumber(""))
+        assertNull(Question.cleanNumber("1e5"))
+    }
+
+    @Test
+    fun answeredIsOnTrackEmptyIsOff() {
+        assertEquals(true, weight.onTrack(SlotResult(SlotResult.ANSWERED, values = mapOf("w" to "182.4"))))
+        assertEquals(false, weight.onTrack(SlotResult(SlotResult.ANSWERED, values = mapOf("w" to ""))))
+        assertNull("not asked yet", weight.onTrack(SlotResult(SlotResult.ANSWERED)))
+        // Answered back when it was a yes/no question: judged as then.
+        assertEquals(true, weight.onTrack(SlotResult(SlotResult.ANSWERED, mapOf("w" to true))))
+        assertEquals(false, weight.onTrack(SlotResult(SlotResult.ANSWERED, mapOf("w" to false))))
+    }
+
+    @Test
+    fun dayMarks() {
+        val answered = mapOf("08:00" to SlotResult(SlotResult.ANSWERED, values = mapOf("w" to "182.4")))
+        val empty = mapOf("08:00" to SlotResult(SlotResult.ANSWERED, values = mapOf("w" to "")))
+        val missed = mapOf("08:00" to SlotResult(SlotResult.RANG))
+        assertEquals(Mark.ON_TRACK, Stats.dayMark(weight, answered))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(weight, empty))
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(weight, missed))
+        val c = Checkin(id = "c", name = "Weigh-in", times = emptyList(),
+            steps = listOf(StepConfig("s", Steps.QUESTIONS, questions = listOf(weight))))
+        assertTrue(Stats.onTrack(c, answered))
+        assertFalse(Stats.onTrack(c, empty))
+        assertEquals("✓ on track", Stats.describe(c, answered.getValue("08:00")))
+        assertEquals("✗ off track", Stats.describe(c, empty.getValue("08:00")))
+    }
+}

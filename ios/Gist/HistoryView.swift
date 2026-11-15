@@ -24,7 +24,7 @@ struct HistoryView: View {
                         HStack {
                             Text(TimeText.day(day)).font(.subheadline)
                             Spacer()
-                            Text(c.questions.map { symbol(Stats.dayMark($0, results[day] ?? [:])) }.joined(separator: " "))
+                            Text(c.questions.map { cell($0, results[day] ?? [:]) }.joined(separator: " "))
                                 .font(.body.monospaced())
                         }
                     }
@@ -35,6 +35,16 @@ struct HistoryView: View {
         } else {
             Text("This check-in was deleted.").foregroundStyle(Theme.muted)
         }
+    }
+
+    /// A number or text question on track shows what you entered (the day's last one).
+    private func cell(_ q: Question, _ day: DayResults) -> String {
+        let m = Stats.dayMark(q, day)
+        if q.takesValue, m == .onTrack,
+           let v = day.keys.sorted().compactMap({ day[$0]?.values[q.id] }).last(where: { !$0.isEmpty }) {
+            return v.count > 12 ? String(v.prefix(11)) + "…" : v
+        }
+        return symbol(m)
     }
 
     private func symbol(_ m: Mark) -> String {

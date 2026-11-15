@@ -31,7 +31,10 @@ import java.time.Instant
  */
 object Backup {
     const val FORMAT = "gist-backup"
-    const val VERSION = 3
+    /** 4: questions can take a typed answer (number or text), saved under "v". */
+    const val VERSION = 4
+    /** The oldest this version reads (3 has no typed answers, so nothing to convert). */
+    const val MIN_VERSION = 3
 
     class Media(val photos: List<ByteArray>, val video: ByteArray?, val voice: ByteArray? = null)
 
@@ -129,7 +132,7 @@ object Backup {
         if (version > VERSION) {
             throw IllegalArgumentException("This backup is from a newer version of Gist. Update the app first.")
         }
-        if (version < VERSION) {
+        if (version < MIN_VERSION) {
             throw IllegalArgumentException("This backup is from an older version of Gist that this one can't read.")
         }
         val store = Store(context)
