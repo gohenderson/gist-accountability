@@ -12,3 +12,6 @@ captures/
 .swiftpm/
 DerivedData/
 xcuserdata/
+
+# Python bytecode from running the CI scripts locally
+__pycache__/
