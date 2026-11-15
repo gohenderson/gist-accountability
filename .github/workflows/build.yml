@@ -93,6 +93,13 @@ jobs:
       - name: Build debug APK
         run: bash .github/scripts/run-gradle.sh assembleDebug
 
+      - name: Library API levels
+        # Libraries are built for a Java version, not an Android one: check they don't call
+        # Java APIs the app's oldest Android lacks (lint doesn't look inside them).
+        run: |
+          min="$(grep -oP 'minSdk\s*=\s*\K\d+' android/app/build.gradle.kts)"
+          python3 .github/scripts/check-library-apis.py android/app/build/outputs/apk/debug/app-debug.apk "$min"
+
       - name: Unit tests
         run: bash .github/scripts/run-gradle.sh testDebugUnitTest
 

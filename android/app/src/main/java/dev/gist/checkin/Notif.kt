@@ -115,11 +115,8 @@ object Notif {
                 description = "When a permission alarms need gets turned off"
             }
         )
-        val fix = android.content.Intent(
-            android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-            android.net.Uri.parse("package:${context.packageName}")
-        )
-        val pi = PendingIntent.getActivity(context, 11, fix, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pi = PendingIntent.getActivity(context, 11, fixFullScreenIntent(context),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = Notification.Builder(context, CH_SETUP)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Turn full-screen alarms back on")
@@ -132,6 +129,22 @@ object Notif {
             .setAutoCancel(true)
             .build()
         nm.notify(ID_PERMISSION, n)
+    }
+
+    /**
+     * Where tapping "Turn full-screen alarms back on" goes: straight to the system setting,
+     * named explicitly (the Settings app's own screen for it, looked up here) so no other app
+     * can answer the notification's intent. If the phone has no such screen, Gist's start
+     * page, whose setup card has the same button.
+     */
+    private fun fixFullScreenIntent(context: Context): android.content.Intent {
+        val settings = android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+            android.net.Uri.parse("package:${context.packageName}")
+        )
+        val target = settings.resolveActivity(context.packageManager)
+        return if (target != null) settings.setComponent(target)
+        else android.content.Intent(context, MainActivity::class.java)
     }
 
     fun clearWaiting(context: Context) {

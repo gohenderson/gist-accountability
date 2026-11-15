@@ -12,10 +12,8 @@ updates:
         patterns: ["androidx.test*"]
       kotlin-and-agp:
         patterns: ["org.jetbrains.kotlin*", "com.android.*"]
-    ignore:
-      # 3.x targets Java 11 library APIs missing on Android 10–12; 2.x still gets fixes.
-      - dependency-name: "org.snakeyaml:snakeyaml-engine"
-        update-types: ["version-update:semver-major"]
+    # Library updates are checked against the app's oldest Android by the Build workflow's
+    # "Library API levels" step, so major versions are fine to offer.
 
   - package-ecosystem: github-actions
     directory: "/"

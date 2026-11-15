@@ -47,6 +47,11 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- The full-screen alarm setting, to open it by name from a notification. -->
+        <intent>
+            <action android:name="android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT" />
+            <data android:scheme="package" />
+        </intent>
     </queries>
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
 
