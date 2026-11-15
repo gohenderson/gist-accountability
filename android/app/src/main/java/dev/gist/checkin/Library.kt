@@ -154,7 +154,7 @@ object Library {
             Checkin(
                 id = "", name = "Weekly weigh-in", times = listOf(t(8)),
                 repeat = Repeat.weekly(setOf(7)),
-                steps = qsteps(q("weighed", "Did you weigh yourself and note it down?", true)),
+                steps = qsteps(Question("weight", "What did you weigh?", type = Question.NUMBER)),
             ),
         ),
         Template(

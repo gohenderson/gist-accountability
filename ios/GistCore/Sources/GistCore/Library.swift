@@ -91,7 +91,7 @@ public enum Library {
                          commitment: Checkin.voice, voiceText: "Thirty minutes in. Look at you go.")),
         template("weigh-in", "Fitness", "Sunday mornings.",
                  Checkin(id: "", name: "Weekly weigh-in", times: [t(8)], repeat: Repeat.weeklyOn([7]),
-                         steps: qsteps(q("weighed", "Did you weigh yourself and note it down?", true)))),
+                         steps: qsteps(Question(id: "weight", text: "What did you weigh?", type: Question.number)))),
         template("journal", "Mind", "A few minutes of reflection at the end of the day.",
                  Checkin(id: "", name: "Journal", times: [t(21)], steps: qsteps(
                      q("journal", "Did you write in your journal today?", true),

@@ -394,7 +394,19 @@ struct StepEditView: View {
                     ForEach($step.questions) { $q in
                         VStack(alignment: .leading) {
                             TextField("Question", text: $q.text, axis: .vertical)
-                            Toggle("\"Yes\" is on track", isOn: $q.yesIsGood).font(.footnote)
+                            Picker("Answer", selection: $q.type) {
+                                Text("Yes / No").tag(Question.yesNo)
+                                Text("A number").tag(Question.number)
+                                Text("Text").tag(Question.text)
+                            }
+                            .font(.footnote)
+                            .accessibilityIdentifier("question-type")
+                            if q.takesValue {
+                                Text("Optional: answering is on track, leaving it empty is off track.")
+                                    .font(.footnote).foregroundStyle(Theme.muted)
+                            } else {
+                                Toggle("\"Yes\" is on track", isOn: $q.yesIsGood).font(.footnote)
+                            }
                         }
                     }
                     .onDelete { step.questions.remove(atOffsets: $0) }
@@ -402,7 +414,7 @@ struct StepEditView: View {
                     Button("Add a question") { step.questions.append(Question(id: Ids.new(), text: "")) }
                         .accessibilityIdentifier("add-question")
                 } footer: {
-                    Text("These answers are logged and shown in History. Empty questions are left out.")
+                    Text("These answers are logged and shown in History (a number or text shows what you entered). Empty questions are left out.")
                 }
             }
         }

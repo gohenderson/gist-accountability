@@ -1,6 +1,6 @@
 # Sample backups
 
-Backup files in Gist's format (`format: gist-backup`, `version: 3`), shared by the apps'
+Backup files in Gist's format (`format: gist-backup`, `version: 4`), shared by the apps'
 test suites so every platform reads the same files the same way:
 
 - the Android app imports them in `SharedBackupTest`
@@ -12,4 +12,4 @@ add or update a sample, and the tests on both platforms say what broke.
 
 | File | What it covers |
 |---|---|
-| `every-feature.yaml` | One of everything: per-time days, a place condition, monthly dates, all step kinds, place and run triggers, soft and voice check-ins, a caption, history with every status, a soft result |
+| `every-feature.yaml` | One of everything: per-time days, a place condition, monthly dates, all step kinds, yes/no, number and text questions (answered, and left empty), place and run triggers, soft and voice check-ins, a caption, history with every status, a soft result |

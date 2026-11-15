@@ -12,19 +12,59 @@ public enum Ids {
 
 // MARK: - Question
 
-/// A yes/no question. [yesIsGood] says which answer counts as "on track".
+/// A question a check-in asks. [type]:
+///  - [yesNo]: answered Yes or No; [yesIsGood] says which counts as "on track";
+///  - [number] / [text]: you type a value (a weight, a note). Always optional: answering is
+///    on track, leaving it empty is off track. (A yes/no question changed to one of these
+///    keeps its old yes/no answers, judged by [yesIsGood], so its history doesn't change.)
 public struct Question: Equatable, Identifiable {
+    public static let yesNo = "yesNo"
+    public static let number = "number"
+    public static let text = "text"
+    public static let types = [yesNo, number, text]
+
     public var id: String
     public var text: String
     public var yesIsGood: Bool
+    public var type: String
 
-    public init(id: String, text: String, yesIsGood: Bool = false) {
+    public init(id: String, text: String, yesIsGood: Bool = false, type: String = Question.yesNo) {
         self.id = id
         self.text = text
         self.yesIsGood = yesIsGood
+        self.type = type
     }
 
     public func isGood(_ answer: Bool) -> Bool { answer == yesIsGood }
+
+    /// Answered by typing a value rather than Yes / No.
+    public var takesValue: Bool { type != Question.yesNo }
+
+    /// Was [r] (one time's result) on track for this question? nil: it says nothing about it.
+    public func onTrack(_ r: SlotResult) -> Bool? {
+        if !takesValue { return r.answers[id].map { isGood($0) } }
+        if let v = r.values[id] { return !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } // "": left empty
+        return r.answers[id].map { isGood($0) } // answered back when it was yes/no; else not asked yet
+    }
+
+    public var json: JSON {
+        var o = JSONObject([("id", .string(id)), ("text", .string(text)), ("yesIsGood", .bool(yesIsGood))])
+        if type != Question.yesNo { o["type"] = .string(type) }
+        return .object(o)
+    }
+
+    public static func from(_ q: JSONObject, id: String) -> Question {
+        let t = q.string("type", yesNo)
+        return Question(id: id, text: q.string("text"), yesIsGood: q.bool("yesIsGood", false), type: types.contains(t) ? t : yesNo)
+    }
+
+    /// A typed number as Gist keeps it: "182.4", "-3", "1,5" → "1.5"; nil if it isn't one.
+    public static func cleanNumber(_ input: String) -> String? {
+        let t = input.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")
+        guard t.range(of: #"^[+-]?(\d+\.?\d*|\.\d+)$"#, options: .regularExpression) != nil,
+              let d = Decimal(string: t, locale: Locale(identifier: "en_US_POSIX")) else { return nil }
+        return NSDecimalNumber(decimal: d).stringValue
+    }
 }
 
 // MARK: - Repeat
@@ -396,9 +436,7 @@ public struct StepConfig: Equatable, Identifiable {
             o["scanCode"] = .string(scanCode ?? "")
             o["scanLabel"] = .string(scanLabel)
         case StepConfig.questions:
-            o["questions"] = .array(questions.map { q -> JSON in
-                .object(JSONObject([("id", .string(q.id)), ("text", .string(q.text)), ("yesIsGood", .bool(q.yesIsGood))]))
-            })
+            o["questions"] = .array(questions.map { $0.json })
         default:
             break
         }
@@ -415,7 +453,7 @@ public struct StepConfig: Equatable, Identifiable {
             let text = q.string("text")
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             let qid = q.string("id")
-            return Question(id: qid.isEmpty ? Ids.new() : qid, text: text, yesIsGood: q.bool("yesIsGood", false))
+            return Question.from(q, id: qid.isEmpty ? Ids.new() : qid)
         }
         return StepConfig(
             id: id.isEmpty ? Ids.new() : id,
@@ -639,12 +677,16 @@ public struct SlotResult: Equatable {
     public var answers: [String: Bool]
     public var early: Bool
     public var soft: Bool
+    /// Typed answers (number and text questions): question id → value, "" when left empty.
+    public var values: [String: String]
 
-    public init(_ status: String, answers: [String: Bool] = [:], early: Bool = false, soft: Bool = false) {
+    public init(_ status: String, answers: [String: Bool] = [:], early: Bool = false, soft: Bool = false,
+                values: [String: String] = [:]) {
         self.status = status
         self.answers = answers
         self.early = early
         self.soft = soft
+        self.values = values
     }
 
     /// Finished or skipped: the alarm for this time no longer needs to ring.
@@ -657,6 +699,17 @@ public struct SlotResult: Equatable {
             ("early", .bool(early)),
         ])
         if soft { o["soft"] = .bool(true) }
+        // Numbers as numbers (so a backup reads `weight: 182.4`), anything else as text.
+        if !values.isEmpty {
+            o["v"] = .object(JSONObject(values.keys.sorted().map { k -> (String, JSON) in
+                let v = values[k]!
+                if Question.cleanNumber(v) == v {
+                    if !v.contains("."), let i = Int(v) { return (k, .int(i)) }
+                    if let d = Double(v) { return (k, .double(d)) }
+                }
+                return (k, .string(v))
+            }))
+        }
         return .object(o)
     }
 
@@ -665,7 +718,18 @@ public struct SlotResult: Equatable {
         if let a = o.object("a") {
             for (k, v) in a.pairs { if let b = v.boolValue { answers[k] = b } }
         }
-        return SlotResult(o.string("s", answered), answers: answers, early: o.bool("early", false), soft: o.bool("soft", false))
+        var values: [String: String] = [:]
+        if let vs = o.object("v") {
+            for (k, v) in vs.pairs {
+                switch v {
+                case .string(let s): values[k] = s
+                case .int, .double: values[k] = v.stringValue.flatMap { Question.cleanNumber($0) }
+                default: break
+                }
+            }
+        }
+        return SlotResult(o.string("s", answered), answers: answers, early: o.bool("early", false), soft: o.bool("soft", false),
+                          values: values)
     }
 }
 

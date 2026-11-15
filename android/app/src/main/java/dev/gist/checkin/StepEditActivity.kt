@@ -179,12 +179,17 @@ class StepEditActivity : BaseActivity() {
         }
         st.questions.forEachIndexed { i, q -> col.add(questionRow(c, i, q), if (i == 0) 0 else dp(10)) }
         col.add(button("+ Add question") { editQuestion(c, null) }, dp(12))
-        col.add(muted("Each question says whether \"Yes\" or \"No\" is on track; that drives the ✓/✗ in History.", 13f), dp(8))
+        col.add(muted("A yes/no question says whether \"Yes\" or \"No\" is on track. A number or text question is " +
+            "optional: answering it is on track, leaving it empty is off track. That drives the ✓/✗ in History.", 13f), dp(8))
     }
 
     private fun questionRow(c: Checkin, index: Int, q: Question): View {
         val r = row()
-        val onTrack = if (q.yesIsGood) "On track = Yes" else "On track = No"
+        val onTrack = when (q.type) {
+            Question.NUMBER -> "Number · on track when answered"
+            Question.TEXT -> "Text · on track when answered"
+            else -> if (q.yesIsGood) "On track = Yes" else "On track = No"
+        }
         r.addWeighted(label("${index + 1}. ${q.text}\n$onTrack", 15f))
         if (index > 0) r.addWrapped(button("↑") { moveQuestionUp(index) }.apply { contentDescription = "Move up" })
         r.addWrapped(button("Edit") { editQuestion(c, q) }, dp(4))
@@ -199,7 +204,32 @@ class StepEditActivity : BaseActivity() {
             setText(q?.text ?: "")
         }
         val yesGood = checkTile("Answering \"Yes\" is on track", q?.yesIsGood ?: false)
+        val types = listOf(
+            Question.YES_NO to "Yes / No",
+            Question.NUMBER to "A number (e.g. your weight)",
+            Question.TEXT to "Text (a short note)",
+        )
+        var type = q?.type ?: Question.YES_NO
+        val group = RadioGroup(this)
+        types.forEachIndexed { i, (t, name) ->
+            val tile = choiceTile(name).apply {
+                id = View.generateViewId()
+                tag = "question-type:$t"
+                isChecked = t == type
+            }
+            group.addView(tile, RadioGroup.LayoutParams(RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = if (i == 0) 0 else dp(6)
+            })
+            tile.setOnCheckedChangeListener { _, on ->
+                if (on) {
+                    type = t
+                    yesGood.visibility = if (t == Question.YES_NO) View.VISIBLE else View.GONE
+                }
+            }
+        }
+        yesGood.visibility = if (type == Question.YES_NO) View.VISIBLE else View.GONE
         box.add(input)
+        box.add(group, dp(10))
         box.add(yesGood, dp(8))
 
         val dialog = AlertDialog.Builder(this)
@@ -211,10 +241,10 @@ class StepEditActivity : BaseActivity() {
                     change { cur ->
                         val list = cur.questions.toMutableList()
                         if (q == null) {
-                            list += Question(Store.newId(), text, yesGood.isChecked)
+                            list += Question(Store.newId(), text, yesGood.isChecked, type)
                         } else {
                             val i = list.indexOfFirst { it.id == q.id }
-                            if (i >= 0) list[i] = q.copy(text = text, yesIsGood = yesGood.isChecked)
+                            if (i >= 0) list[i] = q.copy(text = text, yesIsGood = yesGood.isChecked, type = type)
                         }
                         cur.copy(questions = list)
                     }
