@@ -1,7 +1,7 @@
 # Gist backup. Import it with Settings → Import backup… (you choose what to bring in).
 # A sample with one of everything, shared by the Android and iOS test suites.
 format: gist-backup
-version: 3
+version: 4
 exportedAt: 2026-11-10T12:00:00Z
 checkins:
 # A strict wake-up: different times on different days, a monthly-only time, a place
@@ -56,6 +56,14 @@ checkins:
     - id: water
       text: Did you drink water?
       yesIsGood: true
+    - id: weight
+      text: What did you weigh?
+      yesIsGood: false
+      type: number
+    - id: note
+      text: Anything to remember?
+      yesIsGood: false
+      type: text
   events: []
   category: Morning routine
   commitment: strict
@@ -145,6 +153,9 @@ entries:
           soda: false
           water: true
         early: false
+        v:
+          weight: 182.4
+          note: Slept well
     gym01:
       '07:12':
         s: dismissed
@@ -163,4 +174,15 @@ entries:
         s: skipped
         a: {}
         early: false
+  2026-11-11:
+    wake01:
+      '04:45':
+        s: answered
+        a:
+          soda: false
+          water: true
+        early: false
+        v:
+          weight: ''
+          note: ''
 media: {}

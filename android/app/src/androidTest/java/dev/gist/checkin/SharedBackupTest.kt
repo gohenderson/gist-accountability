@@ -46,9 +46,10 @@ class SharedBackupTest {
         assertEquals(4, wake.steps[0].mathLevel)
         assertEquals("GIST-SINK-0001", wake.steps[1].scanCode)
         assertEquals("Bathroom sink", wake.steps[1].scanLabel)
-        assertEquals(listOf("soda", "water"), wake.questions.map { it.id })
+        assertEquals(listOf("soda", "water", "weight", "note"), wake.questions.map { it.id })
         assertFalse(wake.questions[0].yesIsGood)
         assertTrue(wake.questions[1].yesIsGood)
+        assertEquals(listOf(Question.YES_NO, Question.YES_NO, Question.NUMBER, Question.TEXT), wake.questions.map { it.type })
         assertEquals("Future you says thanks", wake.background.caption)
         assertEquals("Morning routine", wake.category)
         assertTrue(wake.counted)
@@ -80,6 +81,12 @@ class SharedBackupTest {
         val answered = store.results("2026-11-08", "wake01")["04:45"]!!
         assertEquals(SlotResult.ANSWERED, answered.status)
         assertEquals(mapOf("soda" to false, "water" to true), answered.answers)
+        assertEquals(mapOf("weight" to "182.4", "note" to "Slept well"), answered.values)
+        // Typed questions: answered is on track, left empty is off track.
+        val weight = wake.questions[2]
+        assertEquals(Mark.ON_TRACK, Stats.dayMark(weight, store.results("2026-11-08", "wake01")))
+        assertEquals(mapOf("weight" to "", "note" to ""), store.results("2026-11-11", "wake01")["04:45"]!!.values)
+        assertEquals(Mark.OFF_TRACK, Stats.dayMark(weight, store.results("2026-11-11", "wake01")))
         assertEquals(SlotResult.RANG, store.results("2026-11-09", "wake01")["04:45"]!!.status)
         assertEquals(SlotResult.SKIPPED, store.results("2026-11-10", "wake01")["04:00"]!!.status)
         val dismissed = store.results("2026-11-08", "gym01")["07:12"]!!

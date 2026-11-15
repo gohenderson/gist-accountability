@@ -194,10 +194,17 @@ The types:
   e.g. "Bathroom sink". When the alarm rings, only that exact code stops it. If you can't
   scan (you're traveling, or the camera fails), a **"Can't scan?"** button appears after 2
   minutes. It swaps the scan for 5 very hard problems.
-- **Questions:** yes/no questions. Add, edit, reorder and delete them. Each one says
-  whether "Yes" or "No" is on track. These are the only answers that get logged. With
-  several question steps, History shows all of their questions. **Submit** stays disabled
-  until every question is answered.
+- **Questions:** add, edit, reorder and delete them. Each is one of:
+  - **Yes / No:** says whether "Yes" or "No" is on track. **Submit** stays disabled until
+    every yes/no question is answered.
+  - **A number** (your weight, say) or **text** (a short note): you type the answer.
+    These are always optional, since you can't always answer: answering is on track,
+    leaving it empty is off track. A number can use a comma or a point ("182,4" is
+    182.4); anything that isn't a number has to be fixed before you can submit.
+
+  Changing a yes/no question to a number or text keeps its history: days answered before
+  still count as they did. These are the only answers that get logged. With several
+  question steps, History shows all of their questions.
 
 A check-in with no steps just shows a **Dismiss** button.
 
@@ -279,7 +286,8 @@ A voice check-in has **Play it now** instead.
 - **History** (on a check-in's card) shows its last 30 days:
   - logged and on-track counts;
   - how often each question went off track;
-  - a ✓/✗ grid. Tap a day to fill it in or fix it.
+  - a ✓/✗ grid, with what you entered for number and text questions. Tap a day to fill
+    it in or fix it.
 - **Several times a day** roll up per day:
   - **✗** if any time that day was answered off track, **or rang and was never finished**
     (missed);

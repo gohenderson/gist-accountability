@@ -4,7 +4,7 @@ import Foundation
 /// imports on the other (shared/backups holds samples both apps' tests import):
 ///
 ///   format: gist-backup
-///   version: 3
+///   version: 4
 ///   exportedAt: '2026-11-08T…'
 ///   checkins: [ … ]
 ///   entries:                      # history, only for check-ins exported with it
@@ -15,7 +15,10 @@ import Foundation
 ///     <checkinId>: {photos: [<base64>, …], video: <base64>, voice: <base64>}
 public enum Backup {
     public static let format = "gist-backup"
-    public static let version = 3
+    /// 4: questions can take a typed answer (number or text), saved under "v".
+    public static let version = 4
+    /// The oldest this version reads (3 has no typed answers, so nothing to convert).
+    public static let minVersion = 3
     static let header = "Gist backup. Import it with Settings → Import backup… (you choose what to bring in).\n" +
         "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly."
 
@@ -141,7 +144,7 @@ public enum Backup {
         }
         let v = root.int("version", 0)
         if v > version { throw BackupError("This backup is from a newer version of Gist. Update the app first.") }
-        if v < version { throw BackupError("This backup is from an older version of Gist that this one can't read.") }
+        if v < minVersion { throw BackupError("This backup is from an older version of Gist that this one can't read.") }
         guard let arr = root.array("checkins") else { throw BackupError("The backup file is damaged: no check-ins.") }
         let checkins = try arr.map { (item: JSON) -> Checkin in
             guard let o = item.objectValue else { throw BackupError("The backup file is damaged: a check-in isn't readable.") }

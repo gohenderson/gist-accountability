@@ -113,10 +113,13 @@ class HistoryActivity : BaseActivity() {
             val tr = TableRow(this)
             tr.addView(cell(Days.short(day), colorText, null, gravity = Gravity.START))
             for (q in qs) {
+                // A number or text question shows what you entered (the day's last one).
+                val value = if (q.takesValue) slots.toSortedMap().values.mapNotNull { it.values[q.id] }.lastOrNull { it.isNotBlank() } else null
                 tr.addView(
                     when (Stats.dayMark(q, slots)) {
                         Mark.NONE -> cell("·", colorMuted, null)
-                        Mark.ON_TRACK -> cell("✓", colorGood, colorOf(R.color.good_container))
+                        Mark.ON_TRACK -> cell(value?.let { if (it.length > 12) it.take(11) + "…" else it } ?: "✓",
+                            colorGood, colorOf(R.color.good_container))
                         Mark.OFF_TRACK -> cell("✗", colorBad, colorOf(R.color.bad_container))
                         Mark.SKIPPED -> cell("–", colorMuted, colorOf(R.color.surface_variant))
                     }

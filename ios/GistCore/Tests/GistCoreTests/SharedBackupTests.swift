@@ -42,7 +42,8 @@ final class SharedBackupTests: XCTestCase {
         XCTAssertEqual(wake.steps[0].mathLevel, 4)
         XCTAssertEqual(wake.steps[1].scanCode, "GIST-SINK-0001")
         XCTAssertEqual(wake.steps[1].scanLabel, "Bathroom sink")
-        XCTAssertEqual(wake.questions.map { $0.id }, ["soda", "water"])
+        XCTAssertEqual(wake.questions.map { $0.id }, ["soda", "water", "weight", "note"])
+        XCTAssertEqual(wake.questions.map { $0.type }, [Question.yesNo, Question.yesNo, Question.number, Question.text])
         XCTAssertFalse(wake.questions[0].yesIsGood)
         XCTAssertTrue(wake.questions[1].yesIsGood)
         XCTAssertEqual(wake.background.caption, "Future you says thanks")
@@ -76,13 +77,19 @@ final class SharedBackupTests: XCTestCase {
         let answered = try XCTUnwrap(data.result(day: "2026-11-08", checkinId: "wake01", time: "04:45"))
         XCTAssertEqual(answered.status, SlotResult.answered)
         XCTAssertEqual(answered.answers, ["soda": false, "water": true])
+        XCTAssertEqual(answered.values, ["weight": "182.4", "note": "Slept well"])
+        // Typed questions: answered is on track, left empty is off track.
+        let weight = wake.questions[2]
+        XCTAssertEqual(Stats.dayMark(weight, data.results["2026-11-08"]?["wake01"] ?? [:]), .onTrack)
+        XCTAssertEqual(data.result(day: "2026-11-11", checkinId: "wake01", time: "04:45")?.values, ["weight": "", "note": ""])
+        XCTAssertEqual(Stats.dayMark(weight, data.results["2026-11-11"]?["wake01"] ?? [:]), .offTrack)
         XCTAssertEqual(data.result(day: "2026-11-09", checkinId: "wake01", time: "04:45")?.status, SlotResult.rang)
         XCTAssertEqual(data.result(day: "2026-11-10", checkinId: "wake01", time: "04:00")?.status, SlotResult.skipped)
         let dismissed = try XCTUnwrap(data.result(day: "2026-11-08", checkinId: "gym01", time: "07:12"))
         XCTAssertEqual(dismissed.status, SlotResult.dismissed)
         XCTAssertTrue(dismissed.soft)
         XCTAssertTrue(data.allResults("gym01").isEmpty, "soft: no stats")
-        XCTAssertEqual(contents.days, 3)
+        XCTAssertEqual(contents.days, 4)
     }
 
     func testEveryFeatureSurvivesARoundTrip() throws {

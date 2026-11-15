@@ -301,7 +301,8 @@ class SettingsActivity : BaseActivity() {
                 .append(',').append(if (r.early) "yes" else "")
             qs.forEach { q ->
                 sb.append(',')
-                r.answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
+                if (q.takesValue && r.values.containsKey(q.id)) sb.append(esc(r.values.getValue(q.id)))
+                else r.answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
             }
             sb.append('\n')
         }
