@@ -24,7 +24,7 @@ permissions:
   contents: write   # to attach screenshots to a release
 
 env:
-  GRADLE_VERSION: "9.9.0"
+  GRADLE_VERSION: "9.9.1"
   TAG: ${{ inputs.tag }}
 
 jobs:

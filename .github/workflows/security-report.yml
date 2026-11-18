@@ -16,7 +16,7 @@ permissions:
   security-events: read
 
 env:
-  GRADLE_VERSION: "9.9.0"
+  GRADLE_VERSION: "9.9.1"
 
 jobs:
   report:

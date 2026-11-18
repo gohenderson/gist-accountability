@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GRADLE_VERSION: "9.9.0"
+  GRADLE_VERSION: "9.9.1"
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
