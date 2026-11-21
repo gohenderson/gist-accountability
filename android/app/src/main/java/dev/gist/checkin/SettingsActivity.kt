@@ -288,7 +288,7 @@ class SettingsActivity : BaseActivity() {
         val checkins = store.checkins
         val qs = checkins.flatMap { it.questions }
         val sb = StringBuilder()
-        sb.append("date,time,check-in,status,early")
+        sb.append("date,time,check-in,status,early,getting started (s),doing it (s)")
         qs.forEach { sb.append(',').append(esc(it.text)) }
         sb.append('\n')
         val rows = checkins.flatMap { c ->
@@ -299,6 +299,8 @@ class SettingsActivity : BaseActivity() {
             sb.append(day).append(',').append(time).append(',').append(esc(c.name))
                 .append(',').append(if (r.status == SlotResult.RANG) "missed" else r.status)
                 .append(',').append(if (r.early) "yes" else "")
+                .append(',').append(r.took?.start?.toString() ?: "")
+                .append(',').append(r.took?.steps?.toString() ?: "")
             qs.forEach { q ->
                 sb.append(',')
                 if (q.takesValue && r.values.containsKey(q.id)) sb.append(esc(r.values.getValue(q.id)))

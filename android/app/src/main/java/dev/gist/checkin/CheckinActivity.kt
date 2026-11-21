@@ -80,6 +80,8 @@ class CheckinActivity : BaseActivity() {
     private val slides = Handler(Looper.getMainLooper())
     private var video: MediaPlayer? = null
     private var showingRinging = false
+    /** When the steps first showed (Start check-in), epoch ms; for how long it took. */
+    private var startedAt: Long? = null
     private var seenChanges = 0 // SoftAlarm.changes when last checked
     private var barLabel: TextView? = null
     private var barProgress: ProgressBar? = null
@@ -120,6 +122,7 @@ class CheckinActivity : BaseActivity() {
             s.getStringArrayList(STATE_NO)?.forEach { answers[it] = false }
             values.clear()
             s.getBundle(STATE_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
+            startedAt = s.getLong(STATE_STARTED, 0L).takeIf { it > 0 }
         }
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -308,6 +311,7 @@ class CheckinActivity : BaseActivity() {
         outState.putStringArrayList(STATE_YES, ArrayList(answers.filterValues { it }.keys))
         outState.putStringArrayList(STATE_NO, ArrayList(answers.filterValues { !it }.keys))
         outState.putBundle(STATE_VALUES, Bundle().apply { values.forEach { (k, v) -> putString(k, v) } })
+        startedAt?.let { outState.putLong(STATE_STARTED, it) }
     }
 
     // ------------------------------------------------------------ flow
@@ -326,6 +330,7 @@ class CheckinActivity : BaseActivity() {
         earlyRequested = false
         steps = buildSteps(c)
         stepIndex = 0
+        startedAt = null
         solved = 0
         problem = null
         fallbacks.clear()
@@ -350,6 +355,18 @@ class CheckinActivity : BaseActivity() {
         return list
     }
 
+    /**
+     * How long this check-in took: from its first ring to Start check-in, and from then to now.
+     * Only for real check-ins that count (not tests, soft ones, or fixing a day in History).
+     */
+    private fun took(): Took? {
+        if (target.practice || !checkin.counted || !(forced || early)) return null
+        val now = System.currentTimeMillis()
+        val begun = startedAt ?: now
+        val rang = if (early) null else store.result(target.day, checkin.id, slot)?.rangAt
+        return Took(rang?.let { ((begun - it) / 1000).coerceAtLeast(0).toInt() }, ((now - begun) / 1000).coerceAtLeast(0).toInt())
+    }
+
     /** "Can't scan?": this scan step becomes very hard math. */
     private fun useScanFallback(i: Int = stepIndex) {
         if (i in steps.indices && steps[i] is Step.Scan) steps[i] = Step.Math(FALLBACK_PROBLEMS, 4)
@@ -366,7 +383,7 @@ class CheckinActivity : BaseActivity() {
     private fun complete() {
         ticks.removeCallbacksAndMessages(null) // no more countdown redraws while finishing
         if (checkin.questions.isEmpty() && (forced || early) && !target.practice) {
-            store.markDone(target.day, checkin.id, slot, early)
+            store.markDone(target.day, checkin.id, slot, early, took())
         }
         if (early) {
             AlarmScheduler.schedule(this, checkin) // skip this ring; arm the one after
@@ -412,6 +429,8 @@ class CheckinActivity : BaseActivity() {
             showRinging()
             return
         }
+
+        if (startedAt == null) startedAt = System.currentTimeMillis() // Start check-in tapped (or no ringing screen)
 
         val col = column()
         val title = when {
@@ -842,7 +861,7 @@ class CheckinActivity : BaseActivity() {
             if (target.practice) {
                 toast("Test: $good of ${qs.size} on track (not logged)")
             } else {
-                store.saveAnswers(target.day, checkin.id, slot, clean, early, typed)
+                store.saveAnswers(target.day, checkin.id, slot, clean, early, typed, took())
                 toast("Logged: $good of ${qs.size} on track")
             }
             nextStep()
@@ -880,6 +899,7 @@ class CheckinActivity : BaseActivity() {
         private const val STATE_YES = "yes"
         private const val STATE_NO = "no"
         private const val STATE_VALUES = "values"
+        private const val STATE_STARTED = "started"
         private const val FALLBACK_PROBLEMS = 5
         private const val FALLBACK_DELAY_MS = 2 * 60 * 1000L
 
