@@ -842,3 +842,34 @@ class TypedQuestionTest {
         assertEquals("✗ off track", Stats.describe(c, empty.getValue("08:00")))
     }
 }
+
+class TimingTest {
+    private fun timed(start: Int?, steps: Int) = SlotResult(SlotResult.ANSWERED, took = Took(start, steps))
+
+    @Test
+    fun formatsDurations() {
+        assertEquals("42s", Took.text(42))
+        assertEquals("3m 05s", Took.text(185))
+        assertEquals("1h 02m", Took.text(3720))
+    }
+
+    @Test
+    fun daysAverageTheirTimes() {
+        val results = mapOf(
+            "2026-11-20" to mapOf("07:00" to timed(60, 100), "21:00" to timed(120, 200)),
+            "2026-11-19" to mapOf("07:00" to timed(null, 50)), // done early
+            "2026-11-18" to mapOf("07:00" to SlotResult(SlotResult.ANSWERED)), // before timing existed
+        )
+        val days = Timing.days(results, listOf("2026-11-20", "2026-11-19", "2026-11-18"))
+        assertEquals(listOf(Timing.Day("2026-11-20", 90, 150), Timing.Day("2026-11-19", null, 50)), days)
+        assertEquals("Getting started 1m 30s · doing it 1m 40s", Timing.line(days))
+        assertNull(Timing.line(emptyList()))
+    }
+
+    @Test
+    fun mediansIgnoreOneSlowDay() {
+        assertEquals(60, Timing.median(listOf(50, 60, 3600)))
+        assertEquals(55, Timing.median(listOf(50, 60)))
+        assertNull(Timing.median(emptyList()))
+    }
+}

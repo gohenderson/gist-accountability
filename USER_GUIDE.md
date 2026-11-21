@@ -287,7 +287,13 @@ A voice check-in has **Play it now** instead.
   - logged and on-track counts;
   - how often each question went off track;
   - a ✓/✗ grid, with what you entered for number and text questions. Tap a day to fill
-    it in or fix it.
+    it in or fix it;
+  - **how long it takes** (Android for now): **getting started**, from the alarm to
+    **Start check-in**, and **doing it**, from there to done. It shows the middle values
+    (medians) for the last 7 and 30 days, a bar per day and the last few days. A day with
+    several times shows their average. Strict check-ins only: soft ones, tests and early
+    check-ins' "getting started" (they didn't ring) aren't timed. The CSV export has both,
+    in seconds.
 - **Several times a day** roll up per day:
   - **✗** if any time that day was answered off track, **or rang and was never finished**
     (missed);

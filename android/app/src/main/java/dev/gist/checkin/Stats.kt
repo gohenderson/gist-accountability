@@ -50,3 +50,37 @@ object Stats {
         else -> "✗ off track"
     }
 }
+
+/**
+ * How long check-ins take (from [SlotResult.took]): getting started (first ring to Start
+ * check-in) and doing it (Start check-in to done). A day with several times uses their
+ * average; summaries use the median, so one slow morning doesn't swamp the rest.
+ */
+object Timing {
+    /** A day's average, in seconds. [start] is null when every timed check-in that day was early. */
+    data class Day(val day: String, val start: Int?, val steps: Int)
+
+    /** Days among [days] (most recent first, as given) that have timings. */
+    fun days(results: Map<String, Map<String, SlotResult>>, days: List<String>): List<Day> =
+        days.mapNotNull { d ->
+            val took = results[d]?.values?.mapNotNull { it.took }.orEmpty()
+            if (took.isEmpty()) return@mapNotNull null
+            val starts = took.mapNotNull { it.start }
+            Day(d, if (starts.isEmpty()) null else starts.sum() / starts.size, took.sumOf { it.steps } / took.size)
+        }
+
+    fun median(values: List<Int>): Int? {
+        if (values.isEmpty()) return null
+        val s = values.sorted()
+        return if (s.size % 2 == 1) s[s.size / 2] else (s[s.size / 2 - 1] + s[s.size / 2]) / 2
+    }
+
+    /** e.g. "Getting started 1m 10s · doing it 3m 05s" (medians), or null with nothing timed. */
+    fun line(days: List<Day>): String? {
+        if (days.isEmpty()) return null
+        val start = median(days.mapNotNull { it.start })
+        val steps = median(days.map { it.steps })!!
+        return listOfNotNull(start?.let { "Getting started ${Took.text(it)}" }, "doing it ${Took.text(steps)}")
+            .joinToString(" · ").replaceFirstChar { it.uppercase() }
+    }
+}

@@ -43,7 +43,8 @@ class HistoryActivity : BaseActivity() {
         col.add(header(c.name, "History · last 30 days"))
 
         if (qs.isEmpty()) {
-            col.add(card().apply { add(muted("This check-in has no questions, so there's nothing to chart.", 15f)) }, dp(20))
+            timingCard(c, results)?.let { col.add(it, dp(20)) }
+            col.add(card().apply { add(muted("This check-in has no questions, so there's nothing else to chart.", 15f)) }, dp(12))
             setContentView(screen(col))
             return
         }
@@ -96,7 +97,41 @@ class HistoryActivity : BaseActivity() {
         days.add(grid(c, results), dp(10))
         col.add(days, dp(12))
 
+        timingCard(c, results)?.let { col.add(it, dp(12)) }
+
         setContentView(screen(col))
+    }
+
+    /**
+     * How long it takes: medians for the last 7 and 30 days, a bar per day, and the most recent
+     * days. Null until something has been timed (and never for soft check-ins, which aren't).
+     */
+    private fun timingCard(c: Checkin, results: Map<String, Map<String, SlotResult>>): LinearLayout? {
+        if (!c.counted) return null
+        val last30 = Days.lastN(30)
+        val timed = Timing.days(results, last30)
+        if (timed.isEmpty()) return null
+        val box = card()
+        box.add(sectionTitle("How long it takes"))
+        box.add(muted("Getting started: from the alarm to Start check-in. Doing it: from there to done. " +
+            "Middle values (medians), so one slow day doesn't skew them.", 13f), dp(4))
+        for (n in listOf(7, 30)) {
+            val line = Timing.line(Timing.days(results, Days.lastN(n))) ?: continue
+            box.add(label("Last $n days: ${line.replaceFirstChar { it.lowercase() }}", 15f).apply { tag = "timing-$n" }, dp(8))
+        }
+        box.add(TimingChart(this, last30.reversed(), timed.associateBy { it.day }), dp(12))
+        val key = row()
+        key.addWrapped(chip("Getting started", colorText, colorOf(R.color.primary_container)))
+        key.addWrapped(chip("Doing it", colorOf(R.color.on_primary), colorOf(R.color.primary)), dp(8))
+        box.add(key, dp(6))
+        for (d in timed.take(7)) {
+            val r = row()
+            r.addWeighted(label(Days.short(d.day), 15f))
+            r.addWrapped(muted(listOfNotNull(d.start?.let { "start ${Took.text(it)}" }, "doing ${Took.text(d.steps)}")
+                .joinToString(" · "), 14f))
+            box.add(r, dp(6))
+        }
+        return box
     }
 
     private fun grid(c: Checkin, results: Map<String, Map<String, SlotResult>>): HorizontalScrollView {

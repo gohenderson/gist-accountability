@@ -163,6 +163,24 @@ data class Checkin(
  */
 data class Pending(val checkinId: String, val day: String, val time: String = "", val practice: Boolean = false)
 
+/**
+ * How long a check-in took, in seconds: [start] from the first ring to tapping Start check-in
+ * ("getting started"; null when done early, before it rang), and [steps] from then to done
+ * ("doing it").
+ */
+data class Took(val start: Int?, val steps: Int) {
+    val total: Int get() = (start ?: 0) + steps
+
+    companion object {
+        /** "42s", "3m 05s", "1h 02m" */
+        fun text(seconds: Int): String = when {
+            seconds < 60 -> "${seconds}s"
+            seconds < 3600 -> "%dm %02ds".format(seconds / 60, seconds % 60)
+            else -> "%dh %02dm".format(seconds / 3600, seconds / 60 % 60)
+        }
+    }
+}
+
 /** One time's answers: question id → answer (yes/no questions). */
 typealias Answers = Map<String, Boolean>
 
@@ -181,6 +199,10 @@ data class SlotResult(
     val early: Boolean = false,
     val soft: Boolean = false, // logged by a soft or voice check-in: kept for scheduling, left out of stats
     val values: Values = emptyMap(),
+    /** When it first rang (epoch ms), while it waits to be done; for [Took]. */
+    val rangAt: Long? = null,
+    /** How long it took, for check-ins that count (not soft ones, not tests). */
+    val took: Took? = null,
 ) {
     /** Finished or skipped: the alarm for this time no longer needs to ring. */
     val closed: Boolean get() = status != RANG
@@ -199,7 +221,9 @@ data class SlotResult(
  * Results are stored per day, check-in and time:
  *   { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": { "<questionId>": true },
  *                                                "v": { "<questionId>": 182.4 }, "early": false } } } }
- * ("v": typed answers, numbers as numbers and text as text, "" when left empty; only when there are some.)
+ * ("v": typed answers, numbers as numbers and text as text, "" when left empty; only when there are some.
+ *  "rangAt": when a waiting time first rang, epoch ms. "took": {"start": s, "steps": s}, how long a
+ *  check-in that counts took: from ringing to Start check-in (none when done early), and doing it.)
  */
 class Store(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("gist", Context.MODE_PRIVATE)
@@ -290,21 +314,23 @@ class Store(context: Context) {
 
     /** Answers for one time (merged into any already saved for it). */
     fun saveAnswers(day: String, checkinId: String, time: String, answers: Answers, early: Boolean = false,
-                    values: Values = emptyMap()) {
+                    values: Values = emptyMap(), took: Took? = null) {
         val prev = result(day, checkinId, time)
         val merged = (prev?.answers ?: emptyMap()) + answers
         // An empty value ("" : asked, left empty) replaces one saved before (fixing a day in History).
         val mergedValues = (prev?.values ?: emptyMap()) + values
-        put(day, checkinId, time, SlotResult(SlotResult.ANSWERED, merged, early || prev?.early == true, values = mergedValues))
+        // Fixing a day in History keeps how long it took the first time.
+        put(day, checkinId, time, SlotResult(SlotResult.ANSWERED, merged, early || prev?.early == true,
+            values = mergedValues, took = took ?: prev?.took))
     }
 
     /** A check-in without questions was completed. */
-    fun markDone(day: String, checkinId: String, time: String, early: Boolean = false) =
-        put(day, checkinId, time, SlotResult(SlotResult.DONE, early = early))
+    fun markDone(day: String, checkinId: String, time: String, early: Boolean = false, took: Took? = null) =
+        put(day, checkinId, time, SlotResult(SlotResult.DONE, early = early, took = took))
 
-    /** The alarm rang. Doesn't overwrite a time that's already finished or skipped. */
-    fun markRang(day: String, checkinId: String, time: String) {
-        if (result(day, checkinId, time) == null) put(day, checkinId, time, SlotResult(SlotResult.RANG))
+    /** The alarm rang (at [at]). Doesn't overwrite a time that's already rung, finished or skipped. */
+    fun markRang(day: String, checkinId: String, time: String, at: Long = System.currentTimeMillis()) {
+        if (result(day, checkinId, time) == null) put(day, checkinId, time, SlotResult(SlotResult.RANG, rangAt = at))
     }
 
     fun markSkipped(day: String, checkinId: String, time: String) =
@@ -346,6 +372,8 @@ class Store(context: Context) {
         c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply {
             if (soft) put("soft", true)
             if (r.values.isNotEmpty()) put("v", valuesToJson(r.values))
+            r.rangAt?.let { put("rangAt", it) }
+            r.took?.let { t -> put("took", JSONObject().apply { t.start?.let { put("start", it) }; put("steps", t.steps) }) }
         })
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
     }
@@ -357,8 +385,12 @@ class Store(context: Context) {
             val a = o.optJSONObject("a")
             val answers = mutableMapOf<String, Boolean>()
             a?.keys()?.forEach { k -> answers[k] = a.optBoolean(k) }
+            val took = o.optJSONObject("took")?.takeIf { it.has("steps") }?.let { t ->
+                Took(if (t.has("start")) t.optInt("start") else null, t.optInt("steps"))
+            }
             out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false),
-                o.optBoolean("soft", false), valuesFromJson(o.optJSONObject("v")))
+                o.optBoolean("soft", false), valuesFromJson(o.optJSONObject("v")),
+                if (o.has("rangAt")) o.optLong("rangAt") else null, took)
         }
         return out
     }

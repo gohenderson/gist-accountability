@@ -18,6 +18,8 @@ import org.hamcrest.Matchers.not
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -63,6 +65,37 @@ class CheckinFlowTest {
         }
         assertEquals(mapOf("soda" to false, "veg" to true), TestEnv.store.entry(TestEnv.today()))
         assertTrue("check-in should no longer be waiting", TestEnv.store.pending.isEmpty())
+    }
+
+    @Test
+    fun recordsHowLongItTook() {
+        val day = TestEnv.today()
+        TestEnv.reset(listOf(TestEnv.checkin("eve", "Evening", listOf(soda))), listOf(Pending("eve", day, "07:00")))
+        // It rang a minute and a half ago.
+        TestEnv.store.markRang(day, "eve", "07:00", System.currentTimeMillis() - 90_000)
+        launchAlarmScreen().use {
+            onView(tagged("q:soda:no")).perform(scrollTo(), click())
+            onView(withText("Submit")).perform(scrollTo(), click())
+        }
+        val took = TestEnv.store.result(day, "eve", "07:00")?.took
+        assertNotNull(took)
+        assertTrue("getting started: ${took!!.start}", took.start!! in 90..150)
+        assertTrue("doing it: ${took.steps}", took.steps in 0..60)
+        assertNull("the ring time is only kept while it waits", TestEnv.store.result(day, "eve", "07:00")?.rangAt)
+    }
+
+    @Test
+    fun softCheckinsAreNotTimed() {
+        val day = TestEnv.today()
+        val soft = TestEnv.checkin("eve", "Evening", listOf(soda)).copy(commitment = Checkin.SOFT)
+        TestEnv.reset(listOf(soft), listOf(Pending("eve", day, "07:00")))
+        TestEnv.store.markRang(day, "eve", "07:00", System.currentTimeMillis() - 90_000)
+        launchAlarmScreen().use {
+            onView(tagged("q:soda:no")).perform(scrollTo(), click())
+            onView(withText("Submit")).perform(scrollTo(), click())
+        }
+        assertNull(TestEnv.store.allResults("eve")[day]?.get("07:00")?.took)
+        assertNull(TestEnv.store.result(day, "eve", "07:00")?.took)
     }
 
     @Test
