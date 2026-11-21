@@ -111,15 +111,26 @@ data class Checkin(
     val voiceSource: String = VOICE_TEXT,    // voice only: VOICE_TEXT (spoken) or VOICE_CLIP (recorded)
     val voiceText: String = "",
     val voiceHeadphonesOnly: Boolean = true, // voice only: stay quiet when nothing's plugged in / paired
+    /** A task (see [isTask]) that's been done: when (epoch ms). Done tasks are off and listed apart. */
+    val doneAt: Long? = null,
 ) {
+    /**
+     * A one-time task ("Call John"): it rings once, on its date ([repeat] is [Repeat.ONCE]),
+     * like any alarm. Doing it once (finishing it, or dismissing a soft one) completes it:
+     * it turns off and moves to Done tasks. Its arrive / leave / run triggers work any day
+     * until then. Left out of the overall score.
+     */
+    val isTask: Boolean get() = repeat.kind == Repeat.ONCE
+    val taskDone: Boolean get() = isTask && doneAt != null
+
     val soft: Boolean get() = commitment == SOFT
     val voice: Boolean get() = commitment == VOICE
 
     /** Only strict check-ins count in the stats. */
     val counted: Boolean get() = commitment == STRICT
 
-    /** The days [t] rings on: its own, or the check-in's repeat rule. */
-    fun daysFor(t: AlarmTime): Repeat = t.days ?: repeat
+    /** The days [t] rings on: its own, or the check-in's repeat rule (a task's times all use its date). */
+    fun daysFor(t: AlarmTime): Repeat = if (isTask) repeat else t.days ?: repeat
 
     /** Does any time have days of its own? */
     val perTimeDays: Boolean get() = times.any { it.days != null }
@@ -351,7 +362,20 @@ class Store(context: Context) {
         if (c.length() == 0) all.getJSONObject(day).remove(checkinId)
         if (all.getJSONObject(day).length() == 0) all.remove(day)
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+        // Doing a task once completes it.
+        if (r.status in TASK_DONE_STATUSES) {
+            checkin(checkinId)?.takeIf { it.isTask && it.doneAt == null }?.let { completeTask(it.id) }
+        }
     }
+
+    /** Marks task [id] done now: it turns off (no more rings) and moves to Done tasks. */
+    fun completeTask(id: String, at: Long = System.currentTimeMillis()) {
+        updateCheckin(id) { if (it.isTask) it.copy(enabled = false, doneAt = at) else it }
+        pending = pending.filter { it.checkinId != id || it.practice }
+    }
+
+    /** Puts done task [id] back on the list (on again; change its date if it has passed). */
+    fun reopenTask(id: String) = updateCheckin(id) { if (it.isTask) it.copy(enabled = true, doneAt = null) else it }
 
     /** Every answer on [day], all check-ins and times merged. Handy for tests. */
     fun entry(day: String): Answers? {
@@ -579,6 +603,7 @@ class Store(context: Context) {
             voiceText = o.optString("voiceText", ""),
             voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
             snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
+            doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
         )
         // Saved before a check-in could have several kinds of trigger: one "trigger" applied
         // to the whole check-in. An event replaced the times; a place condition applied to all.
@@ -622,9 +647,12 @@ class Store(context: Context) {
             .put("voiceText", c.voiceText)
             .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
             .put("snoozeMinutes", c.snoozeMinutes)
+            .apply { c.doneAt?.let { put("doneAt", it) } }
     }
 
     companion object {
+        /** Results that complete a task: done, answered, or (soft) dismissed. */
+        private val TASK_DONE_STATUSES = setOf(SlotResult.DONE, SlotResult.ANSWERED, SlotResult.DISMISSED)
         private const val K_CHECKINS = "checkins"
         private const val K_PENDING = "pendingList"
         private const val K_ENTRIES = "results"

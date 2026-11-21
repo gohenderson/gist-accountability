@@ -106,6 +106,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".DoneTasksActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".StepEditActivity"
             android:exported="false" />
 

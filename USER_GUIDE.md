@@ -281,6 +281,26 @@ check-in is soft or voice stay out even if you later make it strict.
 
 A voice check-in has **Play it now** instead.
 
+## One-time tasks
+
+For things you only need to do once ("Call John"): **+ Add check-in → New task**, or turn
+on **One-time task** on any check-in's page.
+
+- A task is a check-in in every way (times, steps, questions, strict or soft, background,
+  arrive / leave and run triggers), except that its times ring **once, on its date**. A new
+  one rings at the next whole hour today, in the **Tasks** category.
+- **Doing it completes it**: finishing it (or dismissing it, if it's soft), from the alarm or
+  with **Do now**. It turns off and leaves the start page.
+- **Done tasks** (at the bottom of the start page) lists them, most recent first, with when
+  you did them and what you answered, so you can check whether you did something. **Put
+  back** returns one to the list (pick a new date if it has passed); **Delete** removes it.
+- Its arrive / leave and run triggers work any day until it's done ("when I get to the
+  store: buy batteries").
+- A task whose date has passed without being done stays on the list, and its page says so.
+- Tasks don't count toward the overall score (each still has its own History).
+- Backups with a task are version 5, which the iPhone app can't read yet; backups without
+  one stay version 4.
+
 ## History, scores and logging
 
 - **History** (on a check-in's card) shows its last 30 days:

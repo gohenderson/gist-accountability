@@ -13,12 +13,14 @@ import java.util.Locale
  *  - WEEKLY: on [days] of the week (1 = Monday … 7 = Sunday).
  *  - MONTHLY: on [days] of the month (1…31, or [LAST_DAY]). A date a month doesn't have
  *    (e.g. the 31st in November) is skipped that month; use LAST_DAY for "end of month".
+ *  - ONCE: only on [date]. A check-in that rings once is a task (see Checkin.isTask).
  */
-data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet()) {
+data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet(), val date: LocalDate? = null) {
 
     fun matches(date: LocalDate): Boolean = when (kind) {
         WEEKLY -> date.dayOfWeek.value in days
         MONTHLY -> date.dayOfMonth in days || (LAST_DAY in days && date.dayOfMonth == date.lengthOfMonth())
+        ONCE -> date == this.date
         else -> true
     }
 
@@ -36,15 +38,18 @@ data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet()) {
                 if (LAST_DAY in days) listOf("last day") else emptyList()
             "monthly on the " + joinWithAnd(parts)
         }
+        ONCE -> "once, on ${date?.let { dateText(it) } ?: "no date"}"
         else -> "every day"
     }
 
     fun toJson(): JSONObject = JSONObject().put("kind", kind).put("days", JSONArray(days.sorted()))
+        .apply { date?.let { put("date", it.toString()) } }
 
     companion object {
         const val DAILY = "daily"
         const val WEEKLY = "weekly"
         const val MONTHLY = "monthly"
+        const val ONCE = "once"
         const val LAST_DAY = -1
 
         val WEEKDAYS = setOf(1, 2, 3, 4, 5)
@@ -53,6 +58,11 @@ data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet()) {
         val EVERY_DAY = Repeat()
         fun weekly(days: Set<Int>) = if (days.isEmpty() || days.size == 7) EVERY_DAY else Repeat(WEEKLY, days)
         fun monthly(days: Set<Int>) = if (days.isEmpty()) EVERY_DAY else Repeat(MONTHLY, days)
+        fun once(date: LocalDate) = Repeat(ONCE, date = date)
+
+        /** "Sat, Nov 21", with the year when it isn't this year. */
+        fun dateText(d: LocalDate, today: LocalDate = LocalDate.now()): String =
+            d.format(java.time.format.DateTimeFormatter.ofPattern(if (d.year == today.year) "EEE, MMM d" else "EEE, MMM d, yyyy"))
 
         /** Missing or unreadable → every day. */
         fun fromJson(o: JSONObject?): Repeat {
@@ -62,6 +72,7 @@ data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet()) {
             return when (o.optString("kind")) {
                 WEEKLY -> weekly(days.filter { it in 1..7 }.toSet())
                 MONTHLY -> monthly(days.filter { it in 1..31 || it == LAST_DAY }.toSet())
+                ONCE -> runCatching { once(LocalDate.parse(o.optString("date"))) }.getOrDefault(EVERY_DAY)
                 else -> EVERY_DAY
             }
         }

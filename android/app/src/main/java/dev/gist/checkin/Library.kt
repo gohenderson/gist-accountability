@@ -220,4 +220,16 @@ object Library {
         name = "Check-in ${existing.size + 1}",
         times = listOf(AlarmTime(12, 0)),
     )
+
+    /** A one-time task, ringing at the next whole hour (today, or tomorrow late at night). */
+    fun task(newId: String, now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Checkin {
+        val at = now.plusHours(1).withMinute(0)
+        return Checkin(
+            id = newId,
+            name = "New task",
+            times = listOf(AlarmTime(at.hour, 0)),
+            repeat = Repeat.once(at.toLocalDate()),
+            category = "Tasks",
+        )
+    }
 }
