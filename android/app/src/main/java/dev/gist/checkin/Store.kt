@@ -362,10 +362,6 @@ class Store(context: Context) {
         if (c.length() == 0) all.getJSONObject(day).remove(checkinId)
         if (all.getJSONObject(day).length() == 0) all.remove(day)
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
-        // Doing a task once completes it.
-        if (r.status in TASK_DONE_STATUSES) {
-            checkin(checkinId)?.takeIf { it.isTask && it.doneAt == null }?.let { completeTask(it.id) }
-        }
     }
 
     /** Marks task [id] done now: it turns off (no more rings) and moves to Done tasks. */
@@ -400,6 +396,10 @@ class Store(context: Context) {
             r.took?.let { t -> put("took", JSONObject().apply { t.start?.let { put("start", it) }; put("steps", t.steps) }) }
         })
         prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+        // Doing a task once completes it.
+        if (r.status in TASK_DONE_STATUSES) {
+            checkin(checkinId)?.takeIf { it.isTask && it.doneAt == null }?.let { completeTask(it.id) }
+        }
     }
 
     private fun JSONObject.toResults(): Map<String, SlotResult> {
