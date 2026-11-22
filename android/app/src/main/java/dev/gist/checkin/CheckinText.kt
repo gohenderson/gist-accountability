@@ -13,6 +13,7 @@ object CheckinText {
             when (st.kind) {
                 Steps.MATH -> "solve ${st.mathCount} math"
                 Steps.SCAN -> "scan ${st.scanLabel.ifEmpty { "code" }}"
+                Steps.PICK_TASKS -> "pick ${st.pickCount} task${if (st.pickCount == 1) "" else "s"}"
                 else -> "answer ${st.questions.size} question${if (st.questions.size == 1) "" else "s"}"
             }
         }

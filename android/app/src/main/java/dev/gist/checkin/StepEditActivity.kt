@@ -55,6 +55,7 @@ class StepEditActivity : BaseActivity() {
         when (st.kind) {
             Steps.MATH -> mathUi(body, st)
             Steps.SCAN -> scanUi(body, st)
+            Steps.PICK_TASKS -> pickUi(body, st)
             else -> questionsUi(body, c, st)
         }
         page.add(body, dp(16))
@@ -120,6 +121,25 @@ class StepEditActivity : BaseActivity() {
         }
         col.add(group, dp(6))
         col.add(muted("A wrong answer gives you a new problem.", 13f), dp(10))
+    }
+
+    // ---------------------------------------------------------------- pick tasks
+
+    private fun pickUi(col: LinearLayout, st: StepConfig) {
+        col.add(sectionTitle("Tasks to pick"))
+        val picker = NumberPicker(this).apply {
+            minValue = 1
+            maxValue = Steps.MAX_PICK
+            value = st.pickCount.coerceIn(1, Steps.MAX_PICK)
+            wrapSelectorWheel = false
+            tag = "pick-count"
+            setOnValueChangedListener { _, _, v -> save { it.copy(pickCount = v) } }
+        }
+        col.add(picker, dp(4))
+        val n = store.backlog.size
+        col.add(muted("When it rings you pick exactly this many from your backlog (all of them if there are fewer). " +
+            "They're turned on, so they show on the start page; do them from there. Your backlog has " +
+            "$n task${if (n == 1) "" else "s"} now. A test ring doesn't change anything.", 13f), dp(2))
     }
 
     // ---------------------------------------------------------------- scan
@@ -273,6 +293,7 @@ class StepEditActivity : BaseActivity() {
         val what = when (st.kind) {
             Steps.MATH -> "The alarm will no longer ask for these problems."
             Steps.SCAN -> "The registered code is forgotten."
+            Steps.PICK_TASKS -> "The alarm will no longer ask you to pick tasks."
             else -> "Its questions are removed. Answers already logged stay on the phone but won't show in History."
         }
         android.app.AlertDialog.Builder(this)

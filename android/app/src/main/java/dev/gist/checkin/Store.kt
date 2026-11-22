@@ -123,6 +123,8 @@ data class Checkin(
 ) {
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
+    /** A task that's off (and not done) waits in the backlog; on, it's active. */
+    val inBacklog: Boolean get() = task && !enabled && doneAt == null
 
     val soft: Boolean get() = commitment == SOFT
     /** Reminds with a silent notification instead of an alarm ([QUIET]). */
@@ -474,6 +476,14 @@ class Store(context: Context) {
         get() = prefs.getBoolean(K_SHOW_TASKS, true) || !prefs.getBoolean(K_SHOW_CHECKINS, true)
         set(v) { prefs.edit().putBoolean(K_SHOW_TASKS, v).apply { if (!v) putBoolean(K_SHOW_CHECKINS, true) }.commit() }
 
+    /** Start page: show backlog tasks (tasks that are off) too? Only counts while [showTasks]. */
+    var showBacklog: Boolean
+        get() = prefs.getBoolean(K_SHOW_BACKLOG, false)
+        set(v) { prefs.edit().putBoolean(K_SHOW_BACKLOG, v).commit() }
+
+    /** The backlog: tasks that are off and not done, in your order. */
+    val backlog: List<Checkin> get() = checkins.filter { it.inBacklog }
+
     /** Start page order: one of Grouping.SORTS (My order by default). */
     var sort: String
         get() = prefs.getString(K_SORT, null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
@@ -693,6 +703,7 @@ class Store(context: Context) {
         private const val K_SORT = "sort"
         private const val K_SHOW_CHECKINS = "showCheckins"
         private const val K_SHOW_TASKS = "showTasks"
+        private const val K_SHOW_BACKLOG = "showBacklog"
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"

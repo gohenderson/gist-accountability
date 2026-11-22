@@ -72,6 +72,8 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   Untick one to hide it: check-ins are everything that isn't a task, and hidden ones still
   ring. With tasks hidden, the **Done tasks** button goes too. One always stays ticked.
   While something is hidden, a line above the list says so, with **Show all**.
+  **Backlog** (only with Tasks ticked) also shows tasks that are off; it's unticked by
+  default, and a line above the list says how many are waiting, with **show**.
 - **Sort** (in the same View menu) orders the check-ins, within each group when grouped:
   - **My order** (the default): as you've dragged them.
   - **Next alarm:** soonest ring first.
@@ -198,6 +200,10 @@ The types:
   e.g. "Bathroom sink". When the alarm rings, only that exact code stops it. If you can't
   scan (you're traveling, or the camera fails), a **"Can't scan?"** button appears after 2
   minutes. It swaps the scan for 5 very hard problems.
+- **Pick today's tasks:** pick a set number of tasks (1–20) from your backlog. When it
+  rings it lists the backlog; tick exactly that many (all of them if there are fewer) and
+  tap **Add to today**: they're turned on, so they show on the start page. With an empty
+  backlog it just says so and moves on. A test ring changes nothing.
 - **Questions:** add, edit, reorder and delete them. Each is one of:
   - **Yes / No:** says whether "Yes" or "No" is on track. **Submit** stays disabled until
     every yes/no question is answered.
@@ -296,6 +302,9 @@ on **One-time task** on any check-in's page.
   background), with one difference: **doing it once completes it**. That's finishing it (or
   dismissing it, if it's soft), from the alarm or with **Do it now**. It turns off and
   leaves the start page.
+- **On or off: active or in the backlog.** A task that's on is active and shows on the
+  start page. One that's off waits in the **backlog**, hidden unless you tick **Backlog**
+  in View; turn it on (its switch, or a **Pick today's tasks** step) to make it active.
 - **A new task starts in the backlog:** no triggers, its alarm off, soft, and set to **No
   alarm (just a reminder)**. It waits on the start page (**Task · no set time**) until you
   tap **Do it now**.
