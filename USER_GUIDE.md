@@ -306,8 +306,8 @@ on **One-time task** on any check-in's page.
   start page. One that's off waits in the **backlog**, hidden unless you tick **Backlog**
   in View; turn it on (its switch, or a **Pick today's tasks** step) to make it active.
 - **A new task starts in the backlog:** no triggers, its alarm off, soft, and set to **No
-  alarm (just a reminder)**. It waits on the start page (**Task · no set time**) until you
-  tap **Do it now**.
+  alarm (just a reminder)**. With **Backlog** ticked in View it shows **In the backlog**,
+  with **Do it now**.
 - **To be reminded,** add a time trigger (its **Days** default to **On a specific date**)
   and turn **Alarm on**. It then reminds you quietly; pick a sound on its page for a real
   alarm. Arrive / leave and run triggers ("when I get to the store: buy batteries") work
