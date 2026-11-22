@@ -57,7 +57,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - **Tap a check-in's title to fold it** to one line: its name, next ring and switch. Tap
     again to unfold it. Each check-in remembers how you left it.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
-- **View** (above the list, once a tab has two or more items) holds both how the list is
+- **View** (above the list, on every tab) holds both how the list is
   grouped and how it's sorted. Each choice applies right away. The button shows the
   current sort. **Each tab has its own View** (and **Collapse all** folds just that tab),
   so check-ins can sort by **Next alarm** while tasks stay in **My order**: drag the most
@@ -93,7 +93,11 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   logging](#history-scores-and-logging)), and group headers are colored by their average.
   The numbers stay out of the list. The overall score is at the top of the page, and each
   check-in's own score is at the top of its page. Screen readers read the numbers out.
-- **Settings** and **About** are at the bottom.
+- **The number at the top** follows the tab: on **Check-ins**, the overall score (a dash
+  until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
+  on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
+  turned off), even if you've picked them since.
+- **Settings** (⚙️), **About** (❓) and **Donate** (💲) are at the top right.
 
 ## A check-in's page
 

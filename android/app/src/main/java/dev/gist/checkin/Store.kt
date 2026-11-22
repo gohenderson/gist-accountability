@@ -120,6 +120,8 @@ data class Checkin(
     val task: Boolean = false,
     /** A task that's been done: when (epoch ms). Done tasks are off and listed apart. */
     val doneAt: Long? = null,
+    /** When this task last went into the backlog (epoch ms); stamped by [Store.checkins]. */
+    val backlogAt: Long? = null,
 ) {
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
@@ -255,10 +257,30 @@ class Store(context: Context) {
             return (0 until arr.length()).map { checkinFromJson(arr.getJSONObject(it)) }
         }
         set(v) {
+            // A task that's just gone into the backlog (new, or turned off) gets stamped,
+            // unless the caller set the time itself (a restored backup).
+            val was = if (prefs.contains(K_CHECKINS)) checkins.associateBy { it.id } else emptyMap()
+            val now = System.currentTimeMillis()
             val arr = JSONArray()
-            v.forEach { arr.put(checkinToJson(it)) }
+            v.forEach { c ->
+                val old = was[c.id]
+                val entered = c.inBacklog && old?.inBacklog != true && c.backlogAt == old?.backlogAt
+                arr.put(checkinToJson(if (entered) c.copy(backlogAt = now) else c))
+            }
             prefs.edit().putString(K_CHECKINS, arr.toString()).commit()
         }
+
+    /** Tasks done in the last [days] days. */
+    fun tasksDoneSince(days: Int): Int {
+        val since = System.currentTimeMillis() - days * DAY_MS
+        return checkins.count { it.taskDone && it.doneAt!! >= since }
+    }
+
+    /** Tasks that went into the backlog in the last [days] days (even if picked since). */
+    fun tasksBackloggedSince(days: Int): Int {
+        val since = System.currentTimeMillis() - days * DAY_MS
+        return checkins.count { it.isTask && (it.backlogAt ?: 0) >= since }
+    }
 
     fun checkin(id: String): Checkin? = checkins.firstOrNull { it.id == id }
 
@@ -647,6 +669,7 @@ class Store(context: Context) {
             snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
+            backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
         ).let { c ->
             // The first tasks were a check-in repeating "once" on a date: now a flag, with the
             // date on each of its times ("On a specific date").
@@ -698,10 +721,12 @@ class Store(context: Context) {
             .apply {
                 if (c.task) put("task", true)
                 c.doneAt?.let { put("doneAt", it) }
+                if (c.task) c.backlogAt?.let { put("backlogAt", it) }
             }
     }
 
     companion object {
+        private const val DAY_MS = 24L * 60 * 60 * 1000
         /** Results that complete a task: done, answered, or (soft) dismissed. */
         private val TASK_DONE_STATUSES = setOf(SlotResult.DONE, SlotResult.ANSWERED, SlotResult.DISMISSED)
         private const val K_CHECKINS = "checkins"

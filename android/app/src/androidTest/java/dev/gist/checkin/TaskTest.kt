@@ -139,4 +139,54 @@ class TaskTest {
         assertTrue(c.soft)
         assertTrue(c.quiet)
     }
+
+    @Test
+    fun goingIntoTheBacklogIsStamped() {
+        val week = 7L * 24 * 60 * 60 * 1000
+        val old = System.currentTimeMillis() - 2 * week
+        TestEnv.reset(listOf(
+            task("new").copy(enabled = false),                       // new in the backlog: stamped now
+            task("restored").copy(enabled = false, backlogAt = old), // its own time is kept
+            task("active"),                                          // active: no stamp
+        ))
+        assertNotNull(TestEnv.store.checkin("new")!!.backlogAt)
+        assertEquals(old, TestEnv.store.checkin("restored")!!.backlogAt)
+        assertNull(TestEnv.store.checkin("active")!!.backlogAt)
+        assertEquals(1, TestEnv.store.tasksBackloggedSince(7))
+
+        // Turning an active task off puts it in the backlog: stamped.
+        TestEnv.store.updateCheckin("active") { it.copy(enabled = false) }
+        assertNotNull(TestEnv.store.checkin("active")!!.backlogAt)
+        assertEquals(2, TestEnv.store.tasksBackloggedSince(7))
+        // Picking it (on again) still counts as added this week.
+        TestEnv.store.updateCheckin("active") { it.copy(enabled = true) }
+        assertEquals(2, TestEnv.store.tasksBackloggedSince(7))
+    }
+
+    @Test
+    fun eachTabHasASummaryAndTheViewRowIsAlwaysThere() {
+        val week = 7L * 24 * 60 * 60 * 1000
+        val now = System.currentTimeMillis()
+        TestEnv.reset(listOf(
+            TestEnv.checkin("c", "Daily"),
+            task("d1").copy(enabled = false, doneAt = now - 60_000),
+            task("d2").copy(enabled = false, doneAt = now - 2 * week), // too long ago
+            task("b").copy(enabled = false),
+        ))
+        ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
+            // Check-ins with no answers yet: a placeholder, and View for just one item.
+            onView(tagged("overall-score-none")).check(matches(isDisplayed()))
+            onView(tagged("view-mode")).check(matches(isDisplayed()))
+            onView(tagged("toggle-all")).check(matches(isDisplayed()))
+            // Tasks: done this week (no active tasks, and View is still there).
+            onView(tagged("tab:tasks")).perform(click())
+            onView(tagged("tasks-done-count")).check(matches(withText("1")))
+            onView(tagged("summary-text")).check(matches(withText("task done in the last 7 days")))
+            onView(tagged("view-mode")).check(matches(isDisplayed()))
+            // Backlog: added this week.
+            onView(tagged("tab:backlog")).perform(click())
+            onView(tagged("backlog-added-count")).check(matches(withText("1")))
+            onView(tagged("summary-text")).check(matches(withText("task added to the backlog in the last 7 days")))
+        }
+    }
 }
