@@ -70,7 +70,15 @@ class MainActivity : BaseActivity() {
         }
         val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
-        col.add(header("Gist", todayLong()))
+        // Title, with Settings, About and Donate across from it.
+        val top = row().apply { gravity = android.view.Gravity.TOP }
+        top.addWeighted(header("Gist", todayLong()))
+        top.addWrapped(iconButton("⚙️", "Settings", "settings") {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        })
+        top.addWrapped(iconButton("❓", "About Gist", "about") { startActivity(AboutActivity.intent(this)) })
+        top.addWrapped(iconButton("💲", "Donate", "donate") { openLink(Links.DONATE) })
+        col.add(top)
 
         // Scores: each check-in's on-track share over the last week; groups and the page
         // average them (off check-ins aren't counted).
@@ -98,7 +106,7 @@ class MainActivity : BaseActivity() {
                 tag = "view-mode"
                 contentDescription = "View: ${if (grouped) "by category, " else ""}${Grouping.sortName(store.sort)}"
             })
-            val keys = groups.map { Grouping.key(it.first) }.toSet()
+            val keys = groups.map { groupKey(tab, it.first) }.toSet()
             val ids = checkins.map { it.id }.toSet()
             val allFolded = Grouping.allFolded(keys, store.collapsed, ids, store.collapsedCheckins)
             controls.addWrapped(textButton(if (allFolded) "Expand all" else "Collapse all") {
@@ -120,7 +128,7 @@ class MainActivity : BaseActivity() {
                 render()
             }
             for ((category, members) in groups) {
-                val key = Grouping.key(category)
+                val key = groupKey(tab, category)
                 val folded = key in store.collapsed
                 val section = column()
                 // The group's color shows its score; the number is only read out (it's at the top).
@@ -169,12 +177,6 @@ class MainActivity : BaseActivity() {
                 startActivity(DoneTasksActivity.intent(this))
             }.apply { tag = "done-tasks" }, dp(20))
         }
-        col.add(outlineButton("Settings · backup · appearance") { // what's inside, not the current theme
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }, dp(28))
-        col.add(textButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply {
-            tag = "about"
-        }, dp(4))
 
         val sv = screen(col)
         setContentView(sv)
@@ -596,6 +598,29 @@ class MainActivity : BaseActivity() {
     private fun hasNotificationPermission(): Boolean =
         Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** A group's fold state is kept per tab (the Check-ins tab keeps the original keys). */
+    private fun groupKey(tab: String, category: String) =
+        if (tab == Store.TAB_CHECKINS) Grouping.key(category) else "$tab/${Grouping.key(category)}"
+
+    /** A small emoji button for the top of the page; [name] is read out. */
+    private fun iconButton(emoji: String, name: String, tag: String, onClick: () -> Unit) =
+        textButton(emoji) { onClick() }.apply {
+            this.tag = tag
+            contentDescription = name
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            minWidth = dp(44)
+            minimumWidth = dp(44)
+            setPadding(dp(6), paddingTop, dp(6), paddingBottom)
+        }
+
+    private fun openLink(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (e: ActivityNotFoundException) {
+            toast("No browser found. The page is $url")
+        }
+    }
 
     private fun openSettings(action: String) {
         try {

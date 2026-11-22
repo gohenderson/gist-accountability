@@ -57,9 +57,11 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - **Tap a check-in's title to fold it** to one line: its name, next ring and switch. Tap
     again to unfold it. Each check-in remembers how you left it.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
-- **View** (above the list, once you have two or more check-ins) holds both how the list is
+- **View** (above the list, once a tab has two or more items) holds both how the list is
   grouped and how it's sorted. Each choice applies right away. The button shows the
-  current sort.
+  current sort. **Each tab has its own View** (and **Collapse all** folds just that tab),
+  so check-ins can sort by **Next alarm** while tasks stay in **My order**: drag the most
+  important to the top.
   - **By category** (a checkbox): a section per category, A–Z, with uncategorized
     check-ins under "Other". Unticked, it's one list.
 
@@ -365,7 +367,7 @@ read yet; backups without them stay version 4.
 
 ## Settings, backups and export
 
-**Settings** is at the bottom of the start page.
+**Settings** is the ⚙️ at the top right of the start page.
 
 - **Appearance:** same as the phone, Light or Dark.
 - **While you check in:** the pause length (15, 30, 45 or 60 seconds).
@@ -396,11 +398,12 @@ read yet; backups without them stay version 4.
 
 ## About
 
-**About** (bottom of the start page, or Settings → About) shows:
+**About** (the ❓ at the top right of the start page, or Settings → About) shows:
 - the version;
 - privacy;
 - links to the source code and to report a problem;
-- **Donate**, which opens the [Donate](README.md#donate) section of the README.
+- **Donate**, which opens the [Donate](README.md#donate) section of the README (the 💲 at the
+  top right of the start page goes straight there).
 
 ## On iPhone and iPad
 
