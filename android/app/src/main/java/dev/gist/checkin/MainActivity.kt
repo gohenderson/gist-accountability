@@ -56,8 +56,13 @@ class MainActivity : BaseActivity() {
         val oldY = scroll?.pageScrollY ?: 0
         val col = column()
         val all = store.checkins
-        val checkins = all.filter { !it.taskDone } // done tasks have their own page
-        val doneTasks = all.count { it.taskDone }
+        val open = all.filter { !it.taskDone } // done tasks have their own page
+        // View → Show: check-ins, tasks, or both.
+        val showCheckins = store.showCheckins
+        val showTasks = store.showTasks
+        val filtered = !(showCheckins && showTasks)
+        val checkins = open.filter { if (it.isTask) showTasks else showCheckins }
+        val doneTasks = if (showTasks) all.count { it.taskDone } else 0
 
         col.add(header("Gist", todayLong()))
 
@@ -78,12 +83,12 @@ class MainActivity : BaseActivity() {
         setupWarnings(col)
 
         val bar = row()
-        bar.addWeighted(sectionTitle("Check-ins"))
+        bar.addWeighted(sectionTitle(if (showCheckins) "Check-ins" else "Tasks"))
         bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
         col.add(bar, dp(28))
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
-        if (checkins.size > 1) {
+        if (open.size > 1 || filtered) {
             // View (grouping and sort), and expand / collapse all (groups and check-ins).
             val controls = row()
             controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
@@ -104,6 +109,18 @@ class MainActivity : BaseActivity() {
                 render()
             }.apply { tag = "toggle-all" })
             col.add(controls, dp(4))
+        }
+        if (filtered) {
+            // Hidden check-ins still ring: keep it visible that the list isn't everything.
+            val note = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            note.addWeighted(muted(if (showTasks) "Showing tasks only" else "Showing check-ins only (no tasks)", 13f)
+                .apply { tag = "filter-note" })
+            note.addWrapped(textButton("Show all") {
+                store.showCheckins = true
+                store.showTasks = true
+                render()
+            }.apply { tag = "show-all" })
+            col.add(note, dp(2))
         }
         if (grouped) {
             // Each group can be dragged above / below the others by its ≡, and tapped to fold.
@@ -147,7 +164,12 @@ class MainActivity : BaseActivity() {
             col.add(checkinList(checkins, checkins), dp(12))
         }
         if (checkins.isEmpty()) {
-            col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
+            val empty = when {
+                open.isEmpty() -> "No check-ins yet. Add one to get started."
+                showTasks && !showCheckins -> "No open tasks."
+                else -> "Nothing to show."
+            }
+            col.add(card().apply { add(muted(empty, 15f)) }, dp(12))
         }
 
         if (doneTasks > 0) {
@@ -223,6 +245,29 @@ class MainActivity : BaseActivity() {
                     render()
                 }
             })
+            add(sectionTitle("Show"), dp(14))
+            val boxes = mutableListOf<android.widget.CheckBox>()
+            fun show(label: String, detail: String, on: Boolean, key: String, set: (Boolean) -> Unit) =
+                checkTile(label, on, detail).apply {
+                    tag = "view:$key"
+                    setOnCheckedChangeListener { box, ticked ->
+                        // One stays ticked: an empty page helps no one.
+                        if (!ticked && boxes.none { it !== box && it.isChecked }) {
+                            box.isChecked = true
+                            Toast.makeText(this@MainActivity, "Show at least one", Toast.LENGTH_SHORT).show()
+                            return@setOnCheckedChangeListener
+                        }
+                        set(ticked)
+                        dialog.dismiss()
+                        render()
+                    }
+                }.also { boxes += it }
+            add(show("Check-ins", "Everything that isn't a task (they still ring when hidden)", store.showCheckins, "checkins") {
+                store.showCheckins = it
+            }, dp(8))
+            add(show("Tasks", "Open tasks, and the Done tasks button", store.showTasks, "tasks") {
+                store.showTasks = it
+            }, dp(8))
             add(sectionTitle("Sort"), dp(14))
             sorts.forEachIndexed { i, how ->
                 add(optionTile(DialogOption(Grouping.sortName(how), details[i], "sort:$how"), how == store.sort) {

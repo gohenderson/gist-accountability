@@ -464,6 +464,16 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
+    /** Start page: show check-ins (everything that isn't a task)? At least one of these stays on. */
+    var showCheckins: Boolean
+        get() = prefs.getBoolean(K_SHOW_CHECKINS, true) || !prefs.getBoolean(K_SHOW_TASKS, true)
+        set(v) { prefs.edit().putBoolean(K_SHOW_CHECKINS, v).apply { if (!v) putBoolean(K_SHOW_TASKS, true) }.commit() }
+
+    /** Start page: show open tasks (and the Done tasks button)? */
+    var showTasks: Boolean
+        get() = prefs.getBoolean(K_SHOW_TASKS, true) || !prefs.getBoolean(K_SHOW_CHECKINS, true)
+        set(v) { prefs.edit().putBoolean(K_SHOW_TASKS, v).apply { if (!v) putBoolean(K_SHOW_CHECKINS, true) }.commit() }
+
     /** Start page order: one of Grouping.SORTS (My order by default). */
     var sort: String
         get() = prefs.getString(K_SORT, null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
@@ -681,6 +691,8 @@ class Store(context: Context) {
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
         private const val K_SORT = "sort"
+        private const val K_SHOW_CHECKINS = "showCheckins"
+        private const val K_SHOW_TASKS = "showTasks"
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"

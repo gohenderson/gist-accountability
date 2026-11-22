@@ -19,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -71,13 +72,13 @@ class GroupingTest {
         main().use {
             onView(tagged("view-mode")).perform(scrollTo(), click())
             // One menu: By category, then the four sorts.
-            for (how in Grouping.SORTS) onView(tagged("sort:$how")).inRoot(isDialog()).check(matches(isDisplayed()))
+            for (how in Grouping.SORTS) onView(tagged("sort:$how")).inRoot(isDialog()).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("view:category")).inRoot(isDialog()).check(matches(isNotChecked())).perform(click())
             onView(tagged("group:Health")).perform(scrollTo()).check(matches(isDisplayed()))
             assertEquals(Grouping.BY_CATEGORY, TestEnv.store.view)
             // Sorting keeps the grouping; unticking By category ungroups.
             onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("sort:attention")).inRoot(isDialog()).perform(click())
+            onView(tagged("sort:attention")).inRoot(isDialog()).perform(scrollTo(), click())
             onView(tagged("group:Health")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("view-mode")).perform(scrollTo(), click())
             onView(tagged("view:category")).inRoot(isDialog()).check(matches(isChecked())).perform(click())
@@ -290,13 +291,13 @@ class GroupingTest {
             onView(tagged("drag-checkin:z")).check(matches(isDisplayed()))
 
             onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("sort:next")).inRoot(isDialog()).perform(click())
+            onView(tagged("sort:next")).inRoot(isDialog()).perform(scrollTo(), click())
             onView(tagged("view-mode")).check(matches(withText("View: Next alarm ▾")))
             assertEquals(listOf("m", "z", "a"), cardOrder(scenario, ids))
             onView(tagged("drag-checkin:z")).check(doesNotExist()) // no dragging while sorted
 
             onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("sort:name")).inRoot(isDialog()).perform(click())
+            onView(tagged("sort:name")).inRoot(isDialog()).perform(scrollTo(), click())
             assertEquals(listOf("a", "m", "z"), cardOrder(scenario, ids))
         }
         assertEquals("remembered", Grouping.SORT_NAME, TestEnv.store.sort)
@@ -414,6 +415,53 @@ class GroupingTest {
         main().use {
             onView(tagged("checkin-header:a")).check(matches(withContentDescription(org.hamcrest.Matchers.not(containsString("on track")))))
             onView(tagged("overall-score")).check(doesNotExist())
+        }
+    }
+
+    @Test
+    fun showCheckinsTasksOrBoth() {
+        val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList(), enabled = false)
+        val done = TestEnv.checkin("d", "Done thing").copy(task = true, times = emptyList(), enabled = false,
+            doneAt = System.currentTimeMillis())
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, done))
+        TestEnv.store.collapsedCheckins = setOf("c", "t")
+        main().use {
+            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            onView(tagged("done-tasks")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("filter-note")).check(doesNotExist())
+
+            // Check-ins only: no tasks, and no Done tasks button.
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:tasks")).inRoot(isDialog()).check(matches(isChecked())).perform(click())
+            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:t")).check(doesNotExist())
+            onView(tagged("done-tasks")).check(doesNotExist())
+            onView(tagged("filter-note")).check(matches(withText("Showing check-ins only (no tasks)")))
+            assertFalse(TestEnv.store.showTasks)
+
+            // Unticking check-ins too isn't allowed: one always stays.
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:checkins")).inRoot(isDialog()).perform(click())
+            onView(tagged("view:checkins")).inRoot(isDialog()).check(matches(isChecked()))
+            androidx.test.espresso.Espresso.pressBack()
+            assertTrue(TestEnv.store.showCheckins)
+
+            // Tasks only: the title says so, and Done tasks is back.
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:tasks")).inRoot(isDialog()).perform(click())
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:checkins")).inRoot(isDialog()).perform(click())
+            onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:c")).check(doesNotExist())
+            onView(withText("TASKS")).check(matches(isDisplayed()))
+            onView(tagged("done-tasks")).perform(scrollTo()).check(matches(isDisplayed()))
+
+            // Show all.
+            onView(tagged("show-all")).perform(click())
+            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            onView(tagged("filter-note")).check(doesNotExist())
         }
     }
 }
