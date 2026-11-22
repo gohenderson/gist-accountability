@@ -464,4 +464,19 @@ class GroupingTest {
             onView(tagged("filter-note")).check(doesNotExist())
         }
     }
+
+    @Test
+    fun checkinsHaveADotAndTasksASquare() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList())))
+        main().use { scenario ->
+            onView(tagged("card:c")).perform(scrollTo())
+            scenario.onActivity { act ->
+                val root = act.window.decorView
+                fun shape(id: String) = (root.findViewWithTag<View>("marker:$id").background as android.graphics.drawable.GradientDrawable).shape
+                assertEquals(android.graphics.drawable.GradientDrawable.OVAL, shape("c"))
+                assertEquals(android.graphics.drawable.GradientDrawable.RECTANGLE, shape("t"))
+            }
+            onView(tagged("checkin-header:t")).check(matches(withContentDescription(org.hamcrest.Matchers.startsWith("Task: Call John"))))
+        }
+    }
 }
