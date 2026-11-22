@@ -58,13 +58,17 @@ class MainActivity : BaseActivity() {
         val col = column()
         val all = store.checkins
         val open = all.filter { !it.taskDone } // done tasks have their own page
-        // View → Show: check-ins, tasks, or both.
+        // The Check-ins / Tasks / Backlog buttons, each on or off on its own.
         val showCheckins = store.showCheckins
         val showTasks = store.showTasks
-        val showBacklog = showTasks && store.showBacklog // backlog tasks (off) only with Backlog ticked
-        val filtered = !(showCheckins && showTasks)
-        val checkins = open.filter { if (it.isTask) showTasks && (!it.inBacklog || showBacklog) else showCheckins }
-        val backlogHidden = if (showTasks && !showBacklog) open.count { it.inBacklog } else 0
+        val showBacklog = store.showBacklog
+        val checkins = open.filter {
+            when {
+                !it.isTask -> showCheckins
+                it.inBacklog -> showBacklog
+                else -> showTasks
+            }
+        }
         val doneTasks = if (showTasks) all.count { it.taskDone } else 0
 
         col.add(header("Gist", todayLong()))
@@ -86,12 +90,13 @@ class MainActivity : BaseActivity() {
         setupWarnings(col)
 
         val bar = row()
-        bar.addWeighted(sectionTitle(if (showCheckins) "Check-ins" else "Tasks"))
+        bar.addWeighted(sectionTitle(if (showCheckins || !(showTasks || showBacklog)) "Check-ins" else "Tasks"))
         bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
         col.add(bar, dp(28))
+        col.add(showTabs(open), dp(12))
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
-        if (open.size > 1 || filtered) {
+        if (open.size > 1) {
             // View (grouping and sort), and expand / collapse all (groups and check-ins).
             val controls = row()
             controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
@@ -112,25 +117,6 @@ class MainActivity : BaseActivity() {
                 render()
             }.apply { tag = "toggle-all" })
             col.add(controls, dp(4))
-        }
-        if (backlogHidden > 0 && !filtered) {
-            // Quietly say the backlog is there (it's hidden by default).
-            col.add(textButton("$backlogHidden task${if (backlogHidden == 1) "" else "s"} in the backlog · show") {
-                store.showBacklog = true
-                render()
-            }.apply { tag = "backlog-note" }, dp(2))
-        }
-        if (filtered) {
-            // Hidden check-ins still ring: keep it visible that the list isn't everything.
-            val note = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-            note.addWeighted(muted(if (showTasks) "Showing tasks only" else "Showing check-ins only (no tasks)", 13f)
-                .apply { tag = "filter-note" })
-            note.addWrapped(textButton("Show all") {
-                store.showCheckins = true
-                store.showTasks = true
-                render()
-            }.apply { tag = "show-all" })
-            col.add(note, dp(2))
         }
         if (grouped) {
             // Each group can be dragged above / below the others by its ≡, and tapped to fold.
@@ -176,9 +162,7 @@ class MainActivity : BaseActivity() {
         if (checkins.isEmpty()) {
             val empty = when {
                 open.isEmpty() -> "No check-ins yet. Add one to get started."
-                showTasks && !showCheckins && backlogHidden > 0 -> "No active tasks. Tick Backlog in View to see the $backlogHidden waiting."
-                showTasks && !showCheckins -> "No open tasks."
-                else -> "Nothing to show."
+                else -> "Nothing to show. Turn on Check-ins, Tasks or Backlog above."
             }
             col.add(card().apply { add(muted(empty, 15f)) }, dp(12))
         }
@@ -256,40 +240,6 @@ class MainActivity : BaseActivity() {
                     render()
                 }
             })
-            add(sectionTitle("Show"), dp(14))
-            val boxes = mutableListOf<android.widget.CheckBox>()
-            fun show(label: String, detail: String, on: Boolean, key: String, set: (Boolean) -> Unit) =
-                checkTile(label, on, detail).apply {
-                    tag = "view:$key"
-                    setOnCheckedChangeListener { box, ticked ->
-                        // One stays ticked: an empty page helps no one.
-                        if (!ticked && boxes.none { it !== box && it.isChecked }) {
-                            box.isChecked = true
-                            Toast.makeText(this@MainActivity, "Show at least one", Toast.LENGTH_SHORT).show()
-                            return@setOnCheckedChangeListener
-                        }
-                        set(ticked)
-                        dialog.dismiss()
-                        render()
-                    }
-                }.also { boxes += it }
-            add(show("Check-ins", "Everything that isn't a task (they still ring when hidden)", store.showCheckins, "checkins") {
-                store.showCheckins = it
-            }, dp(8))
-            add(show("Tasks", "Active tasks (on), and the Done tasks button", store.showTasks, "tasks") {
-                store.showTasks = it
-            }, dp(8))
-            // The backlog (tasks that are off) only shows alongside Tasks.
-            add(checkTile("Backlog", store.showBacklog, "Tasks that are off, waiting to be picked (needs Tasks)").apply {
-                tag = "view:backlog"
-                isEnabled = store.showTasks
-                alpha = if (isEnabled) 1f else 0.5f
-                setOnCheckedChangeListener { _, on ->
-                    store.showBacklog = on
-                    dialog.dismiss()
-                    render()
-                }
-            }, dp(8))
             add(sectionTitle("Sort"), dp(14))
             sorts.forEachIndexed { i, how ->
                 add(optionTile(DialogOption(Grouping.sortName(how), details[i], "sort:$how"), how == store.sort) {
@@ -316,6 +266,31 @@ class MainActivity : BaseActivity() {
             store.checkin(c.id)?.let { AlarmScheduler.schedule(this@MainActivity, it) }
             render()
         }
+    }
+
+    /**
+     * Check-ins, Tasks and Backlog, side by side like tabs: each shows or hides its kind on its
+     * own (any mix, even none). Lit when on. Check-ins are everything that isn't a task (they
+     * still ring when hidden); Tasks are active tasks (and the Done tasks button); Backlog is
+     * tasks that are off.
+     */
+    private fun showTabs(open: List<Checkin>): LinearLayout {
+        val r = row()
+        fun tab(label: String, key: String, on: Boolean, count: Int, set: (Boolean) -> Unit) {
+            val b = toggleTab("$label · $count", on).apply {
+                tag = "show:$key"
+                contentDescription = "$label, $count, ${if (on) "shown" else "hidden"}"
+                setOnClickListener {
+                    set(!on)
+                    render()
+                }
+            }
+            r.addWeighted(b, startMargin = if (r.childCount == 0) 0 else dp(8))
+        }
+        tab("Check-ins", "checkins", store.showCheckins, open.count { !it.isTask }) { store.showCheckins = it }
+        tab("Tasks", "tasks", store.showTasks, open.count { it.isTask && !it.inBacklog }) { store.showTasks = it }
+        tab("Backlog", "backlog", store.showBacklog, open.count { it.inBacklog }) { store.showBacklog = it }
+        return r
     }
 
     /** The color for a score, between the off-track red and the on-track green. */

@@ -114,6 +114,24 @@ fun Context.card(tint: Int? = null): LinearLayout = column().apply {
     setPadding(dp(16), dp(14), dp(16), dp(16))
 }
 
+/** A pill that's lit when [on] (like a tab), for showing or hiding something. */
+fun Context.toggleTab(text: String, on: Boolean): Button = Button(this).apply {
+    this.text = text
+    isAllCaps = false
+    isSelected = on
+    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+    setTextColor(if (on) colorOf(R.color.on_primary) else colorText)
+    typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+    minHeight = dp(40)
+    minimumHeight = dp(40)
+    setPadding(dp(8), 0, dp(8), 0)
+    stateListAnimator = null
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+    background = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)),
+        if (on) rounded(colorPrimary, 20) else rounded(colorOf(R.color.surface_variant), 20, colorOf(R.color.outline)), null)
+}
+
 /** A small rounded tag, e.g. "✓ done early". */
 fun Context.chip(text: String, fg: Int, bg: Int): TextView = label(text, 13f, color = fg).apply {
     typeface = MEDIUM
