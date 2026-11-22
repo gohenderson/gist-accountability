@@ -69,8 +69,8 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - drag a **group** by the ≡ on its header to move it above or below the others;
   - tap a group's header to collapse or expand it.
 - **Check-ins · Tasks · Backlog**, the buttons under **+ Add check-in**, show or hide each
-  kind on its own; a lit button is shown. Any mix works, even just the backlog. Each shows
-  how many there are. **Check-ins** are everything that isn't a task (hidden ones still
+  kind on its own; a lit button is shown. Any mix works, even just the backlog.
+  **Check-ins** are everything that isn't a task (hidden ones still
   ring); **Tasks** are active tasks, and with them the **Done tasks** button; **Backlog**
   is tasks that are off (hidden by default). The choice is remembered.
 - **Sort** (in the same View menu) orders the check-ins, within each group when grouped:
