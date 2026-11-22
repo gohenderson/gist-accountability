@@ -5,11 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 
 object Notif {
     private const val CH_ALARM = "checkin_alarm"
     private const val CH_WAITING = "checkin_waiting"
+    private const val CH_QUIET = "checkin_quiet"
     private const val CH_SETUP = "setup"
     const val ID_PERMISSION = 3
     const val ID_ALARM = 1
@@ -45,10 +47,11 @@ object Notif {
      */
     private fun softPending(context: Context): Pending? {
         val store = Store(context)
-        return store.pending.firstOrNull()?.takeIf { store.isSoft(it) }
+        return store.alarmPending.firstOrNull()?.takeIf { store.isSoft(it) }
     }
 
-    private fun Notification.Builder.softActions(context: Context, p: Pending?): Notification.Builder {
+    /** [codes]: request codes for Snooze and Dismiss (and +1); each notification needs its own. */
+    private fun Notification.Builder.softActions(context: Context, p: Pending?, codes: Int = 20): Notification.Builder {
         if (p == null) return this
         val c = Store(context).checkin(p.checkinId) ?: return this
         fun action(label: String, action: String, code: Int): Notification.Action {
@@ -58,8 +61,8 @@ object Notif {
             )
             return Notification.Action.Builder(null as android.graphics.drawable.Icon?, label, pi).build()
         }
-        addAction(action("Snooze ${c.snoozeMinutes} min", SoftAlarmReceiver.ACTION_SNOOZE, 20))
-        addAction(action("Dismiss", SoftAlarmReceiver.ACTION_DISMISS, 21))
+        addAction(action("Snooze ${c.snoozeMinutes} min", SoftAlarmReceiver.ACTION_SNOOZE, codes))
+        addAction(action("Dismiss", SoftAlarmReceiver.ACTION_DISMISS, codes + 1))
         return this
     }
 
@@ -146,6 +149,43 @@ object Notif {
         return if (target != null) settings.setComponent(target)
         else android.content.Intent(context, MainActivity::class.java)
     }
+
+    /**
+     * A "no alarm" check-in (Checkin.QUIET) came due: a silent notification, one per check-in.
+     * Tap to do it; a soft one also gets Snooze and Dismiss. Swiping it away leaves it waiting.
+     */
+    fun showQuiet(context: Context, p: Pending) {
+        val c = Store(context).checkin(p.checkinId) ?: return
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CH_QUIET, "Reminders (no alarm)", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Check-ins and tasks set to No alarm: no sound, no vibration"
+                setSound(null, null)
+                enableVibration(false)
+            }
+        )
+        val open = CheckinActivity.editIntent(context, p.checkinId, p.day, p.time).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val pi = PendingIntent.getActivity(
+            context, quietId(c.id), open,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val n = Notification.Builder(context, CH_QUIET)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(c.name)
+            .setContentText(if (c.soft) "Tap to do it, or snooze or dismiss." else "Tap to do it.")
+            .softActions(context, p.takeIf { c.soft }, codes = quietId(c.id) * 2)
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(pi)
+            .build()
+        nm.notify(quietId(c.id), n)
+    }
+
+    fun clearQuiet(context: Context, checkinId: String) {
+        context.getSystemService(NotificationManager::class.java).cancel(quietId(checkinId))
+    }
+
+    private fun quietId(checkinId: String) = 1000 + (checkinId.hashCode() and 0xffff)
 
     fun clearWaiting(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(ID_WAITING)

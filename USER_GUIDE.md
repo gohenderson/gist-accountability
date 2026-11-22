@@ -235,10 +235,12 @@ check-in is soft or voice stay out even if you later make it strict.
 
 ## When it rings
 
-- **Sound:** the check-in's chosen sound (any of the phone's sounds, or "Silent" to only
-  vibrate), on the alarm stream, with vibration. While it rings, the alarm volume can't
-  go below 80%; turn it down and it goes straight back up. Your volume is restored
-  afterwards.
+- **Sound:** the check-in's choice: **Ring with a sound** (any of the phone's sounds), on
+  the alarm stream, with vibration; **Vibrate only**; or **No alarm (just a reminder)**: no
+  sound, no vibration and no alarm screen, just a silent notification, and the check-in
+  waits on its card on the start page (**Do it**, and **Dismiss** if it's soft) until it's
+  done. While a ringing alarm rings, the alarm volume can't go below 80%; turn it down and
+  it goes straight back up. Your volume is restored afterwards.
 - **Gentle start:** the first ring starts quietly and swells to full volume over about 30
   seconds (vibration starts right away). If a pause runs out later, it comes back at full
   volume, since you're already awake.
@@ -290,12 +292,13 @@ on **One-time task** on any check-in's page.
   background), with one difference: **doing it once completes it**. That's finishing it (or
   dismissing it, if it's soft), from the alarm or with **Do it now**. It turns off and
   leaves the start page.
-- **When it rings** is up to its triggers. A new task gets one time trigger at the next
-  whole hour, with **Days: On a specific date** (today), so it rings once like any alarm.
-  Change the date or time there, or add arrive / leave and run triggers ("when I get to the
-  store: buy batteries"), which work any day until it's done.
-- **No triggers: a backlog item.** Remove its trigger and it never rings: it waits on the
-  start page (**Task · no set time**) until you tap **Do it now**.
+- **A new task starts in the backlog:** no triggers, its alarm off, soft, and set to **No
+  alarm (just a reminder)**. It waits on the start page (**Task · no set time**) until you
+  tap **Do it now**.
+- **To be reminded,** add a time trigger (its **Days** default to **On a specific date**)
+  and turn **Alarm on**. It then reminds you quietly; pick a sound on its page for a real
+  alarm. Arrive / leave and run triggers ("when I get to the store: buy batteries") work
+  any day until it's done.
 - **Done tasks** (at the bottom of the start page) lists them, most recent first, with when
   you did them and what you answered, so you can check whether you did something. **Put
   back** returns one to the list (pick a new date if it has passed); **Delete** removes it.

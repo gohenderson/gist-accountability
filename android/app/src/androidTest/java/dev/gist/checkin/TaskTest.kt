@@ -125,12 +125,15 @@ class TaskTest {
         TestEnv.reset(emptyList())
         ActivityScenario.launch<LibraryActivity>(LibraryActivity.intent(TestEnv.ctx)).use {
             onView(tagged("library:task")).perform(scrollTo(), click())
-            TestEnv.eventually { onView(tagged("trigger-days:0")).check(matches(isDisplayed())) }
+            TestEnv.eventually { onView(tagged("task-backlog")).check(matches(isDisplayed())) }
         }
+        // In the backlog: no triggers, alarm off, soft, no alarm.
         val c = TestEnv.store.checkins.single()
         assertTrue(c.isTask)
         assertEquals("Tasks", c.category)
-        assertEquals(Repeat.ONCE, c.times.single().days?.kind)
-        assertNotNull("its alarm is set", AlarmScheduler.nextTriggerMillis(c))
+        assertTrue(c.times.isEmpty() && c.events.isEmpty())
+        assertFalse(c.enabled)
+        assertTrue(c.soft)
+        assertTrue(c.quiet)
     }
 }

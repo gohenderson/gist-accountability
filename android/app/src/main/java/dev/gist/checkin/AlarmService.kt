@@ -83,7 +83,7 @@ class AlarmService : Service() {
         if (!getSystemService(PowerManager::class.java).isInteractive) return // screen off: the lock screen shows it
         // A test ring can be left, and so can a soft alarm (it has Snooze / Dismiss instead).
         val store = Store(this)
-        if (store.pending.none { !it.practice && !store.isSoft(it) }) return
+        if (store.alarmPending.none { !it.practice && !store.isSoft(it) }) return
         try {
             startActivity(CheckinActivity.alarmIntent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         } catch (e: Exception) {
@@ -109,7 +109,7 @@ class AlarmService : Service() {
         if (!ringing) {
             ringing = true
             val checkin = intent?.getStringExtra(EXTRA_CHECKIN)?.let { Store(this).checkin(it) }
-                ?: Store(this).pending.firstOrNull()?.let { Store(this).checkin(it.checkinId) }
+                ?: Store(this).alarmPending.firstOrNull()?.let { Store(this).checkin(it.checkinId) }
             startRinging(checkin?.soundUri)
             handler.postDelayed(giveUp, MAX_RING_MS)
             handler.postDelayed(frontGuard, FRONT_CHECK_MS)
@@ -249,7 +249,7 @@ class AlarmService : Service() {
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         // Gave up ringing (or got killed) without answers: leave a sticky reminder.
-        if (Store(this).pending.isNotEmpty()) Notif.showWaiting(this)
+        if (Store(this).alarmPending.isNotEmpty()) Notif.showWaiting(this)
         super.onDestroy()
     }
 

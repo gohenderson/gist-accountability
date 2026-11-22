@@ -134,6 +134,7 @@ class LockScreenTest {
         TestEnv.shell("input text $PIN")
         TestEnv.shell("input keyevent KEYCODE_ENTER")
         Thread.sleep(1_500)
+        TestEnv.shell("cmd statusbar collapse") // in case the keys above pulled the shade down
     }
 
     private fun endTestWhileLocked(
@@ -193,8 +194,13 @@ class LockScreenTest {
         TestEnv.readyDevice()
         TestEnv.eventually(15_000) { assertTrue("the check-in's page is in front", resumed().any { it is CheckinEditActivity }) }
         assertNotNull("the page is drawn", device.wait(Until.findObject(By.scrollable(true)), 10_000))
-        // Scroll back to the top (a hung page wouldn't move).
-        val category = scrollTo("Category: none", androidx.test.uiautomator.Direction.UP)
+        // Scroll back to the top (a hung page wouldn't move). If the notification shade has the
+        // focus, nothing scrolls: close it and try again once.
+        val category = scrollTo("Category: none", androidx.test.uiautomator.Direction.UP) ?: run {
+            TestEnv.readyDevice()
+            Thread.sleep(1_000)
+            scrollTo("Category: none", androidx.test.uiautomator.Direction.UP)
+        }
         assertNotNull("the page scrolls back to the top. ${diagnose()}", category)
         category!!.click()
         assertNotNull("and takes taps (the category dialog opens)", device.wait(Until.findObject(By.text("New category…")), 10_000))

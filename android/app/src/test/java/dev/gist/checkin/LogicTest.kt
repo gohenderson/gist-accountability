@@ -917,11 +917,12 @@ class TaskTest {
     }
 
     @Test
-    fun newTasksRingAtTheNextHour() {
-        val t = Library.task("n", LocalDateTime.of(2026, 11, 21, 14, 20))
+    fun newTasksStartInTheBacklogQuietly() {
+        val t = Library.task("n")
         assertTrue(t.isTask)
-        assertEquals(listOf(AlarmTime(15, 0, days = Repeat.once(LocalDate.of(2026, 11, 21)))), t.times)
-        val late = Library.task("n", LocalDateTime.of(2026, 11, 21, 23, 30))
-        assertEquals(listOf(AlarmTime(0, 0, days = Repeat.once(LocalDate.of(2026, 11, 22)))), late.times)
+        assertTrue(t.times.isEmpty() && t.events.isEmpty())
+        assertFalse("alarm off", t.enabled)
+        assertTrue(t.soft)
+        assertTrue("no alarm", t.quiet)
     }
 }

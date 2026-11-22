@@ -35,6 +35,10 @@ object TestEnv {
         shell("input keyevent KEYCODE_WAKEUP")
         shell("wm dismiss-keyguard")
         shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+        // The notification shade can be left open (unlocking with keys sometimes pulls it
+        // down) and then holds the focus, so nothing in the app can be scrolled or tapped.
+        // CLOSE_SYSTEM_DIALOGS doesn't always close it; this does.
+        shell("cmd statusbar collapse")
     }
 
     /** Wipe all app state, cancel alarms, stop any ringing, then install the given state. */
