@@ -57,6 +57,7 @@ class TaskTest {
     fun doneTasksLeaveTheListAndCanBePutBack() {
         val done = task().copy(enabled = false, doneAt = System.currentTimeMillis() - 60_000)
         TestEnv.reset(listOf(done, TestEnv.checkin("daily", "Daily")))
+        TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(withText("Call John")).check(doesNotExist())
             onView(tagged("done-tasks")).perform(scrollTo()).check(matches(withText("Done tasks (1)"))).perform(click())
@@ -77,6 +78,7 @@ class TaskTest {
         TestEnv.store.saveAnswers(TestEnv.today(), "t", "12:00", mapOf("called" to false))
         // That completed it; put it back so it would show on the start page.
         TestEnv.store.reopenTask("t")
+        TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("overall-score")).check(doesNotExist())
             onView(withText("Call John")).check(matches(isDisplayed()))
@@ -111,6 +113,7 @@ class TaskTest {
     fun aBacklogTaskIsDoneFromTheStartPage() {
         val backlog = TestEnv.checkin("b", "Fix the fence").copy(task = true, times = emptyList())
         TestEnv.reset(listOf(backlog))
+        TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("next:b")).perform(scrollTo()).check(matches(withText("Task · no set time")))
             onView(tagged("task-do:b")).perform(click())

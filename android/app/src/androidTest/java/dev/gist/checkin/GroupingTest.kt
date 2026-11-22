@@ -19,7 +19,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -419,7 +418,7 @@ class GroupingTest {
     }
 
     @Test
-    fun checkinsTasksAndBacklogButtons() {
+    fun checkinsTasksAndBacklogTabs() {
         val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList()) // on: active
         val backlog = TestEnv.checkin("b", "Fix the fence").copy(task = true, times = emptyList(), enabled = false)
         val done = TestEnv.checkin("d", "Done thing").copy(task = true, times = emptyList(), enabled = false,
@@ -427,54 +426,68 @@ class GroupingTest {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, backlog, done))
         TestEnv.store.collapsedCheckins = setOf("c", "t", "b")
         main().use {
-            // By default: check-ins and active tasks; the backlog is hidden.
-            onView(tagged("show:checkins")).check(matches(withText("Check-ins")))
-            onView(tagged("show:tasks")).check(matches(withText("Tasks")))
-            onView(tagged("show:backlog")).check(matches(withText("Backlog")))
+            // By default: the Check-ins tab, and no header above the list.
+            onView(tagged("tab:checkins")).check(matches(withText("Check-ins")))
+            onView(tagged("tab:tasks")).check(matches(withText("Tasks")))
+            onView(tagged("tab:backlog")).check(matches(withText("Backlog")))
+            onView(tagged("add")).check(matches(withText("+")))
+            onView(withText("CHECK-INS")).check(doesNotExist())
             onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:t")).check(doesNotExist())
+            onView(tagged("checkin-title:b")).check(doesNotExist())
+            onView(tagged("done-tasks")).check(doesNotExist())
+
+            // Tasks: just the active tasks, and the Done tasks button.
+            onView(tagged("tab:tasks")).perform(click())
             onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:c")).check(doesNotExist())
             onView(tagged("checkin-title:b")).check(doesNotExist())
             onView(tagged("done-tasks")).perform(scrollTo()).check(matches(isDisplayed()))
+            assertEquals(Store.TAB_TASKS, TestEnv.store.startTab)
 
-            // Tasks off: no active tasks, and no Done tasks button.
-            onView(tagged("show:tasks")).perform(scrollTo(), click())
+            // Backlog: just the backlog.
+            onView(tagged("tab:backlog")).perform(click())
+            onView(tagged("checkin-title:b")).check(matches(isDisplayed()))
             onView(tagged("checkin-title:t")).check(doesNotExist())
             onView(tagged("done-tasks")).check(doesNotExist())
-            assertFalse(TestEnv.store.showTasks)
 
-            // Backlog on, on its own (Tasks still off).
-            onView(tagged("show:backlog")).perform(scrollTo(), click())
-            onView(tagged("checkin-title:b")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("checkin-title:t")).check(doesNotExist())
-
-            // Check-ins off too: just the backlog; the title says Tasks.
-            onView(tagged("show:checkins")).perform(scrollTo(), click())
-            onView(tagged("checkin-title:c")).check(doesNotExist())
-            onView(withText("TASKS")).check(matches(isDisplayed()))
-
-            // All off: nothing, with a hint.
-            onView(tagged("show:backlog")).perform(scrollTo(), click())
-            onView(withText("Nothing to show. Turn on Check-ins, Tasks or Backlog above.")).check(matches(isDisplayed()))
-
-            // And the View menu has none of these any more.
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:tasks")).check(doesNotExist())
-            androidx.test.espresso.Espresso.pressBack()
+            // + on the Backlog tab makes a new backlog task.
+            onView(tagged("add")).perform(click())
+            TestEnv.eventually { onView(tagged("task-backlog")).check(matches(isDisplayed())) }
         }
-        assertFalse(TestEnv.store.showCheckins || TestEnv.store.showTasks || TestEnv.store.showBacklog)
+        assertEquals(Store.TAB_BACKLOG, TestEnv.store.startTab)
+        assertEquals(1, TestEnv.store.checkins.count { it.id !in setOf("c", "t", "b", "d") && it.inBacklog })
+    }
+
+    @Test
+    fun plusOnTheTasksTabMakesAnActiveTask() {
+        TestEnv.reset(emptyList())
+        TestEnv.store.startTab = Store.TAB_TASKS
+        main().use {
+            onView(tagged("add")).perform(click())
+            TestEnv.eventually { onView(tagged("checkin-name")).check(matches(isDisplayed())) }
+        }
+        val c = TestEnv.store.checkins.single()
+        assertTrue(c.isTask)
+        assertTrue("active, not in the backlog", c.enabled)
     }
 
     @Test
     fun checkinsHaveADotAndTasksASquare() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList())))
         main().use { scenario ->
-            onView(tagged("card:c")).perform(scrollTo())
-            scenario.onActivity { act ->
-                val root = act.window.decorView
-                fun shape(id: String) = (root.findViewWithTag<View>("marker:$id").background as android.graphics.drawable.GradientDrawable).shape
-                assertEquals(android.graphics.drawable.GradientDrawable.OVAL, shape("c"))
-                assertEquals(android.graphics.drawable.GradientDrawable.RECTANGLE, shape("t"))
+            fun shape(id: String): Int {
+                var s = -1
+                scenario.onActivity { act ->
+                    s = (act.window.decorView.findViewWithTag<View>("marker:$id").background as android.graphics.drawable.GradientDrawable).shape
+                }
+                return s
             }
+            onView(tagged("card:c")).perform(scrollTo())
+            assertEquals(android.graphics.drawable.GradientDrawable.OVAL, shape("c"))
+            onView(tagged("tab:tasks")).perform(click())
+            onView(tagged("card:t")).perform(scrollTo())
+            assertEquals(android.graphics.drawable.GradientDrawable.RECTANGLE, shape("t"))
             onView(tagged("checkin-header:t")).check(matches(withContentDescription(org.hamcrest.Matchers.startsWith("Task: Call John"))))
         }
     }

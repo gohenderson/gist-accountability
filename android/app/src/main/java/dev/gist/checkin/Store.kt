@@ -466,20 +466,13 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
-    /** Start page: show check-ins (everything that isn't a task)? */
-    var showCheckins: Boolean
-        get() = prefs.getBoolean(K_SHOW_CHECKINS, true)
-        set(v) { prefs.edit().putBoolean(K_SHOW_CHECKINS, v).commit() }
-
-    /** Start page: show active tasks (and the Done tasks button)? */
-    var showTasks: Boolean
-        get() = prefs.getBoolean(K_SHOW_TASKS, true)
-        set(v) { prefs.edit().putBoolean(K_SHOW_TASKS, v).commit() }
-
-    /** Start page: show backlog tasks (tasks that are off)? */
-    var showBacklog: Boolean
-        get() = prefs.getBoolean(K_SHOW_BACKLOG, false)
-        set(v) { prefs.edit().putBoolean(K_SHOW_BACKLOG, v).commit() }
+    /**
+     * The start page's tab: [TAB_CHECKINS] (everything that isn't a task), [TAB_TASKS] (active
+     * tasks, and the Done tasks button) or [TAB_BACKLOG] (tasks that are off).
+     */
+    var startTab: String
+        get() = prefs.getString(K_START_TAB, TAB_CHECKINS)?.takeIf { it in TABS } ?: TAB_CHECKINS
+        set(v) { prefs.edit().putString(K_START_TAB, v).commit() }
 
     /** The backlog: tasks that are off and not done, in your order. */
     val backlog: List<Checkin> get() = checkins.filter { it.inBacklog }
@@ -704,9 +697,11 @@ class Store(context: Context) {
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
         private const val K_SORT = "sort"
-        private const val K_SHOW_CHECKINS = "showCheckins"
-        private const val K_SHOW_TASKS = "showTasks"
-        private const val K_SHOW_BACKLOG = "showBacklog"
+        private const val K_START_TAB = "startTab"
+        const val TAB_CHECKINS = "checkins"
+        const val TAB_TASKS = "tasks"
+        const val TAB_BACKLOG = "backlog"
+        val TABS = listOf(TAB_CHECKINS, TAB_TASKS, TAB_BACKLOG)
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"

@@ -40,7 +40,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
 
 - **Your check-ins.** You start with **Morning** (7:00 AM, 2 questions about last night)
   and **Evening** (9:30 PM, 5 questions about today). Rename, change or delete them.
-- **+ Add check-in** opens the **library**: ready-made check-ins grouped by
+- **+** (on the **Check-ins** tab) opens the **library**: ready-made check-ins grouped by
   - **Food:** diet gist, last night, water;
   - **Wake-up:** a weekday math alarm, a gentler weekend one;
   - **Health:** medication, brush teeth, bedtime;
@@ -68,11 +68,12 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - you can drag cards within a section;
   - drag a **group** by the ≡ on its header to move it above or below the others;
   - tap a group's header to collapse or expand it.
-- **Check-ins · Tasks · Backlog**, the buttons under **+ Add check-in**, show or hide each
-  kind on its own; a lit button is shown. Any mix works, even just the backlog.
-  **Check-ins** are everything that isn't a task (hidden ones still
-  ring); **Tasks** are active tasks, and with them the **Done tasks** button; **Backlog**
-  is tasks that are off (hidden by default). The choice is remembered.
+- **Check-ins · Tasks · Backlog** are tabs at the top of the start page; the lit one is
+  shown. **Check-ins** are everything that isn't a task (they still ring while another tab
+  is shown); **Tasks** are active tasks, with the **Done tasks** button; **Backlog** is
+  tasks that are off. The tab is remembered.
+- **+**, to the right of the tabs, adds to the tab you're on: a check-in from the library,
+  a new active task, or a new backlog task.
 - **Sort** (in the same View menu) orders the check-ins, within each group when grouped:
   - **My order** (the default): as you've dragged them.
   - **Next alarm:** soonest ring first.
@@ -298,7 +299,7 @@ A voice check-in has **Play it now** instead.
 
 ## One-time tasks
 
-For things you only need to do once ("Call John"): **+ Add check-in → New task**, or turn
+For things you only need to do once ("Call John"): **+** on the **Tasks** or **Backlog** tab (or **New task** in the library), or turn
 on **One-time task** on any check-in's page.
 
 - A task is a check-in in every way (triggers, steps, questions, strict or soft,
@@ -306,10 +307,10 @@ on **One-time task** on any check-in's page.
   dismissing it, if it's soft), from the alarm or with **Do it now**. It turns off and
   leaves the start page.
 - **On or off: active or in the backlog.** A task that's on is active and shows on the
-  start page. One that's off waits in the **backlog**, hidden unless the **Backlog**
-  button is on; turn it on (its switch, or a **Pick today's tasks** step) to make it active.
+  start page. One that's off waits in the **backlog**, on the **Backlog**
+  tab; turn it on (its switch, or a **Pick today's tasks** step) to make it active.
 - **A new task starts in the backlog:** no triggers, its alarm off, soft, and set to **No
-  alarm (just a reminder)**. With the **Backlog** button on it shows **In the backlog**,
+  alarm (just a reminder)**. On the **Backlog** tab it shows **In the backlog**,
   with **Do it now**.
 - **To be reminded,** add a time trigger (its **Days** default to **On a specific date**)
   and turn **Alarm on**. It then reminds you quietly; pick a sound on its page for a real

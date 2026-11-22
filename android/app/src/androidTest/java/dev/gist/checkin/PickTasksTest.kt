@@ -107,16 +107,18 @@ class PickTasksTest {
     }
 
     @Test
-    fun theBacklogIsHiddenUntilItsButtonIsOn() {
+    fun theBacklogIsItsOwnTab() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), backlogTask("b", "Fix the fence"),
             Library.task("t").copy(name = "Call John", enabled = true)))
         TestEnv.store.collapsedCheckins = setOf("c", "b", "t")
+        TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("checkin-title:t")).check(matches(isDisplayed())) // active task
             onView(tagged("checkin-title:b")).check(doesNotExist()) // backlog
-            onView(tagged("show:backlog")).perform(scrollTo(), click())
+            onView(tagged("tab:backlog")).perform(click())
             onView(tagged("checkin-title:b")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("show:backlog")).perform(scrollTo(), click())
+            onView(tagged("checkin-title:t")).check(doesNotExist())
+            onView(tagged("tab:tasks")).perform(click())
             onView(tagged("checkin-title:b")).check(doesNotExist())
         }
     }

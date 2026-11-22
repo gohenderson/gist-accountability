@@ -820,7 +820,7 @@ class CheckinActivity : BaseActivity() {
         val already = if (active == 0) "" else "You have $active active already. "
         if (need == 0) {
             col.add(label(if (count <= active) "You already have $active active tasks." else "Your backlog is empty: nothing to pick today.", 17f), dp(8))
-            if (count > active) col.add(muted("Add tasks with + Add check-in → New task; new ones start in the backlog.", 14f), dp(4))
+            if (count > active) col.add(muted("Add tasks with + on the Backlog tab of the start page.", 14f), dp(4))
             col.add(primaryButton("Continue") { nextStep() }.apply { tag = "pick-continue" }, dp(24))
             return
         }

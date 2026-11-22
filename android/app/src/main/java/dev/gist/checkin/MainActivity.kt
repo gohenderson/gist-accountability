@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.TypedValue
 import android.view.Gravity
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -58,18 +59,16 @@ class MainActivity : BaseActivity() {
         val col = column()
         val all = store.checkins
         val open = all.filter { !it.taskDone } // done tasks have their own page
-        // The Check-ins / Tasks / Backlog buttons, each on or off on its own.
-        val showCheckins = store.showCheckins
-        val showTasks = store.showTasks
-        val showBacklog = store.showBacklog
+        // Tabs: Check-ins, Tasks (active) or Backlog (tasks that are off).
+        val tab = store.startTab
         val checkins = open.filter {
-            when {
-                !it.isTask -> showCheckins
-                it.inBacklog -> showBacklog
-                else -> showTasks
+            when (tab) {
+                Store.TAB_TASKS -> it.isTask && !it.inBacklog
+                Store.TAB_BACKLOG -> it.inBacklog
+                else -> !it.isTask
             }
         }
-        val doneTasks = if (showTasks) all.count { it.taskDone } else 0
+        val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
         col.add(header("Gist", todayLong()))
 
@@ -89,14 +88,10 @@ class MainActivity : BaseActivity() {
 
         setupWarnings(col)
 
-        val bar = row()
-        bar.addWeighted(sectionTitle(if (showCheckins || !(showTasks || showBacklog)) "Check-ins" else "Tasks"))
-        bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
-        col.add(bar, dp(28))
-        col.add(showTabs(), dp(12))
+        col.add(tabs(tab), dp(28))
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
-        if (open.size > 1) {
+        if (checkins.size > 1) {
             // View (grouping and sort), and expand / collapse all (groups and check-ins).
             val controls = row()
             controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
@@ -162,7 +157,9 @@ class MainActivity : BaseActivity() {
         if (checkins.isEmpty()) {
             val empty = when {
                 open.isEmpty() -> "No check-ins yet. Add one to get started."
-                else -> "Nothing to show. Turn on Check-ins, Tasks or Backlog above."
+                tab == Store.TAB_TASKS -> "No active tasks. Tap + for a new one, or pick some from the Backlog."
+                tab == Store.TAB_BACKLOG -> "The backlog is empty. Tap + to add a task to it."
+                else -> "No check-ins here: they're all tasks. Tap + to add one."
             }
             col.add(card().apply { add(muted(empty, 15f)) }, dp(12))
         }
@@ -269,27 +266,38 @@ class MainActivity : BaseActivity() {
     }
 
     /**
-     * Check-ins, Tasks and Backlog, side by side like tabs: each shows or hides its kind on its
-     * own (any mix, even none). Lit when on. No counts: they're filters, not targets. Check-ins are everything that isn't a task (they
-     * still ring when hidden); Tasks are active tasks (and the Done tasks button); Backlog is
-     * tasks that are off.
+     * Check-ins, Tasks and Backlog as tabs (one at a time), then + to add one. Check-ins are
+     * everything that isn't a task (they ring whichever tab is open); Tasks are active tasks
+     * (with the Done tasks button); Backlog is tasks that are off.
      */
-    private fun showTabs(): LinearLayout {
-        val r = row()
-        fun tab(label: String, key: String, on: Boolean, set: (Boolean) -> Unit) {
+    private fun tabs(current: String): LinearLayout {
+        val r = row().apply { gravity = Gravity.CENTER_VERTICAL }
+        for ((key, label) in listOf(Store.TAB_CHECKINS to "Check-ins", Store.TAB_TASKS to "Tasks", Store.TAB_BACKLOG to "Backlog")) {
+            val on = key == current
             val b = toggleTab(label, on).apply {
-                tag = "show:$key"
-                contentDescription = "$label, ${if (on) "shown" else "hidden"}"
+                tag = "tab:$key"
+                contentDescription = "$label tab${if (on) ", selected" else ""}"
                 setOnClickListener {
-                    set(!on)
-                    render()
+                    if (!on) {
+                        store.startTab = key
+                        render()
+                    }
                 }
             }
             r.addWeighted(b, startMargin = if (r.childCount == 0) 0 else dp(8))
         }
-        tab("Check-ins", "checkins", store.showCheckins) { store.showCheckins = it }
-        tab("Tasks", "tasks", store.showTasks) { store.showTasks = it }
-        tab("Backlog", "backlog", store.showBacklog) { store.showBacklog = it }
+        r.addWrapped(primaryButton("+") { add(current) }.apply {
+            tag = "add"
+            contentDescription = when (current) {
+                Store.TAB_TASKS -> "New task"
+                Store.TAB_BACKLOG -> "New backlog task"
+                else -> "Add check-in"
+            }
+            minWidth = dp(48)
+            minimumWidth = dp(48)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            setPadding(dp(12), 0, dp(12), 0)
+        }, dp(8))
         return r
     }
 
@@ -568,8 +576,19 @@ class MainActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- actions
 
-    private fun addCheckin() {
-        startActivity(LibraryActivity.intent(this))
+    /**
+     * +: on Check-ins, the library (ready-made check-ins, your own, or a task); on Tasks, a new
+     * active task; on Backlog, a new task in the backlog. Either opens it to name.
+     */
+    private fun add(tab: String) {
+        if (tab == Store.TAB_CHECKINS) {
+            startActivity(LibraryActivity.intent(this))
+            return
+        }
+        val c = Library.task(Store.newId()).let { if (tab == Store.TAB_TASKS) it.copy(enabled = true) else it }
+        store.checkins = store.checkins + c
+        AlarmScheduler.schedule(this, c)
+        startActivity(CheckinEditActivity.intent(this, c.id))
     }
 
     // ---------------------------------------------------------------- helpers
