@@ -93,7 +93,7 @@ data class Checkin(
     val enabled: Boolean = true,
     val aboutYesterday: Boolean = false,
     val steps: List<StepConfig> = emptyList(),
-    val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only
+    val soundUri: String? = null,  // null = phone's default alarm sound, SILENT = vibrate only, QUIET = no alarm
     val soundTitle: String = "",   // shown in the app (and kept in backups)
     val background: Background = Background(), // shown while ringing; media in Backgrounds
     val events: List<Trigger> = emptyList(), // event triggers: arriving / leaving a place, running
@@ -125,6 +125,8 @@ data class Checkin(
     val taskDone: Boolean get() = task && doneAt != null
 
     val soft: Boolean get() = commitment == SOFT
+    /** Reminds with a silent notification instead of an alarm ([QUIET]). */
+    val quiet: Boolean get() = soundUri == QUIET
     val voice: Boolean get() = commitment == VOICE
 
     /** Only strict check-ins count in the stats. */
@@ -153,6 +155,8 @@ data class Checkin(
 
     companion object {
         const val SILENT = "silent"
+        /** No alarm at all: no sound, no vibration, no full screen; just a silent reminder notification. */
+        const val QUIET = "quiet"
 
         const val STRICT = "strict"
         const val SOFT = "soft"
@@ -261,6 +265,13 @@ class Store(context: Context) {
     }
 
     // ------------------------------------------------------------ pending
+
+    /**
+     * What's waiting that the alarm deals with: everything except "no alarm" check-ins
+     * (Checkin.QUIET), which wait quietly on the start page and in their own notification.
+     */
+    val alarmPending: List<Pending>
+        get() = pending.filter { it.practice || checkin(it.checkinId)?.quiet != true }
 
     var pending: List<Pending>
         get() {

@@ -103,7 +103,7 @@ class CheckinEditActivity : BaseActivity() {
         col.add(styledSwitch("One-time task").apply {
             isChecked = c.isTask
             tag = "task-switch"
-            setOnCheckedChangeListener { _, on -> change { it.copy(task = on, doneAt = null, enabled = true) } }
+            setOnCheckedChangeListener { _, on -> change { it.copy(task = on, doneAt = null) } }
         }, dp(4))
         if (c.isTask) taskSection(col, c)
         // Triggers: each is one way this check-in rings, with its own conditions.
@@ -249,7 +249,7 @@ class CheckinEditActivity : BaseActivity() {
     /** Sound, background and caption: what the alarm screen looks and sounds like. */
     private fun whileItRings(page: LinearLayout, c: Checkin) {
         val col = section(page, "While it rings")
-        col.add(button("Sound: ${soundName(c)}") { pickSound(c) }, dp(4))
+        col.add(button("Sound: ${soundName(c)}") { pickSoundMode(c) }.apply { tag = "sound" }, dp(4))
         val photoCount = Backgrounds.photos(this, checkinId).size
         col.add(
             button("Background: ${c.background.describe(photoCount)}") { pickBackgroundKind(c) }.apply { tag = "background-kind" },
@@ -1010,13 +1010,35 @@ class CheckinEditActivity : BaseActivity() {
     private fun soundName(c: Checkin): String = when (c.soundUri) {
         null -> "Default alarm sound"
         Checkin.SILENT -> "Silent (vibrate only)"
+        Checkin.QUIET -> "No alarm (just a reminder)"
         else -> c.soundTitle.ifEmpty { "Custom sound" }
+    }
+
+    /** Ring with a sound, vibrate only, or no alarm at all (a silent reminder notification). */
+    private fun pickSoundMode(c: Checkin) {
+        val options = listOf(
+            DialogOption("Ring with a sound…", "the phone's default alarm sound, or one you pick"),
+            DialogOption("Vibrate only", "the full alarm screen, without sound"),
+            DialogOption("No alarm (just a reminder)", "no sound, vibration or alarm screen: a silent notification, and it waits on the start page"),
+        )
+        val current = when (c.soundUri) {
+            Checkin.SILENT -> 1
+            Checkin.QUIET -> 2
+            else -> 0
+        }
+        pickDialog("When it rings", options, current) { i ->
+            when (i) {
+                0 -> pickSound(c)
+                1 -> change { it.copy(soundUri = Checkin.SILENT, soundTitle = "") }
+                2 -> change { it.copy(soundUri = Checkin.QUIET, soundTitle = "") }
+            }
+        }
     }
 
     @Suppress("DEPRECATION")
     private fun pickSound(c: Checkin) {
         val existing: Uri? = when (c.soundUri) {
-            null -> Settings.System.DEFAULT_ALARM_ALERT_URI
+            null, Checkin.QUIET -> Settings.System.DEFAULT_ALARM_ALERT_URI
             Checkin.SILENT -> null
             else -> Uri.parse(c.soundUri)
         }

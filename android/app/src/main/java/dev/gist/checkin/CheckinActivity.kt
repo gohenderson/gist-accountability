@@ -101,7 +101,7 @@ class CheckinActivity : BaseActivity() {
         val editDay = intent.getStringExtra(EXTRA_DAY)
         val editTime = intent.getStringExtra(EXTRA_TIME) ?: ""
         earlyRequested = intent.getBooleanExtra(EXTRA_EARLY, false)
-        val t = if (editId != null && editDay != null) Pending(editId, editDay, editTime) else store.pending.firstOrNull()
+        val t = if (editId != null && editDay != null) Pending(editId, editDay, editTime) else store.alarmPending.firstOrNull()
         if (t == null || !load(t)) {
             stopIfNothingPending()
             finish()
@@ -132,7 +132,7 @@ class CheckinActivity : BaseActivity() {
                 when {
                     !forced -> finish()
                     target.practice -> endTest()
-                    checkin.soft -> finish() // a soft alarm can be left; its notification has Snooze / Dismiss
+                    checkin.soft || checkin.quiet -> finish() // can be left: Snooze / Dismiss, or it waits quietly
                 }
             }
         }
@@ -218,7 +218,7 @@ class CheckinActivity : BaseActivity() {
         super.onStop()
         visible = false
         // Left without finishing, and the alarm is no longer ringing: bring the reminder back.
-        if (forced && !isFinishing && !isChangingConfigurations && store.pending.isNotEmpty() && !AlarmService.running) {
+        if (forced && !isFinishing && !isChangingConfigurations && store.alarmPending.isNotEmpty() && !AlarmService.running) {
             Notif.showWaiting(this)
         }
     }
@@ -229,6 +229,7 @@ class CheckinActivity : BaseActivity() {
             !forced -> super.onBackPressed()
             target.practice -> endTest() // a test can be left at any point
             checkin.soft -> super.onBackPressed() // so can a soft alarm (it keeps ringing until snoozed or dismissed)
+            checkin.quiet -> super.onBackPressed() // and a "no alarm" one: it waits on the start page
             else -> {} // no escaping the alarm
         }
     }
@@ -238,7 +239,7 @@ class CheckinActivity : BaseActivity() {
         if (!target.practice) return
         ticks.removeCallbacksAndMessages(null)
         store.removePending(target)
-        val next = store.pending.firstOrNull()
+        val next = store.alarmPending.firstOrNull()
         if (next != null && load(next)) {
             answers.clear()
             AlarmService.refreshNotification(this)
@@ -270,7 +271,7 @@ class CheckinActivity : BaseActivity() {
      */
     private fun moveOn(): Boolean {
         store.prunePending()
-        val next = store.pending.firstOrNull()
+        val next = store.alarmPending.firstOrNull()
         if (next != null && load(next)) {
             answers.clear()
             return true
@@ -397,8 +398,9 @@ class CheckinActivity : BaseActivity() {
             return
         }
         store.removePending(target)
+        Notif.clearQuiet(this, checkin.id)
         store.prunePending()
-        val next = store.pending.firstOrNull()
+        val next = store.alarmPending.firstOrNull()
         if (forced && next != null && load(next)) {
             answers.clear()
             AlarmService.refreshNotification(this) // Snooze / Dismiss buttons if the next one is soft
@@ -411,7 +413,7 @@ class CheckinActivity : BaseActivity() {
     }
 
     private fun stopIfNothingPending() {
-        if (store.pending.isEmpty()) {
+        if (store.alarmPending.isEmpty()) {
             stopService(Intent(this, AlarmService::class.java))
             Notif.clearWaiting(this)
         }

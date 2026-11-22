@@ -37,7 +37,7 @@ class MainActivity : BaseActivity() {
         super.onResume()
         // An unanswered alarm always takes priority.
         store.prunePending()
-        if (store.pending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
+        if (store.alarmPending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
     }
 
@@ -330,6 +330,29 @@ class MainActivity : BaseActivity() {
             card.add(muted(Stats.line(c, results, 7), 13f), dp(4))
         }
 
+        // A "no alarm" check-in that came due waits here (and in its notification).
+        if (c.quiet) {
+            for (p in store.pending.filter { it.checkinId == c.id && !it.practice }) {
+                val box = column().apply {
+                    background = rounded(colorOf(R.color.primary_container), 14)
+                    setPadding(dp(14), dp(10), dp(10), dp(10))
+                }
+                val r = row()
+                r.addWeighted(label("Waiting · ${Days.timeOf(p.time).ifEmpty { "now" }}", 15f).apply { tag = "waiting:${c.id}" })
+                if (c.soft) {
+                    r.addWrapped(textButton("Dismiss", colorMuted) {
+                        SoftAlarm.dismiss(this, p)
+                        render()
+                    }.apply { tag = "waiting-dismiss:${c.id}" })
+                }
+                r.addWrapped(button("Do it") {
+                    startActivity(CheckinActivity.editIntent(this, c.id, p.day, p.time))
+                }.apply { tag = "waiting-do:${c.id}" }, dp(4))
+                box.add(r)
+                card.add(box, dp(10))
+            }
+        }
+
         if (c.enabled) {
             // Rings coming up that were already handled (done early / skipped), with Undo for skips.
             val soon = AlarmScheduler.occurrences(c).filter { it.at - System.currentTimeMillis() < 24 * 3600_000L }
@@ -365,20 +388,7 @@ class MainActivity : BaseActivity() {
                 box.add(r)
                 card.add(box, dp(10))
             } else if (c.isTask && !c.voice) {
-                // A task with no ring coming (no set time, or its time has passed): do it from here.
-                val box = column().apply {
-                    background = rounded(colorOf(R.color.surface_variant), 14)
-                    setPadding(dp(14), dp(10), dp(10), dp(10))
-                }
-                val r = row()
-                val passed = c.times.isNotEmpty()
-                r.addWeighted(label(if (passed) "Its time has passed" else "Task · no set time", 15f,
-                    color = if (passed) colorWarn else colorText).apply { tag = "next:${c.id}" })
-                r.addWrapped(button("Do it now") {
-                    startActivity(CheckinActivity.earlyIntent(this, c.id, Days.today(), AlarmScheduler.nearestTime(c).toString()))
-                }.apply { tag = "task-do:${c.id}" }, dp(4))
-                box.add(r)
-                card.add(box, dp(10))
+                card.add(taskDoBox(c), dp(10))
             }
             if (c.events.isNotEmpty()) {
                 val box = column().apply {
@@ -401,6 +411,8 @@ class MainActivity : BaseActivity() {
             }
         }
 
+        if (!c.enabled && c.isTask && !c.voice) card.add(taskDoBox(c), dp(10))
+
         // Right-aligned with gravity. (An empty spacer view here would grab all the height
         // it's offered, which stretched the card to fill the screen.)
         val actions = row().apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
@@ -410,6 +422,30 @@ class MainActivity : BaseActivity() {
         actions.addWrapped(textButton("Edit") { startActivity(CheckinEditActivity.intent(this, c.id)) }, dp(4))
         card.add(actions, dp(6))
         return card
+    }
+
+    /**
+     * A task with no ring coming (in the backlog, its alarm off, or its time has passed):
+     * do it from here.
+     */
+    private fun taskDoBox(c: Checkin): LinearLayout {
+        val box = column().apply {
+            background = rounded(colorOf(R.color.surface_variant), 14)
+            setPadding(dp(14), dp(10), dp(10), dp(10))
+        }
+        val r = row()
+        val passed = c.enabled && c.times.isNotEmpty()
+        val text = when {
+            passed -> "Its time has passed"
+            c.times.isEmpty() && c.events.isEmpty() -> "Task · no set time"
+            else -> "Task · alarm off"
+        }
+        r.addWeighted(label(text, 15f, color = if (passed) colorWarn else colorText).apply { tag = "next:${c.id}" })
+        r.addWrapped(button("Do it now") {
+            startActivity(CheckinActivity.earlyIntent(this, c.id, Days.today(), AlarmScheduler.nearestTime(c).toString()))
+        }.apply { tag = "task-do:${c.id}" }, dp(4))
+        box.add(r)
+        return box
     }
 
     /** "today 9:30 PM", "tomorrow 7:00 AM", "Wed 7:00 AM", "Dec 1 7:00 AM" */

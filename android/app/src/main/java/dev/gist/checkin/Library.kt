@@ -222,17 +222,17 @@ object Library {
     )
 
     /**
-     * A one-time task, ringing at the next whole hour (today, or tomorrow late at night).
-     * Remove its trigger for one with no set time (a backlog item).
+     * A one-time task, in the backlog: no triggers (it waits on the start page until you do it),
+     * soft, its alarm off, and set to No alarm, so even a time added later only reminds quietly.
      */
-    fun task(newId: String, now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Checkin {
-        val at = now.plusHours(1).withMinute(0)
-        return Checkin(
-            id = newId,
-            name = "New task",
-            times = listOf(AlarmTime(at.hour, 0, days = Repeat.once(at.toLocalDate()))),
-            category = "Tasks",
-            task = true,
-        )
-    }
+    fun task(newId: String) = Checkin(
+        id = newId,
+        name = "New task",
+        times = emptyList(),
+        category = "Tasks",
+        task = true,
+        enabled = false,
+        commitment = Checkin.SOFT,
+        soundUri = Checkin.QUIET,
+    )
 }
