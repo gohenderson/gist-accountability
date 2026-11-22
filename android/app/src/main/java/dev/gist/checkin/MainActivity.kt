@@ -60,8 +60,10 @@ class MainActivity : BaseActivity() {
         // View → Show: check-ins, tasks, or both.
         val showCheckins = store.showCheckins
         val showTasks = store.showTasks
+        val showBacklog = showTasks && store.showBacklog // backlog tasks (off) only with Backlog ticked
         val filtered = !(showCheckins && showTasks)
-        val checkins = open.filter { if (it.isTask) showTasks else showCheckins }
+        val checkins = open.filter { if (it.isTask) showTasks && (!it.inBacklog || showBacklog) else showCheckins }
+        val backlogHidden = if (showTasks && !showBacklog) open.count { it.inBacklog } else 0
         val doneTasks = if (showTasks) all.count { it.taskDone } else 0
 
         col.add(header("Gist", todayLong()))
@@ -109,6 +111,13 @@ class MainActivity : BaseActivity() {
                 render()
             }.apply { tag = "toggle-all" })
             col.add(controls, dp(4))
+        }
+        if (backlogHidden > 0 && !filtered) {
+            // Quietly say the backlog is there (it's hidden by default).
+            col.add(textButton("$backlogHidden task${if (backlogHidden == 1) "" else "s"} in the backlog · show") {
+                store.showBacklog = true
+                render()
+            }.apply { tag = "backlog-note" }, dp(2))
         }
         if (filtered) {
             // Hidden check-ins still ring: keep it visible that the list isn't everything.
@@ -166,6 +175,7 @@ class MainActivity : BaseActivity() {
         if (checkins.isEmpty()) {
             val empty = when {
                 open.isEmpty() -> "No check-ins yet. Add one to get started."
+                showTasks && !showCheckins && backlogHidden > 0 -> "No active tasks. Tick Backlog in View to see the $backlogHidden waiting."
                 showTasks && !showCheckins -> "No open tasks."
                 else -> "Nothing to show."
             }
@@ -265,8 +275,19 @@ class MainActivity : BaseActivity() {
             add(show("Check-ins", "Everything that isn't a task (they still ring when hidden)", store.showCheckins, "checkins") {
                 store.showCheckins = it
             }, dp(8))
-            add(show("Tasks", "Open tasks, and the Done tasks button", store.showTasks, "tasks") {
+            add(show("Tasks", "Active tasks (on), and the Done tasks button", store.showTasks, "tasks") {
                 store.showTasks = it
+            }, dp(8))
+            // The backlog (tasks that are off) only shows alongside Tasks.
+            add(checkTile("Backlog", store.showBacklog, "Tasks that are off, waiting to be picked (needs Tasks)").apply {
+                tag = "view:backlog"
+                isEnabled = store.showTasks
+                alpha = if (isEnabled) 1f else 0.5f
+                setOnCheckedChangeListener { _, on ->
+                    store.showBacklog = on
+                    dialog.dismiss()
+                    render()
+                }
             }, dp(8))
             add(sectionTitle("Sort"), dp(14))
             sorts.forEachIndexed { i, how ->
@@ -482,6 +503,7 @@ class MainActivity : BaseActivity() {
         val passed = c.enabled && c.times.isNotEmpty()
         val text = when {
             passed -> "Its time has passed"
+            c.inBacklog -> "In the backlog"
             c.times.isEmpty() && c.events.isEmpty() -> "Task · no set time"
             else -> "Task · alarm off"
         }

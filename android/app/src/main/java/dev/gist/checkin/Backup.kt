@@ -33,8 +33,8 @@ object Backup {
     const val FORMAT = "gist-backup"
     /**
      * 4: questions can take a typed answer (number or text), saved under "v".
-     * 5: one-time tasks ("task", and "doneAt" when done) and "On a specific date" (days kind
-     *    "once" with a "date"). Written only when the backup uses either, so other files stay
+     * 5: one-time tasks ("task", and "doneAt" when done), "On a specific date" (days kind
+     *    "once" with a "date") and the pick-tasks step ("pickTasks"). Written only when the backup uses either, so other files stay
      *    readable by apps that read 4 (one that doesn't know "once" would ring every day).
      */
     const val VERSION = 5
@@ -129,7 +129,8 @@ object Backup {
 
     private fun needsVersion5(c: Checkin): Boolean {
         fun once(r: Repeat?) = r?.kind == Repeat.ONCE
-        return c.task || once(c.repeat) || c.times.any { once(it.days) } || c.events.any { once(it.days) }
+        return c.task || once(c.repeat) || c.times.any { once(it.days) } || c.events.any { once(it.days) } ||
+            c.steps.any { it.kind == Steps.PICK_TASKS }
     }
 
     /** Reads and checks a backup without changing anything. Throws with a readable message. */

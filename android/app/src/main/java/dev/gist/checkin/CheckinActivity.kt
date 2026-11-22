@@ -53,6 +53,7 @@ class CheckinActivity : BaseActivity() {
         data class Math(val count: Int, val level: Int) : Step()
         data class Scan(val code: String, val label: String) : Step()
         data class Survey(val questions: List<Question>) : Step()
+        data class PickTasks(val count: Int) : Step()
         object Dismiss : Step()
     }
 
@@ -70,6 +71,8 @@ class CheckinActivity : BaseActivity() {
     private val answers = mutableMapOf<String, Boolean>()
     /** Typed answers (number and text questions), as typed. */
     private val values = mutableMapOf<String, String>()
+    /** Backlog tasks ticked on a pick-tasks step, in the order ticked. */
+    private val picked = linkedSetOf<String>()
     private var scanner: ScannerView? = null
     private val ui = Handler(Looper.getMainLooper())
 
@@ -123,6 +126,8 @@ class CheckinActivity : BaseActivity() {
             values.clear()
             s.getBundle(STATE_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
             startedAt = s.getLong(STATE_STARTED, 0L).takeIf { it > 0 }
+            picked.clear()
+            s.getStringArrayList(STATE_PICKED)?.let { picked.addAll(it) }
         }
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -313,6 +318,7 @@ class CheckinActivity : BaseActivity() {
         outState.putStringArrayList(STATE_NO, ArrayList(answers.filterValues { !it }.keys))
         outState.putBundle(STATE_VALUES, Bundle().apply { values.forEach { (k, v) -> putString(k, v) } })
         startedAt?.let { outState.putLong(STATE_STARTED, it) }
+        outState.putStringArrayList(STATE_PICKED, ArrayList(picked))
     }
 
     // ------------------------------------------------------------ flow
@@ -332,6 +338,7 @@ class CheckinActivity : BaseActivity() {
         steps = buildSteps(c)
         stepIndex = 0
         startedAt = null
+        picked.clear()
         solved = 0
         problem = null
         fallbacks.clear()
@@ -349,6 +356,7 @@ class CheckinActivity : BaseActivity() {
             when (st.kind) {
                 Steps.MATH -> Step.Math(st.mathCount, st.mathLevel)
                 Steps.SCAN -> Step.Scan(st.scanCode!!, st.scanLabel)
+                Steps.PICK_TASKS -> Step.PickTasks(st.pickCount)
                 else -> Step.Survey(st.questions)
             }
         }.toMutableList()
@@ -474,6 +482,7 @@ class CheckinActivity : BaseActivity() {
             is Step.Math -> mathUi(col, step)
             is Step.Scan -> scanUi(col, step)
             is Step.Survey -> surveyUi(col, step.questions)
+            is Step.PickTasks -> pickTasksUi(col, step.count)
             is Step.Dismiss -> col.add(primaryButton("Dismiss") { nextStep() }, dp(32))
         }
 
@@ -798,6 +807,62 @@ class CheckinActivity : BaseActivity() {
         )
     }
 
+    /**
+     * Pick today's tasks: tick exactly [count] tasks from the backlog (all of them if there are
+     * fewer); they're turned on, so they show on the start page. A test ring changes nothing.
+     */
+    private fun pickTasksUi(col: LinearLayout, count: Int) {
+        val backlog = store.backlog
+        picked.retainAll(backlog.map { it.id }.toSet())
+        val need = minOf(count, backlog.size)
+        if (need == 0) {
+            col.add(label("Your backlog is empty: nothing to pick today.", 17f), dp(8))
+            col.add(muted("Add tasks with + Add check-in → New task; new ones start in the backlog.", 14f), dp(4))
+            col.add(primaryButton("Continue") { nextStep() }.apply { tag = "pick-continue" }, dp(24))
+            return
+        }
+        col.add(label(if (need == 1) "Pick 1 task to do today" else "Pick $need tasks to do today", 20f, bold = true), dp(4))
+        col.add(muted(if (backlog.size > need) "From your backlog of ${backlog.size}. They'll show on your start page."
+            else "That's your whole backlog. They'll show on your start page.", 14f), dp(4))
+        lateinit var go: Button
+        fun refresh() {
+            val left = need - picked.size
+            go.isEnabled = left == 0
+            go.text = when {
+                left > 0 -> "Pick $left more"
+                left < 0 -> "Untick ${-left}"
+                else -> if (target.practice) "Done (test: nothing changes)" else "Add to today"
+            }
+        }
+        val list = column()
+        for (t in backlog) {
+            val detail = listOfNotNull(t.category, CheckinText.steps(t).takeIf { Steps.active(t).isNotEmpty() })
+                .joinToString(" · ").ifEmpty { null }
+            list.add(checkTile(t.name, t.id in picked, detail).apply {
+                tag = "pick:${t.id}"
+                setOnCheckedChangeListener { _, on ->
+                    keepQuiet()
+                    if (on) picked += t.id else picked -= t.id
+                    refresh()
+                }
+            }, dp(8))
+        }
+        col.add(list, dp(10))
+        go = primaryButton("") {
+            if (!target.practice) {
+                for (id in picked) {
+                    store.updateCheckin(id) { it.copy(enabled = true) }
+                    store.checkin(id)?.let { AlarmScheduler.schedule(this, it) }
+                }
+                toast("Added ${picked.size} task${if (picked.size == 1) "" else "s"} to today")
+            }
+            picked.clear()
+            nextStep()
+        }.apply { tag = "pick-go" }
+        col.add(go, dp(16))
+        refresh()
+    }
+
     private fun surveyUi(col: LinearLayout, qs: List<Question>) {
         if (forced) col.add(muted("Be honest. This is just for you.", 14f), dp(10))
         lateinit var submit: Button
@@ -907,6 +972,7 @@ class CheckinActivity : BaseActivity() {
         private const val STATE_NO = "no"
         private const val STATE_VALUES = "values"
         private const val STATE_STARTED = "started"
+        private const val STATE_PICKED = "picked"
         private const val FALLBACK_PROBLEMS = 5
         private const val FALLBACK_DELAY_MS = 2 * 60 * 1000L
 

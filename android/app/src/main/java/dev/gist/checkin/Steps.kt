@@ -8,7 +8,9 @@ import org.json.JSONObject
  * in the order you choose (two math steps around a scan, ten very hard math steps…):
  *  - [Steps.MATH]: solve [mathCount] problems at [mathLevel];
  *  - [Steps.SCAN]: scan [scanCode] (at [scanLabel]);
- *  - [Steps.QUESTIONS]: answer [questions]. Their answers are what gets logged.
+ *  - [Steps.QUESTIONS]: answer [questions]. Their answers are what gets logged;
+ *  - [Steps.PICK_TASKS]: pick [pickCount] tasks from the backlog (tasks that are off) to do
+ *    today: they're turned on, so they show on the start page.
  * A step that isn't set up yet (a scan without a code, questions without any) is skipped.
  */
 data class StepConfig(
@@ -19,11 +21,13 @@ data class StepConfig(
     val scanCode: String? = null, // exact text of the registered QR code / barcode
     val scanLabel: String = "",   // where it is, e.g. "Bathroom sink"
     val questions: List<Question> = emptyList(),
+    val pickCount: Int = 3,       // pick-tasks: how many to pick (fewer if the backlog has fewer)
 ) {
     val configured: Boolean get() = when (kind) {
         Steps.MATH -> mathCount > 0
         Steps.SCAN -> scanCode != null
         Steps.QUESTIONS -> questions.isNotEmpty()
+        Steps.PICK_TASKS -> pickCount > 0
         else -> false
     }
 
@@ -34,6 +38,7 @@ data class StepConfig(
             Steps.QUESTIONS -> put("questions", JSONArray().apply {
                 questions.forEach { put(it.toJson()) }
             })
+            Steps.PICK_TASKS -> put("pickCount", pickCount)
         }
     }
 
@@ -48,6 +53,7 @@ data class StepConfig(
                 mathLevel = o.optInt("mathLevel", 2).coerceIn(1, MathGen.LEVELS.size),
                 scanCode = o.optString("scanCode", "").ifEmpty { null },
                 scanLabel = o.optString("scanLabel", ""),
+                pickCount = o.optInt("pickCount", 3).coerceIn(1, Steps.MAX_PICK),
                 questions = (0 until qs.length()).mapNotNull { i ->
                     qs.optJSONObject(i)?.let { q ->
                         q.optString("text", "").takeIf { it.isNotBlank() }?.let {
@@ -64,7 +70,9 @@ object Steps {
     const val MATH = "math"
     const val SCAN = "scan"
     const val QUESTIONS = "questions"
-    val ALL = listOf(MATH, SCAN, QUESTIONS)
+    const val PICK_TASKS = "pickTasks"
+    val ALL = listOf(MATH, SCAN, QUESTIONS, PICK_TASKS)
+    const val MAX_PICK = 20
     const val MAX_STEPS = 100
     const val MAX_PROBLEMS = 100
 
@@ -76,12 +84,14 @@ object Steps {
     fun title(kind: String): String = when (kind) {
         MATH -> "Math problems"
         SCAN -> "Scan a code"
+        PICK_TASKS -> "Pick today's tasks"
         else -> "Questions"
     }
 
     fun blurb(kind: String): String = when (kind) {
         MATH -> "Solve a few problems to prove you're awake."
         SCAN -> "Get up and scan a QR code or barcode you've registered (e.g. on the bathroom sink)."
+        PICK_TASKS -> "Choose a set number of tasks from your backlog to do today. They're turned on and show on the start page."
         else -> "Yes/no questions. These answers are logged and shown in History."
     }
 
@@ -92,6 +102,7 @@ object Steps {
     fun summary(s: StepConfig): String = when (s.kind) {
         MATH -> if (s.mathCount > 0) "${s.mathCount} × ${MathGen.levelName(s.mathLevel)}" else "Not set up"
         SCAN -> if (s.scanCode != null) s.scanLabel.ifEmpty { "Registered code" } else "Not set up: register a code"
+        PICK_TASKS -> "Pick ${s.pickCount} task${if (s.pickCount == 1) "" else "s"} from the backlog"
         else -> if (s.questions.isEmpty()) "Not set up: add a question" else
             "${s.questions.size} question${if (s.questions.size == 1) "" else "s"}"
     }

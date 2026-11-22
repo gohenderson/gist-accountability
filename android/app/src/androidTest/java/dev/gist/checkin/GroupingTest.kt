@@ -420,7 +420,7 @@ class GroupingTest {
 
     @Test
     fun showCheckinsTasksOrBoth() {
-        val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList(), enabled = false)
+        val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList()) // on: active, not backlog
         val done = TestEnv.checkin("d", "Done thing").copy(task = true, times = emptyList(), enabled = false,
             doneAt = System.currentTimeMillis())
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, done))
