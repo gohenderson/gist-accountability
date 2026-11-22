@@ -484,6 +484,9 @@ class Store(context: Context) {
     /** The backlog: tasks that are off and not done, in your order. */
     val backlog: List<Checkin> get() = checkins.filter { it.inBacklog }
 
+    /** Active tasks: on and not done. */
+    val activeTasks: List<Checkin> get() = checkins.filter { it.task && it.enabled && it.doneAt == null }
+
     /** Start page order: one of Grouping.SORTS (My order by default). */
     var sort: String
         get() = prefs.getString(K_SORT, null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM

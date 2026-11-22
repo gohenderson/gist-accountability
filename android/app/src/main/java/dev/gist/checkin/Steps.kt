@@ -9,8 +9,9 @@ import org.json.JSONObject
  *  - [Steps.MATH]: solve [mathCount] problems at [mathLevel];
  *  - [Steps.SCAN]: scan [scanCode] (at [scanLabel]);
  *  - [Steps.QUESTIONS]: answer [questions]. Their answers are what gets logged;
- *  - [Steps.PICK_TASKS]: pick [pickCount] tasks from the backlog (tasks that are off) to do
- *    today: they're turned on, so they show on the start page.
+ *  - [Steps.PICK_TASKS]: have [pickCount] active tasks for today: pick the difference from
+ *    the backlog (tasks that are off); they're turned on, so they show on the start page.
+ *    With that many active already, it's satisfied and skipped.
  * A step that isn't set up yet (a scan without a code, questions without any) is skipped.
  */
 data class StepConfig(
@@ -91,7 +92,7 @@ object Steps {
     fun blurb(kind: String): String = when (kind) {
         MATH -> "Solve a few problems to prove you're awake."
         SCAN -> "Get up and scan a QR code or barcode you've registered (e.g. on the bathroom sink)."
-        PICK_TASKS -> "Choose a set number of tasks from your backlog to do today. They're turned on and show on the start page."
+        PICK_TASKS -> "Have a set number of active tasks for today: pick the rest from your backlog. Picked tasks are turned on and show on the start page."
         else -> "Yes/no questions. These answers are logged and shown in History."
     }
 
@@ -102,7 +103,7 @@ object Steps {
     fun summary(s: StepConfig): String = when (s.kind) {
         MATH -> if (s.mathCount > 0) "${s.mathCount} × ${MathGen.levelName(s.mathLevel)}" else "Not set up"
         SCAN -> if (s.scanCode != null) s.scanLabel.ifEmpty { "Registered code" } else "Not set up: register a code"
-        PICK_TASKS -> "Pick ${s.pickCount} task${if (s.pickCount == 1) "" else "s"} from the backlog"
+        PICK_TASKS -> "${s.pickCount} active task${if (s.pickCount == 1) "" else "s"}, picked from the backlog"
         else -> if (s.questions.isEmpty()) "Not set up: add a question" else
             "${s.questions.size} question${if (s.questions.size == 1) "" else "s"}"
     }

@@ -352,11 +352,12 @@ class CheckinActivity : BaseActivity() {
 
     private fun buildSteps(c: Checkin): MutableList<Step> {
         if (!forced && !early) return mutableListOf(Step.Survey(c.questions)) // editing history: questions only
-        val list: MutableList<Step> = Steps.active(c).map { st ->
+        // A pick-tasks step with enough tasks already active is satisfied: left out.
+        val list: MutableList<Step> = Steps.active(c).mapNotNull { st ->
             when (st.kind) {
                 Steps.MATH -> Step.Math(st.mathCount, st.mathLevel)
                 Steps.SCAN -> Step.Scan(st.scanCode!!, st.scanLabel)
-                Steps.PICK_TASKS -> Step.PickTasks(st.pickCount)
+                Steps.PICK_TASKS -> Step.PickTasks(st.pickCount).takeIf { store.activeTasks.size < st.pickCount }
                 else -> Step.Survey(st.questions)
             }
         }.toMutableList()
@@ -814,16 +815,19 @@ class CheckinActivity : BaseActivity() {
     private fun pickTasksUi(col: LinearLayout, count: Int) {
         val backlog = store.backlog
         picked.retainAll(backlog.map { it.id }.toSet())
-        val need = minOf(count, backlog.size)
+        val active = store.activeTasks.size
+        val need = minOf((count - active).coerceAtLeast(0), backlog.size)
+        val already = if (active == 0) "" else "You have $active active already. "
         if (need == 0) {
-            col.add(label("Your backlog is empty: nothing to pick today.", 17f), dp(8))
-            col.add(muted("Add tasks with + Add check-in → New task; new ones start in the backlog.", 14f), dp(4))
+            col.add(label(if (count <= active) "You already have $active active tasks." else "Your backlog is empty: nothing to pick today.", 17f), dp(8))
+            if (count > active) col.add(muted("Add tasks with + Add check-in → New task; new ones start in the backlog.", 14f), dp(4))
             col.add(primaryButton("Continue") { nextStep() }.apply { tag = "pick-continue" }, dp(24))
             return
         }
-        col.add(label(if (need == 1) "Pick 1 task to do today" else "Pick $need tasks to do today", 20f, bold = true), dp(4))
-        col.add(muted(if (backlog.size > need) "From your backlog of ${backlog.size}. They'll show on your start page."
-            else "That's your whole backlog. They'll show on your start page.", 14f), dp(4))
+        val more = if (active == 0) "" else " more"
+        col.add(label(if (need == 1) "Pick 1$more task to do today" else "Pick $need$more tasks to do today", 20f, bold = true), dp(4))
+        col.add(muted(already + (if (backlog.size > need) "From your backlog of ${backlog.size}. They'll show on your start page."
+            else "That's your whole backlog. They'll show on your start page."), 14f), dp(4))
         lateinit var go: Button
         fun refresh() {
             val left = need - picked.size

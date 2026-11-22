@@ -84,8 +84,10 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   a score go last, in your order. While sorted, cards can't be dragged; switch back to My
   order to rearrange them. Your order is kept underneath, and the choice is remembered.
 - **Collapse all / Expand all** folds or unfolds everything: groups and check-ins.
-- **On-track colors.** Each check-in's card is outlined in a color from red (0%) through
-  amber to green (100%) by its score (see [History, scores and
+- **Dots and squares.** A check-in has a **dot** left of its name; a task has a **square**,
+  like a box to tick (dimmer while it's in the backlog).
+- **On-track colors.** Each check-in's dot is filled with a color from red (0%) through
+  amber to green (100%) by its score (an empty ring until it has one) (see [History, scores and
   logging](#history-scores-and-logging)), and group headers are colored by their average.
   The numbers stay out of the list. The overall score is at the top of the page, and each
   check-in's own score is at the top of its page. Screen readers read the numbers out.
@@ -200,10 +202,12 @@ The types:
   e.g. "Bathroom sink". When the alarm rings, only that exact code stops it. If you can't
   scan (you're traveling, or the camera fails), a **"Can't scan?"** button appears after 2
   minutes. It swaps the scan for 5 very hard problems.
-- **Pick today's tasks:** pick a set number of tasks (1–20) from your backlog. When it
-  rings it lists the backlog; tick exactly that many (all of them if there are fewer) and
-  tap **Add to today**: they're turned on, so they show on the start page. With an empty
-  backlog it just says so and moves on. A test ring changes nothing.
+- **Pick today's tasks:** have a set number of active tasks (1–20) for today. Tasks that
+  are already active count, so you only pick the rest from your backlog: with 1 active and
+  3 to have, it asks for 2 more (all of the backlog if there's less). Tick exactly that
+  many and tap **Add to today**: they're turned on, so they show on the start page. With
+  enough active already, the step is skipped; with an empty backlog it says so and moves
+  on. A test ring changes nothing.
 - **Questions:** add, edit, reorder and delete them. Each is one of:
   - **Yes / No:** says whether "Yes" or "No" is on track. **Submit** stays disabled until
     every yes/no question is answered.

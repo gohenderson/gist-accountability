@@ -126,7 +126,7 @@ class StepEditActivity : BaseActivity() {
     // ---------------------------------------------------------------- pick tasks
 
     private fun pickUi(col: LinearLayout, st: StepConfig) {
-        col.add(sectionTitle("Tasks to pick"))
+        col.add(sectionTitle("Active tasks to have"))
         val picker = NumberPicker(this).apply {
             minValue = 1
             maxValue = Steps.MAX_PICK
@@ -137,9 +137,11 @@ class StepEditActivity : BaseActivity() {
         }
         col.add(picker, dp(4))
         val n = store.backlog.size
-        col.add(muted("When it rings you pick exactly this many from your backlog (all of them if there are fewer). " +
-            "They're turned on, so they show on the start page; do them from there. Your backlog has " +
-            "$n task${if (n == 1) "" else "s"} now. A test ring doesn't change anything.", 13f), dp(2))
+        val active = store.activeTasks.size
+        col.add(muted("When it rings, tasks that are already active count: you pick only the rest from your backlog " +
+            "(all of it if there's less), and with enough active it's skipped. Picked tasks are turned on, so they " +
+            "show on the start page; do them from there. Now: $active active, $n in the backlog. " +
+            "A test ring doesn't change anything.", 13f), dp(2))
     }
 
     // ---------------------------------------------------------------- scan

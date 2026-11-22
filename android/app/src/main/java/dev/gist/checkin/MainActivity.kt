@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
+import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -320,9 +321,24 @@ class MainActivity : BaseActivity() {
     /** The color for a score, between the off-track red and the on-track green. */
     private fun scoreColor(score: Double) = Score.color(score, colorOf(R.color.bad), colorOf(R.color.good))
 
-    /** [base] with a border in the score's color (or as is, without a score yet). */
-    private fun scoreBackground(base: Int, radius: Int, score: Double?) = rounded(base, radius).apply {
-        if (score != null) setStroke(dp(2), scoreColor(score))
+    /**
+     * What's left of the title: a check-in's dot, filled with its score's color (an empty ring
+     * until it has a score), or a task's square, like a box to tick (dimmer while in the backlog).
+     */
+    private fun marker(c: Checkin, score: Double?): View = View(this).apply {
+        tag = "marker:${c.id}"
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        background = GradientDrawable().apply {
+            if (c.isTask) {
+                cornerRadius = dp(3).toFloat()
+                setStroke(dp(2), if (c.inBacklog) colorMuted else colorPrimary)
+            } else {
+                shape = GradientDrawable.OVAL
+                if (score != null) setColor(scoreColor(score)) else setStroke(dp(2), colorMuted)
+            }
+        }
+        val size = dp(if (c.isTask) 14 else 12)
+        layoutParams = LinearLayout.LayoutParams(size, size)
     }
 
     /** Folds or unfolds a check-in's card. */
@@ -333,18 +349,21 @@ class MainActivity : BaseActivity() {
     }
 
     /**
-     * A check-in's title line: drag handle, name, chevron and on/off switch (the card's border
-     * color shows the score; the number is only read out, and shown on the check-in's page). Tapping it
+     * A check-in's title line: drag handle, its dot (a check-in's, in its score's color; the
+     * number is only read out, and shown on its page) or a task's square, name, chevron and
+     * on/off switch. Tapping it
      * folds the card to this line (plus the next ring) or unfolds it again.
      */
     private fun titleRow(c: Checkin, handle: View?, score: Double?, folded: Boolean, size: Float): LinearLayout = row().apply {
         gravity = Gravity.CENTER_VERTICAL
         isClickable = true
         tag = "checkin-header:${c.id}"
-        contentDescription = "${c.name}, ${if (folded) "collapsed" else "expanded"}" +
+        contentDescription = "${if (c.isTask) "Task: " else ""}${c.name}, ${if (folded) "collapsed" else "expanded"}" +
             (score?.let { ", ${Score.percent(it)} on track" } ?: "")
         setOnClickListener { toggleFolded(c) }
         handle?.let { addWrapped(it) }
+        val m = marker(c, score)
+        addView(m, (m.layoutParams as LinearLayout.LayoutParams).apply { marginEnd = dp(10) })
         addWeighted(label(c.name, size, bold = true).apply {
             maxLines = if (folded) 1 else 3
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -355,17 +374,8 @@ class MainActivity : BaseActivity() {
         addWrapped(alarmSwitch(c), startMargin = dp(8))
     }
 
-    /**
-     * A check-in's card background: the same when folded or not (only the content changes),
-     * outlined in its score's color once it has one.
-     */
-    private fun checkinBackground(card: LinearLayout, score: Double?) {
-        if (score != null) card.background = scoreBackground(colorOf(R.color.surface), CARD_RADIUS, score)
-    }
-
     /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
     private fun checkinRow(c: Checkin, handle: View?, score: Double?): LinearLayout = card().apply {
-        checkinBackground(this, score) // same padding as an open card, so nothing shifts when folding
         tag = "row:${c.id}"
         isClickable = true
         setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
@@ -377,7 +387,6 @@ class MainActivity : BaseActivity() {
     private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
         card.tag = "card:${c.id}"
-        checkinBackground(card, score)
 
         card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
         card.add(muted(CheckinText.oneLine(c)), dp(2))
@@ -607,8 +616,7 @@ class MainActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
-        /** Check-in cards, folded or not: the corner radius (as Ui.card) and the name's size. */
-        private const val CARD_RADIUS = 20
+        /** Check-in cards, folded or not: the name's size. */
         private const val TITLE_SIZE = 18f
         private const val REQ_NOTIF = 1
         private const val REQ_LOCATION = 2

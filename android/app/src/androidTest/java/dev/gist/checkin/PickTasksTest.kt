@@ -57,6 +57,35 @@ class PickTasksTest {
     }
 
     @Test
+    fun activeTasksCountTowardTheNumber() {
+        val day = TestEnv.today()
+        val active = Library.task("x").copy(name = "Already on", enabled = true)
+        TestEnv.reset(listOf(planner(3), active, backlogTask("a", "Call John"), backlogTask("b", "Fix the fence"),
+            backlogTask("c", "Buy batteries")), listOf(Pending("plan", day, "12:00")))
+        ActivityScenario.launch<CheckinActivity>(Intent(TestEnv.ctx, CheckinActivity::class.java)).use {
+            // 1 active of 3: pick 2 more.
+            onView(withText("Pick 2 more tasks to do today")).check(matches(isDisplayed()))
+            onView(tagged("pick:a")).perform(scrollTo(), click())
+            onView(tagged("pick:b")).perform(scrollTo(), click())
+            onView(tagged("pick-go")).perform(scrollTo(), click())
+        }
+        assertEquals(listOf("c"), TestEnv.store.backlog.map { it.id })
+    }
+
+    @Test
+    fun enoughActiveTasksSkipsIt() {
+        val day = TestEnv.today()
+        val on = (1..2).map { Library.task("x$it").copy(name = "On $it", enabled = true) }
+        TestEnv.reset(listOf(planner(2)) + on + backlogTask("a", "Call John"), listOf(Pending("plan", day, "12:00")))
+        ActivityScenario.launch<CheckinActivity>(Intent(TestEnv.ctx, CheckinActivity::class.java)).use {
+            // Its only step is satisfied, so there's nothing to pick: just Dismiss.
+            onView(tagged("pick-go")).check(doesNotExist())
+            onView(withText("Dismiss")).perform(scrollTo(), click())
+        }
+        assertTrue("nothing taken from the backlog", TestEnv.store.checkin("a")!!.inBacklog)
+    }
+
+    @Test
     fun anEmptyBacklogJustContinues() {
         val day = TestEnv.today()
         TestEnv.reset(listOf(planner(3)), listOf(Pending("plan", day, "12:00")))
