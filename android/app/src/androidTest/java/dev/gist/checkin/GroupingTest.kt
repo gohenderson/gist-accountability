@@ -460,6 +460,46 @@ class GroupingTest {
     }
 
     @Test
+    fun eachTabHasItsOwnViewAndFolding() {
+        fun task(id: String, name: String) = TestEnv.checkin(id, name).copy(task = true, times = emptyList())
+        TestEnv.reset(listOf(TestEnv.checkin("c1", "Daily"), TestEnv.checkin("c2", "Evening"),
+            task("t1", "Call John"), task("t2", "Buy milk")))
+        TestEnv.store.setSortFor(Store.TAB_CHECKINS, Grouping.SORT_NEXT)
+        main().use {
+            onView(tagged("view-mode")).check(matches(withText("View: Next alarm ▾")))
+            // Tasks start in My order (drag them into priority order).
+            onView(tagged("tab:tasks")).perform(click())
+            onView(tagged("view-mode")).check(matches(withText("View: My order ▾")))
+            onView(tagged("drag-checkin:t1")).check(matches(isDisplayed()))
+            onView(tagged("view-mode")).perform(click())
+            onView(tagged("sort:${Grouping.SORT_NAME}")).perform(click())
+            onView(tagged("view-mode")).check(matches(withText("View: Name ▾")))
+            // Collapse all here folds only the tasks.
+            onView(tagged("toggle-all")).perform(click())
+            onView(tagged("tab:checkins")).perform(click())
+            onView(tagged("view-mode")).check(matches(withText("View: Next alarm ▾")))
+            onView(tagged("toggle-all")).check(matches(withText("Collapse all")))
+        }
+        assertEquals(Grouping.SORT_NEXT, TestEnv.store.sortFor(Store.TAB_CHECKINS))
+        assertEquals(Grouping.SORT_NAME, TestEnv.store.sortFor(Store.TAB_TASKS))
+        assertEquals(Grouping.SORT_CUSTOM, TestEnv.store.sortFor(Store.TAB_BACKLOG))
+        assertEquals(setOf("t1", "t2"), TestEnv.store.collapsedCheckins)
+    }
+
+    @Test
+    fun settingsAboutAndDonateAreAtTheTop() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
+        main().use {
+            onView(tagged("settings")).check(matches(withContentDescription("Settings")))
+            onView(tagged("about")).check(matches(withContentDescription("About Gist")))
+            onView(tagged("donate")).check(matches(withContentDescription("Donate")))
+            onView(withText("Settings · backup · appearance")).check(doesNotExist())
+            onView(tagged("settings")).perform(click())
+            TestEnv.eventually { onView(withText("Settings")).check(matches(isDisplayed())) }
+        }
+    }
+
+    @Test
     fun plusOnTheTasksTabMakesAnActiveTask() {
         TestEnv.reset(emptyList())
         TestEnv.store.startTab = Store.TAB_TASKS

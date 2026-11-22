@@ -461,10 +461,24 @@ class Store(context: Context) {
         get() = prefs.getInt(K_THEME, THEME_SYSTEM)
         set(v) { prefs.edit().putInt(K_THEME, v).commit() }
 
-    /** Start page view: Grouping.UNGROUPED or Grouping.BY_CATEGORY. */
+    /** Start page view on the current tab: Grouping.UNGROUPED or Grouping.BY_CATEGORY. */
     var view: String
-        get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
-        set(v) { prefs.edit().putString(K_VIEW, v).commit() }
+        get() = viewFor(startTab)
+        set(v) { setViewFor(startTab, v) }
+
+    /** Each tab has its own view and sort (the Check-ins tab keeps the original keys). */
+    private fun tabKey(key: String, tab: String) = if (tab == TAB_CHECKINS) key else "$key.$tab"
+
+    fun viewFor(tab: String): String =
+        prefs.getString(tabKey(K_VIEW, tab), Grouping.UNGROUPED) ?: Grouping.UNGROUPED
+
+    fun setViewFor(tab: String, v: String) { prefs.edit().putString(tabKey(K_VIEW, tab), v).commit() }
+
+    /** The tab's sort: one of Grouping.SORTS (My order by default, so tasks keep your priority). */
+    fun sortFor(tab: String): String =
+        prefs.getString(tabKey(K_SORT, tab), null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
+
+    fun setSortFor(tab: String, v: String) { prefs.edit().putString(tabKey(K_SORT, tab), v).commit() }
 
     /**
      * The start page's tab: [TAB_CHECKINS] (everything that isn't a task), [TAB_TASKS] (active
@@ -480,10 +494,10 @@ class Store(context: Context) {
     /** Active tasks: on and not done. */
     val activeTasks: List<Checkin> get() = checkins.filter { it.task && it.enabled && it.doneAt == null }
 
-    /** Start page order: one of Grouping.SORTS (My order by default). */
+    /** Start page order on the current tab: one of Grouping.SORTS (My order by default). */
     var sort: String
-        get() = prefs.getString(K_SORT, null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
-        set(v) { prefs.edit().putString(K_SORT, v).commit() }
+        get() = sortFor(startTab)
+        set(v) { setSortFor(startTab, v) }
 
     /**
      * Check-ins folded to one line on the start page (ids); the rest show their full card.
