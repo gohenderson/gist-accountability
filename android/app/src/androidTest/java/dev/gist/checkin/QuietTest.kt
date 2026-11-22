@@ -51,6 +51,7 @@ class QuietTest {
         assertTrue("a reminder notification", shown.any { it.notification.extras.getString("android.title") == "Call John" })
 
         // The start page shows it waiting (and doesn't jump to the alarm screen); dismissing a soft task completes it.
+        TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("waiting:q")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("waiting-dismiss:q")).perform(click())

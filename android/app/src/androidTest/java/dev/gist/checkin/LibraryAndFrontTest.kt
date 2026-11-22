@@ -35,7 +35,7 @@ class LibraryTest {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(emptyList())
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
-            onView(withText("+ Add check-in")).perform(click())
+            onView(tagged("add")).perform(click())
             onView(withText("Add a check-in")).check(matches(isDisplayed()))
             onView(withText("Create your own")).check(matches(isDisplayed()))
         }

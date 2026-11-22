@@ -1,7 +1,7 @@
 package dev.gist.checkin
 
 /**
- * Ready-made check-ins to pick from (start page → + Add check-in). Adding one copies it
+ * Ready-made check-ins to pick from (start page → +). Adding one copies it
  * into your list with a new id; after that it's yours to change like any other.
  */
 object Library {
