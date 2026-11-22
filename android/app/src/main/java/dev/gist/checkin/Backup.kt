@@ -33,9 +33,9 @@ object Backup {
     const val FORMAT = "gist-backup"
     /**
      * 4: questions can take a typed answer (number or text), saved under "v".
-     * 5: one-time tasks (repeat kind "once" with a "date"; "doneAt" when done). Written only
-     *    when the backup has a task, so files without one stay readable by apps that read 4
-     *    (an app that doesn't know tasks would ring one every day).
+     * 5: one-time tasks ("task", and "doneAt" when done) and "On a specific date" (days kind
+     *    "once" with a "date"). Written only when the backup uses either, so other files stay
+     *    readable by apps that read 4 (one that doesn't know "once" would ring every day).
      */
     const val VERSION = 5
     private const val VERSION_WITHOUT_TASKS = 4
@@ -115,7 +115,7 @@ object Backup {
         }
         val root = JSONObject()
             .put("format", FORMAT)
-            .put("version", if (checkins.any { it.isTask }) VERSION else VERSION_WITHOUT_TASKS)
+            .put("version", if (checkins.any { needsVersion5(it) }) VERSION else VERSION_WITHOUT_TASKS)
             .put("exportedAt", Instant.now().toString())
             .put("checkins", arr)
             .put("entries", sortedByDay(entries))
@@ -125,6 +125,11 @@ object Backup {
             header = "Gist backup. Import it with Settings → Import backup… (you choose what to bring in).\n" +
                 "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly / once (a task).",
         )
+    }
+
+    private fun needsVersion5(c: Checkin): Boolean {
+        fun once(r: Repeat?) = r?.kind == Repeat.ONCE
+        return c.task || once(c.repeat) || c.times.any { once(it.days) } || c.events.any { once(it.days) }
     }
 
     /** Reads and checks a backup without changing anything. Throws with a readable message. */

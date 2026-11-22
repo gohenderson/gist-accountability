@@ -111,17 +111,18 @@ data class Checkin(
     val voiceSource: String = VOICE_TEXT,    // voice only: VOICE_TEXT (spoken) or VOICE_CLIP (recorded)
     val voiceText: String = "",
     val voiceHeadphonesOnly: Boolean = true, // voice only: stay quiet when nothing's plugged in / paired
-    /** A task (see [isTask]) that's been done: when (epoch ms). Done tasks are off and listed apart. */
+    /**
+     * A one-time task ("Call John"): doing it once (finishing it, Do it now, or dismissing a
+     * soft one) completes it: it turns off and moves to Done tasks. Its triggers are like any
+     * check-in's (usually a time "On a specific date"); with none it's a backlog item that
+     * waits on the start page until you do it. Left out of the overall score.
+     */
+    val task: Boolean = false,
+    /** A task that's been done: when (epoch ms). Done tasks are off and listed apart. */
     val doneAt: Long? = null,
 ) {
-    /**
-     * A one-time task ("Call John"): it rings once, on its date ([repeat] is [Repeat.ONCE]),
-     * like any alarm. Doing it once (finishing it, or dismissing a soft one) completes it:
-     * it turns off and moves to Done tasks. Its arrive / leave / run triggers work any day
-     * until then. Left out of the overall score.
-     */
-    val isTask: Boolean get() = repeat.kind == Repeat.ONCE
-    val taskDone: Boolean get() = isTask && doneAt != null
+    val isTask: Boolean get() = task
+    val taskDone: Boolean get() = task && doneAt != null
 
     val soft: Boolean get() = commitment == SOFT
     val voice: Boolean get() = commitment == VOICE
@@ -129,8 +130,8 @@ data class Checkin(
     /** Only strict check-ins count in the stats. */
     val counted: Boolean get() = commitment == STRICT
 
-    /** The days [t] rings on: its own, or the check-in's repeat rule (a task's times all use its date). */
-    fun daysFor(t: AlarmTime): Repeat = if (isTask) repeat else t.days ?: repeat
+    /** The days [t] rings on: its own, or the check-in's repeat rule. */
+    fun daysFor(t: AlarmTime): Repeat = t.days ?: repeat
 
     /** Does any time have days of its own? */
     val perTimeDays: Boolean get() = times.any { it.days != null }
@@ -603,8 +604,14 @@ class Store(context: Context) {
             voiceText = o.optString("voiceText", ""),
             voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
             snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
+            task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
-        )
+        ).let { c ->
+            // The first tasks were a check-in repeating "once" on a date: now a flag, with the
+            // date on each of its times ("On a specific date").
+            if (c.repeat.kind != Repeat.ONCE) c
+            else c.copy(task = true, repeat = Repeat.EVERY_DAY, times = c.times.map { it.copy(days = c.repeat) })
+        }
         // Saved before a check-in could have several kinds of trigger: one "trigger" applied
         // to the whole check-in. An event replaced the times; a place condition applied to all.
         val legacy = o.optJSONObject("trigger")
@@ -647,7 +654,10 @@ class Store(context: Context) {
             .put("voiceText", c.voiceText)
             .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
             .put("snoozeMinutes", c.snoozeMinutes)
-            .apply { c.doneAt?.let { put("doneAt", it) } }
+            .apply {
+                if (c.task) put("task", true)
+                c.doneAt?.let { put("doneAt", it) }
+            }
     }
 
     companion object {

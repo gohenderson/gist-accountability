@@ -878,28 +878,41 @@ class TaskTest {
     private val zone = ZoneId.of("America/New_York")
     private fun at(y: Int, mo: Int, d: Int, h: Int, mi: Int) = ZonedDateTime.of(y, mo, d, h, mi, 0, 0, zone)
     private val date = LocalDate.of(2026, 11, 23)
-    private val task = Checkin(
-        id = "t", name = "Call John",
-        // A per-time day rule left over from before it was a task is ignored: tasks ring on their date.
-        times = listOf(AlarmTime(15, 0, days = Repeat.weekly(setOf(1))), AlarmTime(9, 0)),
-        repeat = Repeat.once(date),
-    )
 
     @Test
-    fun ringsOnlyOnItsDate() {
-        assertTrue(task.isTask)
-        assertFalse(task.taskDone)
-        val rings = AlarmScheduler.occurrences(task, at(2026, 11, 21, 8, 0), count = 10)
-        assertEquals(listOf("09:00", "15:00"), rings.map { it.time.toString() })
-        assertTrue(rings.all { it.day == "2026-11-23" })
-        assertTrue("after its date: nothing", AlarmScheduler.occurrences(task, at(2026, 11, 23, 16, 0)).isEmpty())
+    fun aTimeOnASpecificDateRingsOnce() {
+        val c = Checkin(
+            id = "t", name = "Call John", task = true,
+            times = listOf(AlarmTime(15, 0, days = Repeat.once(date)), AlarmTime(9, 0, days = Repeat.once(date.plusDays(1)))),
+        )
+        val rings = AlarmScheduler.occurrences(c, at(2026, 11, 21, 8, 0), count = 10)
+        assertEquals(listOf("2026-11-23 15:00", "2026-11-24 09:00"), rings.map { "${it.day} ${it.time}" })
+        assertTrue("after its dates: nothing", AlarmScheduler.occurrences(c, at(2026, 11, 24, 10, 0)).isEmpty())
     }
 
     @Test
-    fun describesItsDate() {
+    fun aRegularCheckinCanHaveAOneOffTime() {
+        val c = Checkin(id = "d", name = "Daily", times = listOf(AlarmTime(7, 0), AlarmTime(20, 0, days = Repeat.once(date))))
+        assertFalse(c.isTask)
+        val rings = AlarmScheduler.occurrences(c, at(2026, 11, 22, 8, 0), count = 4)
+        assertEquals(listOf("2026-11-23 07:00", "2026-11-23 20:00", "2026-11-24 07:00", "2026-11-25 07:00"),
+            rings.map { "${it.day} ${it.time}" })
+    }
+
+    @Test
+    fun aTaskWithoutTriggersIsABacklogItem() {
+        val c = Checkin(id = "b", name = "Fix the fence", task = true, times = emptyList())
+        assertTrue(c.isTask)
+        assertTrue(AlarmScheduler.occurrences(c, at(2026, 11, 21, 8, 0)).isEmpty())
+        assertEquals("no set time", CheckinText.whenText(c))
+        assertEquals("no triggers", CheckinText.whenText(c.copy(task = false)))
+    }
+
+    @Test
+    fun describesTheDate() {
         assertTrue(Repeat.once(date).matches(date))
         assertFalse(Repeat.once(date).matches(date.plusDays(7)))
-        assertEquals("once, on Mon, Nov 23", Repeat.once(date).describe().let { it.replace(", 2026", "") })
+        assertEquals("on Mon, Nov 23", Repeat.once(date).describe().replace(", 2026", ""))
         assertEquals("Tue, Nov 23, 2027", Repeat.dateText(LocalDate.of(2027, 11, 23), LocalDate.of(2026, 1, 1)))
     }
 
@@ -907,10 +920,8 @@ class TaskTest {
     fun newTasksRingAtTheNextHour() {
         val t = Library.task("n", LocalDateTime.of(2026, 11, 21, 14, 20))
         assertTrue(t.isTask)
-        assertEquals(listOf(AlarmTime(15, 0)), t.times)
-        assertEquals(LocalDate.of(2026, 11, 21), t.repeat.date)
+        assertEquals(listOf(AlarmTime(15, 0, days = Repeat.once(LocalDate.of(2026, 11, 21)))), t.times)
         val late = Library.task("n", LocalDateTime.of(2026, 11, 21, 23, 30))
-        assertEquals(listOf(AlarmTime(0, 0)), late.times)
-        assertEquals(LocalDate.of(2026, 11, 22), late.repeat.date)
+        assertEquals(listOf(AlarmTime(0, 0, days = Repeat.once(LocalDate.of(2026, 11, 22)))), late.times)
     }
 }

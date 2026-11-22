@@ -13,7 +13,7 @@ import java.util.Locale
  *  - WEEKLY: on [days] of the week (1 = Monday … 7 = Sunday).
  *  - MONTHLY: on [days] of the month (1…31, or [LAST_DAY]). A date a month doesn't have
  *    (e.g. the 31st in November) is skipped that month; use LAST_DAY for "end of month".
- *  - ONCE: only on [date]. A check-in that rings once is a task (see Checkin.isTask).
+ *  - ONCE: only on [date] ("On a specific date"), for one time trigger.
  */
 data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet(), val date: LocalDate? = null) {
 
@@ -38,7 +38,7 @@ data class Repeat(val kind: String = DAILY, val days: Set<Int> = emptySet(), val
                 if (LAST_DAY in days) listOf("last day") else emptyList()
             "monthly on the " + joinWithAnd(parts)
         }
-        ONCE -> "once, on ${date?.let { dateText(it) } ?: "no date"}"
+        ONCE -> "on ${date?.let { dateText(it) } ?: "no date"}"
         else -> "every day"
     }
 

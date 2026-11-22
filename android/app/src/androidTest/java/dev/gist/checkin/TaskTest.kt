@@ -34,7 +34,9 @@ class TaskTest {
 
     private fun task(id: String = "t", name: String = "Call John", questions: List<Question> = emptyList(),
                      date: LocalDate = LocalDate.now()) =
-        TestEnv.checkin(id, name, questions).copy(repeat = Repeat.once(date), category = "Tasks")
+        TestEnv.checkin(id, name, questions).let {
+            it.copy(task = true, category = "Tasks", times = it.times.map { t -> t.copy(days = Repeat.once(date)) })
+        }
 
     @Test
     fun doingATaskCompletesIt() {
@@ -90,7 +92,32 @@ class TaskTest {
         assertTrue(text.contains("version: 5"))
         // And it comes back as a task, on its date.
         val c = Backup.parse(TestEnv.ctx, text).checkins.single { it.name == "Call John" }
-        assertEquals(Repeat.once(LocalDate.of(2026, 12, 24)), c.repeat)
+        assertTrue(c.isTask)
+        assertEquals(Repeat.once(LocalDate.of(2026, 12, 24)), c.times.single().days)
+    }
+
+    @Test
+    fun theFirstTasksCarryOver() {
+        // Saved before tasks were a flag: the check-in repeated "once" on a date.
+        val old = org.json.JSONObject(TestEnv.store.checkinToJson(TestEnv.checkin("t", "Call John")).toString())
+            .put("repeat", org.json.JSONObject().put("kind", "once").put("days", org.json.JSONArray()).put("date", "2026-12-24"))
+        val c = TestEnv.store.checkinFromJson(old)
+        assertTrue(c.isTask)
+        assertEquals(Repeat.EVERY_DAY, c.repeat)
+        assertEquals(Repeat.once(LocalDate.of(2026, 12, 24)), c.times.single().days)
+    }
+
+    @Test
+    fun aBacklogTaskIsDoneFromTheStartPage() {
+        val backlog = TestEnv.checkin("b", "Fix the fence").copy(task = true, times = emptyList())
+        TestEnv.reset(listOf(backlog))
+        ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
+            onView(tagged("next:b")).perform(scrollTo()).check(matches(withText("Task · no set time")))
+            onView(tagged("task-do:b")).perform(click())
+            // No steps: just Dismiss.
+            TestEnv.eventually { onView(withText("Dismiss")).perform(click()) }
+        }
+        TestEnv.eventually { assertTrue(TestEnv.store.checkin("b")!!.taskDone) }
     }
 
     @Test
@@ -98,11 +125,12 @@ class TaskTest {
         TestEnv.reset(emptyList())
         ActivityScenario.launch<LibraryActivity>(LibraryActivity.intent(TestEnv.ctx)).use {
             onView(tagged("library:task")).perform(scrollTo(), click())
-            TestEnv.eventually { onView(tagged("task-date")).check(matches(isDisplayed())) }
+            TestEnv.eventually { onView(tagged("trigger-days:0")).check(matches(isDisplayed())) }
         }
         val c = TestEnv.store.checkins.single()
         assertTrue(c.isTask)
         assertEquals("Tasks", c.category)
+        assertEquals(Repeat.ONCE, c.times.single().days?.kind)
         assertNotNull("its alarm is set", AlarmScheduler.nextTriggerMillis(c))
     }
 }

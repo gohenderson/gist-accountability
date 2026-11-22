@@ -286,20 +286,28 @@ A voice check-in has **Play it now** instead.
 For things you only need to do once ("Call John"): **+ Add check-in → New task**, or turn
 on **One-time task** on any check-in's page.
 
-- A task is a check-in in every way (times, steps, questions, strict or soft, background,
-  arrive / leave and run triggers), except that its times ring **once, on its date**. A new
-  one rings at the next whole hour today, in the **Tasks** category.
-- **Doing it completes it**: finishing it (or dismissing it, if it's soft), from the alarm or
-  with **Do now**. It turns off and leaves the start page.
+- A task is a check-in in every way (triggers, steps, questions, strict or soft,
+  background), with one difference: **doing it once completes it**. That's finishing it (or
+  dismissing it, if it's soft), from the alarm or with **Do it now**. It turns off and
+  leaves the start page.
+- **When it rings** is up to its triggers. A new task gets one time trigger at the next
+  whole hour, with **Days: On a specific date** (today), so it rings once like any alarm.
+  Change the date or time there, or add arrive / leave and run triggers ("when I get to the
+  store: buy batteries"), which work any day until it's done.
+- **No triggers: a backlog item.** Remove its trigger and it never rings: it waits on the
+  start page (**Task · no set time**) until you tap **Do it now**.
 - **Done tasks** (at the bottom of the start page) lists them, most recent first, with when
   you did them and what you answered, so you can check whether you did something. **Put
   back** returns one to the list (pick a new date if it has passed); **Delete** removes it.
-- Its arrive / leave and run triggers work any day until it's done ("when I get to the
-  store: buy batteries").
-- A task whose date has passed without being done stays on the list, and its page says so.
+- A task whose times have passed without being done stays on the list with **Do it now**,
+  and its page says so.
 - Tasks don't count toward the overall score (each still has its own History).
-- Backups with a task are version 5, which the iPhone app can't read yet; backups without
-  one stay version 4.
+
+**On a specific date** works on any time trigger, not just tasks: a daily check-in can have
+one extra time that rings once.
+
+Backups with a task or a time on a specific date are version 5, which the iPhone app can't
+read yet; backups without them stay version 4.
 
 ## History, scores and logging
 

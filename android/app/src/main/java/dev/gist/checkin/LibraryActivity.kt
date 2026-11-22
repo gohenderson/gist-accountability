@@ -31,8 +31,9 @@ class LibraryActivity : BaseActivity() {
 
         val task = card()
         task.add(label("A one-time task", 20f, bold = true))
-        task.add(muted("\"Call John\": rings once, on a date, like any alarm. Once it's done it moves to " +
-            "Done tasks, at the bottom of the start page.", 14f), dp(2))
+        task.add(muted("\"Call John\": done once, then it moves to Done tasks (at the bottom of the start page). " +
+            "It rings at a time on a specific date like any alarm, or remove its trigger to keep it as a " +
+            "backlog item until you do it.", 14f), dp(2))
         task.add(primaryButton("New task") { add(Library.task(Store.newId())) }.apply {
             tag = "library:task"
         }, dp(10))

@@ -364,6 +364,21 @@ class MainActivity : BaseActivity() {
                 if (!c.voice) r.addWrapped(button("Do it now") { doItNow(c, next) }, dp(4)) // nothing to do for a voice
                 box.add(r)
                 card.add(box, dp(10))
+            } else if (c.isTask && !c.voice) {
+                // A task with no ring coming (no set time, or its time has passed): do it from here.
+                val box = column().apply {
+                    background = rounded(colorOf(R.color.surface_variant), 14)
+                    setPadding(dp(14), dp(10), dp(10), dp(10))
+                }
+                val r = row()
+                val passed = c.times.isNotEmpty()
+                r.addWeighted(label(if (passed) "Its time has passed" else "Task · no set time", 15f,
+                    color = if (passed) colorWarn else colorText).apply { tag = "next:${c.id}" })
+                r.addWrapped(button("Do it now") {
+                    startActivity(CheckinActivity.earlyIntent(this, c.id, Days.today(), AlarmScheduler.nearestTime(c).toString()))
+                }.apply { tag = "task-do:${c.id}" }, dp(4))
+                box.add(r)
+                card.add(box, dp(10))
             }
             if (c.events.isNotEmpty()) {
                 val box = column().apply {
