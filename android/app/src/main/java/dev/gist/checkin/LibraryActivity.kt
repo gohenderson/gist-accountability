@@ -29,6 +29,15 @@ class LibraryActivity : BaseActivity() {
         }, dp(10))
         col.add(own, dp(20))
 
+        val task = card()
+        task.add(label("A one-time task", 20f, bold = true))
+        task.add(muted("\"Call John\": rings once, on a date, like any alarm. Once it's done it moves to " +
+            "Done tasks, at the bottom of the start page.", 14f), dp(2))
+        task.add(primaryButton("New task") { add(Library.task(Store.newId())) }.apply {
+            tag = "library:task"
+        }, dp(10))
+        col.add(task, dp(12))
+
         for (category in Library.CATEGORIES) {
             col.add(sectionTitle(category), dp(24))
             Library.TEMPLATES.filter { it.category == category }.forEach { col.add(templateCard(it), dp(10)) }

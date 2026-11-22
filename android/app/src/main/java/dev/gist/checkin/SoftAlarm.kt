@@ -21,6 +21,8 @@ object SoftAlarm {
         val c = store.checkin(p.checkinId) ?: return
         if (!p.practice) store.markDismissed(p.day, c.id, p.time.ifEmpty { AlarmScheduler.nearestTime(c).toString() })
         store.removePending(p)
+        // Dismissing a soft task completes it: stop watching its places / runs too.
+        store.checkin(c.id)?.takeIf { it.taskDone }?.let { AlarmScheduler.schedule(context, it) }
         settle(context)
     }
 

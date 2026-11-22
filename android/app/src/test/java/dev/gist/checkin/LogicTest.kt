@@ -873,3 +873,44 @@ class TimingTest {
         assertNull(Timing.median(emptyList()))
     }
 }
+
+class TaskTest {
+    private val zone = ZoneId.of("America/New_York")
+    private fun at(y: Int, mo: Int, d: Int, h: Int, mi: Int) = ZonedDateTime.of(y, mo, d, h, mi, 0, 0, zone)
+    private val date = LocalDate.of(2026, 11, 23)
+    private val task = Checkin(
+        id = "t", name = "Call John",
+        // A per-time day rule left over from before it was a task is ignored: tasks ring on their date.
+        times = listOf(AlarmTime(15, 0, days = Repeat.weekly(setOf(1))), AlarmTime(9, 0)),
+        repeat = Repeat.once(date),
+    )
+
+    @Test
+    fun ringsOnlyOnItsDate() {
+        assertTrue(task.isTask)
+        assertFalse(task.taskDone)
+        val rings = AlarmScheduler.occurrences(task, at(2026, 11, 21, 8, 0), count = 10)
+        assertEquals(listOf("09:00", "15:00"), rings.map { it.time.toString() })
+        assertTrue(rings.all { it.day == "2026-11-23" })
+        assertTrue("after its date: nothing", AlarmScheduler.occurrences(task, at(2026, 11, 23, 16, 0)).isEmpty())
+    }
+
+    @Test
+    fun describesItsDate() {
+        assertTrue(Repeat.once(date).matches(date))
+        assertFalse(Repeat.once(date).matches(date.plusDays(7)))
+        assertEquals("once, on Mon, Nov 23", Repeat.once(date).describe().let { it.replace(", 2026", "") })
+        assertEquals("Tue, Nov 23, 2027", Repeat.dateText(LocalDate.of(2027, 11, 23), LocalDate.of(2026, 1, 1)))
+    }
+
+    @Test
+    fun newTasksRingAtTheNextHour() {
+        val t = Library.task("n", LocalDateTime.of(2026, 11, 21, 14, 20))
+        assertTrue(t.isTask)
+        assertEquals(listOf(AlarmTime(15, 0)), t.times)
+        assertEquals(LocalDate.of(2026, 11, 21), t.repeat.date)
+        val late = Library.task("n", LocalDateTime.of(2026, 11, 21, 23, 30))
+        assertEquals(listOf(AlarmTime(0, 0)), late.times)
+        assertEquals(LocalDate.of(2026, 11, 22), late.repeat.date)
+    }
+}

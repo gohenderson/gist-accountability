@@ -55,14 +55,17 @@ class MainActivity : BaseActivity() {
     private fun render() {
         val oldY = scroll?.pageScrollY ?: 0
         val col = column()
-        val checkins = store.checkins
+        val all = store.checkins
+        val checkins = all.filter { !it.taskDone } // done tasks have their own page
+        val doneTasks = all.count { it.taskDone }
 
         col.add(header("Gist", todayLong()))
 
         // Scores: each check-in's on-track share over the last week; groups and the page
         // average them (off check-ins aren't counted).
         val scores = checkins.associate { it.id to Score.of(it, store.allResults(it.id)) }
-        fun rollUp(list: List<Checkin>) = Score.average(list.filter { it.enabled }.map { scores[it.id] })
+        // Tasks are one-offs, so they don't count toward the score.
+        fun rollUp(list: List<Checkin>) = Score.average(list.filter { it.enabled && !it.isTask }.map { scores[it.id] })
         rollUp(checkins)?.let { overall ->
             val box = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
             box.addWrapped(label(Score.percent(overall), 40f, bold = true, color = scoreColor(overall)).apply {
@@ -147,6 +150,11 @@ class MainActivity : BaseActivity() {
             col.add(card().apply { add(muted("No check-ins yet. Add one to get started.", 15f)) }, dp(12))
         }
 
+        if (doneTasks > 0) {
+            col.add(outlineButton("Done tasks ($doneTasks)") {
+                startActivity(DoneTasksActivity.intent(this))
+            }.apply { tag = "done-tasks" }, dp(20))
+        }
         col.add(outlineButton("Settings · backup · appearance") { // what's inside, not the current theme
             startActivity(Intent(this, SettingsActivity::class.java))
         }, dp(28))

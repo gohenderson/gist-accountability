@@ -31,8 +31,14 @@ import java.time.Instant
  */
 object Backup {
     const val FORMAT = "gist-backup"
-    /** 4: questions can take a typed answer (number or text), saved under "v". */
-    const val VERSION = 4
+    /**
+     * 4: questions can take a typed answer (number or text), saved under "v".
+     * 5: one-time tasks (repeat kind "once" with a "date"; "doneAt" when done). Written only
+     *    when the backup has a task, so files without one stay readable by apps that read 4
+     *    (an app that doesn't know tasks would ring one every day).
+     */
+    const val VERSION = 5
+    private const val VERSION_WITHOUT_TASKS = 4
     /** The oldest this version reads (3 has no typed answers, so nothing to convert). */
     const val MIN_VERSION = 3
 
@@ -109,7 +115,7 @@ object Backup {
         }
         val root = JSONObject()
             .put("format", FORMAT)
-            .put("version", VERSION)
+            .put("version", if (checkins.any { it.isTask }) VERSION else VERSION_WITHOUT_TASKS)
             .put("exportedAt", Instant.now().toString())
             .put("checkins", arr)
             .put("entries", sortedByDay(entries))
@@ -117,7 +123,7 @@ object Backup {
         return Yaml.dump(
             root,
             header = "Gist backup. Import it with Settings → Import backup… (you choose what to bring in).\n" +
-                "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly.",
+                "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly / once (a task).",
         )
     }
 

@@ -63,8 +63,21 @@ object CheckinText {
     fun events(c: Checkin): String = c.events.joinToString("; ") { event(it) }
 
     /** One line for the start page, e.g. "7:00 AM · solve 3 math → answer 2 questions" */
+    /** When a task was done: "today 3:05 PM", "yesterday 9:00 AM", "Sat, Nov 21 3:05 PM". */
+    fun doneText(millis: Long): String {
+        val at = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+        val date = at.toLocalDate()
+        val day = when (date) {
+            LocalDate.now() -> "today"
+            LocalDate.now().minusDays(1) -> "yesterday"
+            else -> Repeat.dateText(date)
+        }
+        return "$day ${Days.time(at.hour, at.minute)}"
+    }
+
     fun oneLine(c: Checkin): String =
-        if (!c.enabled) "Off · ${steps(c)}" else "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
+        if (c.taskDone) "Done ${doneText(c.doneAt!!)} · ${steps(c)}"
+        else if (!c.enabled) "Off · ${steps(c)}" else "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
 
     /** Every trigger: times first, then events; e.g. "7:00 AM, Mon–Fri; when you arrive at Gym, once a day". */
     fun whenText(c: Checkin): String {
@@ -75,5 +88,6 @@ object CheckinText {
     }
 
     private fun repeatSuffix(c: Checkin): String =
-        if (c.repeat.kind == Repeat.DAILY || c.perTimeDays || c.times.any { it.usesLocation }) "" else ", ${c.repeat.describe()}"
+        if (c.isTask) ", ${c.repeat.describe()}"
+        else if (c.repeat.kind == Repeat.DAILY || c.perTimeDays || c.times.any { it.usesLocation }) "" else ", ${c.repeat.describe()}"
 }

@@ -385,9 +385,14 @@ class CheckinActivity : BaseActivity() {
         if (checkin.questions.isEmpty() && (forced || early) && !target.practice) {
             store.markDone(target.day, checkin.id, slot, early, took())
         }
+        // A task done (here or by its answers): stop its alarm and any place / run watching.
+        if (checkin.isTask && store.checkin(checkin.id)?.taskDone == true && !early) {
+            AlarmScheduler.schedule(this, store.checkin(checkin.id)!!)
+            toast("Task done: ${checkin.name}")
+        }
         if (early) {
-            AlarmScheduler.schedule(this, checkin) // skip this ring; arm the one after
-            toast("Done early. No alarm at ${Days.timeOf(slot)}.")
+            AlarmScheduler.schedule(this, store.checkin(checkin.id) ?: checkin) // skip this ring; arm the one after (a done task: none)
+            toast(if (checkin.isTask) "Task done: ${checkin.name}" else "Done early. No alarm at ${Days.timeOf(slot)}.")
             finish()
             return
         }
