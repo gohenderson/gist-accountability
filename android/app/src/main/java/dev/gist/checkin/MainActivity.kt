@@ -85,22 +85,38 @@ class MainActivity : BaseActivity() {
         val scores = checkins.associate { it.id to Score.of(it, store.allResults(it.id)) }
         // Tasks are one-offs, so they don't count toward the score.
         fun rollUp(list: List<Checkin>) = Score.average(list.filter { it.enabled && !it.isTask }.map { scores[it.id] })
-        rollUp(checkins)?.let { overall ->
-            val box = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-            box.addWrapped(label(Score.percent(overall), 40f, bold = true, color = scoreColor(overall)).apply {
-                tag = "overall-score"
-            })
-            box.addWeighted(muted("on track over the last ${Score.DAYS} days, across your check-ins", 14f), startMargin = dp(12))
-            col.add(box, dp(12))
+        // A summary per tab, always there so the tabs stay put when you switch.
+        val box = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        fun summary(big: String, color: Int, tag: String, text: String) {
+            box.addWrapped(label(big, 40f, bold = true, color = color).apply { this.tag = tag })
+            box.addWeighted(muted(text, 14f).apply { this.tag = "summary-text" }, startMargin = dp(12))
         }
+        val days = Score.DAYS
+        when (tab) {
+            Store.TAB_TASKS -> store.tasksDoneSince(days).let { n ->
+                summary("$n", colorGood, "tasks-done-count", "${if (n == 1) "task" else "tasks"} done in the last $days days")
+            }
+            Store.TAB_BACKLOG -> store.tasksBackloggedSince(days).let { n ->
+                summary("$n", colorPrimary, "backlog-added-count",
+                    "${if (n == 1) "task" else "tasks"} added to the backlog in the last $days days")
+            }
+            else -> when (val overall = rollUp(checkins)) {
+                null -> summary("–", colorMuted, "overall-score-none",
+                    "on track over the last $days days: shows once you've answered some check-ins")
+                else -> summary(Score.percent(overall), scoreColor(overall), "overall-score",
+                    "on track over the last $days days, across your check-ins")
+            }
+        }
+        col.add(box, dp(12))
 
         setupWarnings(col)
 
         col.add(tabs(tab), dp(28))
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
-        if (checkins.size > 1) {
-            // View (grouping and sort), and expand / collapse all (groups and check-ins).
+        run {
+            // View (grouping and sort), and expand / collapse all (groups and check-ins);
+            // always shown, so the list starts at the same place on every tab.
             val controls = row()
             controls.addWrapped(textButton("View: ${Grouping.sortName(store.sort)} ▾") { pickView() }.apply {
                 tag = "view-mode"
