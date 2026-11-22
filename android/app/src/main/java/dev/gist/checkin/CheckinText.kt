@@ -84,10 +84,9 @@ object CheckinText {
         val parts = mutableListOf<String>()
         if (c.times.isNotEmpty()) parts += times(c) + repeatSuffix(c)
         if (c.events.isNotEmpty()) parts += events(c)
-        return parts.joinToString("; ").ifEmpty { "no triggers" }
+        return parts.joinToString("; ").ifEmpty { if (c.task) "no set time" else "no triggers" }
     }
 
     private fun repeatSuffix(c: Checkin): String =
-        if (c.isTask) ", ${c.repeat.describe()}"
-        else if (c.repeat.kind == Repeat.DAILY || c.perTimeDays || c.times.any { it.usesLocation }) "" else ", ${c.repeat.describe()}"
+        if (c.repeat.kind == Repeat.DAILY || c.perTimeDays || c.times.any { it.usesLocation }) "" else ", ${c.repeat.describe()}"
 }

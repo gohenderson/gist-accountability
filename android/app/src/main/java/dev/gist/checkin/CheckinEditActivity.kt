@@ -103,18 +103,19 @@ class CheckinEditActivity : BaseActivity() {
         col.add(styledSwitch("One-time task").apply {
             isChecked = c.isTask
             tag = "task-switch"
-            setOnCheckedChangeListener { _, on ->
-                change {
-                    if (on) it.copy(repeat = Repeat.once(nextDate(it)), times = it.times.map { t -> t.copy(days = null) })
-                    else it.copy(repeat = Repeat.EVERY_DAY, doneAt = null)
-                }
-            }
+            setOnCheckedChangeListener { _, on -> change { it.copy(task = on, doneAt = null, enabled = true) } }
         }, dp(4))
         if (c.isTask) taskSection(col, c)
         // Triggers: each is one way this check-in rings, with its own conditions.
         val total = c.times.size + c.events.size
         if (total == 0) {
-            col.add(label("No triggers: it never rings on its own. Add one below.", 15f, color = colorWarn), dp(10))
+            if (c.isTask) {
+                col.add(label("No set time: it waits on the start page until you do it (Do it now).", 15f).apply {
+                    tag = "task-backlog"
+                }, dp(10))
+            } else {
+                col.add(label("No triggers: it never rings on its own. Add one below.", 15f, color = colorWarn), dp(10))
+            }
         }
         c.times.forEachIndexed { i, tm -> col.add(timeTriggerCard(c, i, tm, i), dp(10)) }
         c.events.forEachIndexed { j, ev -> col.add(eventTriggerCard(c, j, ev, c.times.size + j), dp(10)) }
@@ -546,10 +547,8 @@ class CheckinEditActivity : BaseActivity() {
         triggerHeader(card, n) { change { cur -> cur.copy(times = cur.times.filterIndexed { k, _ -> k != i }) } }
         field(card, "When", kindText(Trigger.TIME), "trigger-when:$n") { pickKind(c, n) }
         field(card, "Time", Days.time(tm.hour, tm.minute), "trigger-time:$n") { pickTime(c, i) }
-        if (!c.isTask) { // a task's times all ring on its date (above)
-            field(card, "Days", c.daysFor(tm).describe(), "trigger-days:$n") {
-                pickRepeat(c.daysFor(tm)) { rule -> setTime(i) { it.copy(days = rule) } }
-            }
+        field(card, "Days", c.daysFor(tm).describe(), "trigger-days:$n") {
+            pickRepeat(c.daysFor(tm), forTime = tm) { rule -> setTime(i) { it.copy(days = rule) } }
         }
         field(card, "Where", Trigger.whereText(tm.where, tm.place).replaceFirstChar { it.uppercase() }, "trigger-where:$n") {
             pickWhere(tm) { where ->
@@ -600,12 +599,10 @@ class CheckinEditActivity : BaseActivity() {
         return card
     }
 
-    /** A task's date and state: done (and when), or its date has passed. */
+    /** A task's state: done (and when), waiting with no set time (backlog), or its date has passed. */
     private fun taskSection(col: LinearLayout, c: Checkin) {
-        col.add(muted("Rings once, on its date, at each of its times. Doing it once (or dismissing it, if it's soft) " +
-            "completes it: it turns off and moves to Done tasks. Arrive / leave and run triggers work any day until then.", 13f), dp(2))
-        val date = c.repeat.date ?: java.time.LocalDate.now()
-        field(col, "Date", Repeat.dateText(date), "task-date") { pickTaskDate(date) }
+        col.add(muted("Done once, then it turns off and moves to Done tasks. Give it a time \"On a specific date\" " +
+            "to ring like any alarm, or no triggers to keep it on the start page until you do it.", 13f), dp(2))
         val doneAt = c.doneAt
         if (doneAt != null) {
             col.add(label("✓ Done ${CheckinText.doneText(doneAt)}", 15f, color = colorGood).apply { tag = "task-done" }, dp(8))
@@ -615,22 +612,21 @@ class CheckinEditActivity : BaseActivity() {
                 render()
             }.apply { tag = "task-reopen" }, dp(4))
         } else if (c.times.isNotEmpty() && AlarmScheduler.nextOpenOccurrence(store, c) == null) {
-            col.add(label("Its date has passed: it won't ring again. Pick a new date, or do it from the start page.", 14f,
+            col.add(label("Its times have passed: it won't ring again. Pick a new date, or do it from the start page.", 14f,
                 color = colorWarn).apply { tag = "task-overdue" }, dp(8))
         }
     }
 
-    /** For a new task: today if one of its times is still ahead, else tomorrow. */
-    private fun nextDate(c: Checkin): java.time.LocalDate {
-        val now = java.time.LocalTime.now()
+    /** Today if [time] is still ahead, else tomorrow. */
+    private fun nextDate(time: AlarmTime?): java.time.LocalDate {
         val today = java.time.LocalDate.now()
-        return if (c.times.isEmpty() || c.times.any { java.time.LocalTime.of(it.hour, it.minute).isAfter(now) }) today else today.plusDays(1)
+        return if (time == null || java.time.LocalTime.of(time.hour, time.minute).isAfter(java.time.LocalTime.now())) today
+        else today.plusDays(1)
     }
 
-    private fun pickTaskDate(cur: java.time.LocalDate) {
-        android.app.DatePickerDialog(this, { _, y, m, d ->
-            change { it.copy(repeat = Repeat.once(java.time.LocalDate.of(y, m + 1, d))) }
-        }, cur.year, cur.monthValue - 1, cur.dayOfMonth).apply {
+    private fun pickDate(cur: java.time.LocalDate, onPick: (java.time.LocalDate) -> Unit) {
+        android.app.DatePickerDialog(this, { _, y, m, d -> onPick(java.time.LocalDate.of(y, m + 1, d)) },
+            cur.year, cur.monthValue - 1, cur.dayOfMonth).apply {
             datePicker.minDate = System.currentTimeMillis() - 1000
         }.show()
     }
@@ -649,7 +645,9 @@ class CheckinEditActivity : BaseActivity() {
     /** A new trigger: a time an hour after the last one, every day (change anything after). */
     private fun addTrigger(c: Checkin) {
         val last = c.times.lastOrNull()
-        val t = AlarmTime(((last?.hour ?: 7) + if (last == null) 0 else 1) % 24, 0, days = if (c.isTask) null else c.repeat)
+        val hour = ((last?.hour ?: 7) + if (last == null) 0 else 1) % 24
+        // A task's new time rings once (on the next day it can); others repeat like the rest.
+        val t = AlarmTime(hour, 0, days = if (c.isTask) Repeat.once(nextDate(AlarmTime(hour, 0))) else c.repeat)
         change { cur -> cur.copy(times = (cur.times + t).distinct().sorted(), enabled = true) }
     }
 
@@ -928,9 +926,13 @@ class CheckinEditActivity : BaseActivity() {
 
     // ---------------------------------------------------------------- repeat
 
-    /** Picks a repeat rule starting from [cur]; [onPick] gets the new one. */
-    private fun pickRepeat(cur: Repeat, onPick: (Repeat) -> Unit) {
+    /**
+     * Picks a repeat rule starting from [cur]; [onPick] gets the new one. For a time trigger
+     * ([forTime]) there's also "On a specific date": it rings once.
+     */
+    private fun pickRepeat(cur: Repeat, forTime: AlarmTime? = null, onPick: (Repeat) -> Unit) {
         val current = when {
+            cur.kind == Repeat.ONCE -> 5
             cur.kind == Repeat.DAILY -> 0
             cur == Repeat.weekly(Repeat.WEEKDAYS) -> 1
             cur == Repeat.weekly(Repeat.WEEKENDS) -> 2
@@ -943,14 +945,15 @@ class CheckinEditActivity : BaseActivity() {
             DialogOption("Weekends (Sat & Sun)"),
             DialogOption("Specific days of the week…", "e.g. Mon, Wed, Fri, or every day but Tue"),
             DialogOption("Monthly on certain dates…", "e.g. the 1st and 15th, or the last day"),
-        )
-        pickDialog("Repeats", options, current) { i ->
+        ) + if (forTime != null) listOf(DialogOption("On a specific date…", "rings once, e.g. for a task")) else emptyList()
+        pickDialog("Repeats", options, current.takeIf { it < options.size } ?: 0) { i ->
             when (i) {
                 0 -> onPick(Repeat.EVERY_DAY)
                 1 -> onPick(Repeat.weekly(Repeat.WEEKDAYS))
                 2 -> onPick(Repeat.weekly(Repeat.WEEKENDS))
                 3 -> pickWeekdays(cur, onPick)
                 4 -> pickMonthDays(cur, onPick)
+                5 -> pickDate(cur.date ?: nextDate(forTime)) { onPick(Repeat.once(it)) }
             }
         }
     }
