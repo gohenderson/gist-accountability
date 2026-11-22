@@ -107,27 +107,17 @@ class PickTasksTest {
     }
 
     @Test
-    fun theBacklogIsHiddenUntilTicked() {
+    fun theBacklogIsHiddenUntilItsButtonIsOn() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), backlogTask("b", "Fix the fence"),
             Library.task("t").copy(name = "Call John", enabled = true)))
         TestEnv.store.collapsedCheckins = setOf("c", "b", "t")
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("checkin-title:t")).check(matches(isDisplayed())) // active task
             onView(tagged("checkin-title:b")).check(doesNotExist()) // backlog
-            onView(tagged("backlog-note")).check(matches(withText("1 task in the backlog · show")))
-
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:backlog")).inRoot(isDialog()).perform(scrollTo(), click())
+            onView(tagged("show:backlog")).perform(scrollTo(), click())
             onView(tagged("checkin-title:b")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("backlog-note")).check(doesNotExist())
-
-            // Without Tasks, Backlog can't be ticked (and shows nothing).
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:tasks")).inRoot(isDialog()).perform(scrollTo(), click())
+            onView(tagged("show:backlog")).perform(scrollTo(), click())
             onView(tagged("checkin-title:b")).check(doesNotExist())
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:backlog")).inRoot(isDialog()).perform(scrollTo()).check(matches(not(isEnabled())))
         }
-        assertFalse(TestEnv.store.showTasks)
     }
 }

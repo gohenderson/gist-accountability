@@ -466,17 +466,17 @@ class Store(context: Context) {
         get() = prefs.getString(K_VIEW, Grouping.UNGROUPED) ?: Grouping.UNGROUPED
         set(v) { prefs.edit().putString(K_VIEW, v).commit() }
 
-    /** Start page: show check-ins (everything that isn't a task)? At least one of these stays on. */
+    /** Start page: show check-ins (everything that isn't a task)? */
     var showCheckins: Boolean
-        get() = prefs.getBoolean(K_SHOW_CHECKINS, true) || !prefs.getBoolean(K_SHOW_TASKS, true)
-        set(v) { prefs.edit().putBoolean(K_SHOW_CHECKINS, v).apply { if (!v) putBoolean(K_SHOW_TASKS, true) }.commit() }
+        get() = prefs.getBoolean(K_SHOW_CHECKINS, true)
+        set(v) { prefs.edit().putBoolean(K_SHOW_CHECKINS, v).commit() }
 
-    /** Start page: show open tasks (and the Done tasks button)? */
+    /** Start page: show active tasks (and the Done tasks button)? */
     var showTasks: Boolean
-        get() = prefs.getBoolean(K_SHOW_TASKS, true) || !prefs.getBoolean(K_SHOW_CHECKINS, true)
-        set(v) { prefs.edit().putBoolean(K_SHOW_TASKS, v).apply { if (!v) putBoolean(K_SHOW_CHECKINS, true) }.commit() }
+        get() = prefs.getBoolean(K_SHOW_TASKS, true)
+        set(v) { prefs.edit().putBoolean(K_SHOW_TASKS, v).commit() }
 
-    /** Start page: show backlog tasks (tasks that are off) too? Only counts while [showTasks]. */
+    /** Start page: show backlog tasks (tasks that are off)? */
     var showBacklog: Boolean
         get() = prefs.getBoolean(K_SHOW_BACKLOG, false)
         set(v) { prefs.edit().putBoolean(K_SHOW_BACKLOG, v).commit() }

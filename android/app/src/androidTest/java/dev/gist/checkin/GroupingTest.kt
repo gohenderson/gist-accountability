@@ -419,50 +419,49 @@ class GroupingTest {
     }
 
     @Test
-    fun showCheckinsTasksOrBoth() {
-        val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList()) // on: active, not backlog
+    fun checkinsTasksAndBacklogButtons() {
+        val task = TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList()) // on: active
+        val backlog = TestEnv.checkin("b", "Fix the fence").copy(task = true, times = emptyList(), enabled = false)
         val done = TestEnv.checkin("d", "Done thing").copy(task = true, times = emptyList(), enabled = false,
             doneAt = System.currentTimeMillis())
-        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, done))
-        TestEnv.store.collapsedCheckins = setOf("c", "t")
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, backlog, done))
+        TestEnv.store.collapsedCheckins = setOf("c", "t", "b")
         main().use {
+            // By default: check-ins and active tasks; the backlog is hidden.
+            onView(tagged("show:checkins")).check(matches(withText("Check-ins · 1")))
+            onView(tagged("show:tasks")).check(matches(withText("Tasks · 1")))
+            onView(tagged("show:backlog")).check(matches(withText("Backlog · 1")))
             onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
             onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:b")).check(doesNotExist())
             onView(tagged("done-tasks")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("filter-note")).check(doesNotExist())
 
-            // Check-ins only: no tasks, and no Done tasks button.
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:tasks")).inRoot(isDialog()).check(matches(isChecked())).perform(click())
-            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+            // Tasks off: no active tasks, and no Done tasks button.
+            onView(tagged("show:tasks")).perform(scrollTo(), click())
             onView(tagged("checkin-title:t")).check(doesNotExist())
             onView(tagged("done-tasks")).check(doesNotExist())
-            onView(tagged("filter-note")).check(matches(withText("Showing check-ins only (no tasks)")))
             assertFalse(TestEnv.store.showTasks)
 
-            // Unticking check-ins too isn't allowed: one always stays.
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:checkins")).inRoot(isDialog()).perform(click())
-            onView(tagged("view:checkins")).inRoot(isDialog()).check(matches(isChecked()))
-            androidx.test.espresso.Espresso.pressBack()
-            assertTrue(TestEnv.store.showCheckins)
+            // Backlog on, on its own (Tasks still off).
+            onView(tagged("show:backlog")).perform(scrollTo(), click())
+            onView(tagged("checkin-title:b")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("checkin-title:t")).check(doesNotExist())
 
-            // Tasks only: the title says so, and Done tasks is back.
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:tasks")).inRoot(isDialog()).perform(click())
-            onView(tagged("view-mode")).perform(scrollTo(), click())
-            onView(tagged("view:checkins")).inRoot(isDialog()).perform(click())
-            onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
+            // Check-ins off too: just the backlog; the title says Tasks.
+            onView(tagged("show:checkins")).perform(scrollTo(), click())
             onView(tagged("checkin-title:c")).check(doesNotExist())
             onView(withText("TASKS")).check(matches(isDisplayed()))
-            onView(tagged("done-tasks")).perform(scrollTo()).check(matches(isDisplayed()))
 
-            // Show all.
-            onView(tagged("show-all")).perform(click())
-            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
-            onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
-            onView(tagged("filter-note")).check(doesNotExist())
+            // All off: nothing, with a hint.
+            onView(tagged("show:backlog")).perform(scrollTo(), click())
+            onView(withText("Nothing to show. Turn on Check-ins, Tasks or Backlog above.")).check(matches(isDisplayed()))
+
+            // And the View menu has none of these any more.
+            onView(tagged("view-mode")).perform(scrollTo(), click())
+            onView(tagged("view:tasks")).check(doesNotExist())
+            androidx.test.espresso.Espresso.pressBack()
         }
+        assertFalse(TestEnv.store.showCheckins || TestEnv.store.showTasks || TestEnv.store.showBacklog)
     }
 
     @Test
