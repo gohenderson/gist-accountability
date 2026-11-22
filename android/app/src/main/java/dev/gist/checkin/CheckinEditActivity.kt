@@ -547,7 +547,7 @@ class CheckinEditActivity : BaseActivity() {
         triggerHeader(card, n) { change { cur -> cur.copy(times = cur.times.filterIndexed { k, _ -> k != i }) } }
         field(card, "When", kindText(Trigger.TIME), "trigger-when:$n") { pickKind(c, n) }
         field(card, "Time", Days.time(tm.hour, tm.minute), "trigger-time:$n") { pickTime(c, i) }
-        field(card, "Days", c.daysFor(tm).describe().replaceFirstChar { it.uppercase() }, "trigger-days:$n") {
+        field(card, "Days", c.daysFor(tm).describe(), "trigger-days:$n") {
             pickRepeat(c.daysFor(tm), forTime = tm) { rule -> setTime(i) { it.copy(days = rule) } }
         }
         field(card, "Where", Trigger.whereText(tm.where, tm.place).replaceFirstChar { it.uppercase() }, "trigger-where:$n") {
