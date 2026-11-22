@@ -68,6 +68,10 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   - you can drag cards within a section;
   - drag a **group** by the ≡ on its header to move it above or below the others;
   - tap a group's header to collapse or expand it.
+- **Show** (in the same View menu): **Check-ins** and **Tasks**, both ticked by default.
+  Untick one to hide it: check-ins are everything that isn't a task, and hidden ones still
+  ring. With tasks hidden, the **Done tasks** button goes too. One always stays ticked.
+  While something is hidden, a line above the list says so, with **Show all**.
 - **Sort** (in the same View menu) orders the check-ins, within each group when grouped:
   - **My order** (the default): as you've dragged them.
   - **Next alarm:** soonest ring first.

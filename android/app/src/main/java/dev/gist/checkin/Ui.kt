@@ -312,10 +312,20 @@ fun Context.pickDialog(
     return dialog
 }
 
-/** A checkbox drawn as a tile (for lists of things to tick). */
+/**
+ * A checkbox drawn as a tile (for lists of things to tick). With a [detail], it's styled like
+ * an option tile's: the label bold, the detail smaller and muted below it.
+ */
 fun Context.checkTile(text: String, checked: Boolean, detail: String? = null): android.widget.CheckBox =
     android.widget.CheckBox(this).apply {
-        this.text = if (detail == null) text else "$text\n$detail"
+        this.text = if (detail == null) text else android.text.SpannableStringBuilder().apply {
+            append(text, android.text.style.StyleSpan(Typeface.BOLD), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            append("\n")
+            val start = length
+            append(detail)
+            setSpan(android.text.style.AbsoluteSizeSpan(13, true), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(android.text.style.ForegroundColorSpan(colorMuted), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
         isChecked = checked
         setTextColor(colorText)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
