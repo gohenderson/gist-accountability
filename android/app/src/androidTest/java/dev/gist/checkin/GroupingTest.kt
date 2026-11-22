@@ -428,9 +428,9 @@ class GroupingTest {
         TestEnv.store.collapsedCheckins = setOf("c", "t", "b")
         main().use {
             // By default: check-ins and active tasks; the backlog is hidden.
-            onView(tagged("show:checkins")).check(matches(withText("Check-ins · 1")))
-            onView(tagged("show:tasks")).check(matches(withText("Tasks · 1")))
-            onView(tagged("show:backlog")).check(matches(withText("Backlog · 1")))
+            onView(tagged("show:checkins")).check(matches(withText("Check-ins")))
+            onView(tagged("show:tasks")).check(matches(withText("Tasks")))
+            onView(tagged("show:backlog")).check(matches(withText("Backlog")))
             onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
             onView(tagged("checkin-title:t")).check(matches(isDisplayed()))
             onView(tagged("checkin-title:b")).check(doesNotExist())

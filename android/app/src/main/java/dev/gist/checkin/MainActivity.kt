@@ -93,7 +93,7 @@ class MainActivity : BaseActivity() {
         bar.addWeighted(sectionTitle(if (showCheckins || !(showTasks || showBacklog)) "Check-ins" else "Tasks"))
         bar.addWrapped(primaryButton("+ Add check-in") { addCheckin() })
         col.add(bar, dp(28))
-        col.add(showTabs(open), dp(12))
+        col.add(showTabs(), dp(12))
         val grouped = store.view == Grouping.BY_CATEGORY
         val groups = if (grouped) Grouping.byCategory(checkins, store.groupOrder) else emptyList()
         if (open.size > 1) {
@@ -270,16 +270,16 @@ class MainActivity : BaseActivity() {
 
     /**
      * Check-ins, Tasks and Backlog, side by side like tabs: each shows or hides its kind on its
-     * own (any mix, even none). Lit when on. Check-ins are everything that isn't a task (they
+     * own (any mix, even none). Lit when on. No counts: they're filters, not targets. Check-ins are everything that isn't a task (they
      * still ring when hidden); Tasks are active tasks (and the Done tasks button); Backlog is
      * tasks that are off.
      */
-    private fun showTabs(open: List<Checkin>): LinearLayout {
+    private fun showTabs(): LinearLayout {
         val r = row()
-        fun tab(label: String, key: String, on: Boolean, count: Int, set: (Boolean) -> Unit) {
-            val b = toggleTab("$label · $count", on).apply {
+        fun tab(label: String, key: String, on: Boolean, set: (Boolean) -> Unit) {
+            val b = toggleTab(label, on).apply {
                 tag = "show:$key"
-                contentDescription = "$label, $count, ${if (on) "shown" else "hidden"}"
+                contentDescription = "$label, ${if (on) "shown" else "hidden"}"
                 setOnClickListener {
                     set(!on)
                     render()
@@ -287,9 +287,9 @@ class MainActivity : BaseActivity() {
             }
             r.addWeighted(b, startMargin = if (r.childCount == 0) 0 else dp(8))
         }
-        tab("Check-ins", "checkins", store.showCheckins, open.count { !it.isTask }) { store.showCheckins = it }
-        tab("Tasks", "tasks", store.showTasks, open.count { it.isTask && !it.inBacklog }) { store.showTasks = it }
-        tab("Backlog", "backlog", store.showBacklog, open.count { it.inBacklog }) { store.showBacklog = it }
+        tab("Check-ins", "checkins", store.showCheckins) { store.showCheckins = it }
+        tab("Tasks", "tasks", store.showTasks) { store.showTasks = it }
+        tab("Backlog", "backlog", store.showBacklog) { store.showBacklog = it }
         return r
     }
 
