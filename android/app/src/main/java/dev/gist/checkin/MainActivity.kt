@@ -220,8 +220,9 @@ class MainActivity : BaseActivity() {
             render()
         }
         members.forEach { c ->
-            val handle = label("≡", 24f, color = colorMuted).apply {
-                // No font padding or extra line height: the handle mustn't make the card taller.
+            val handle = label("≡", 20f, color = colorMuted).apply {
+                // No font padding or extra line height, and no bigger than the title: the
+                // handle mustn't make the card taller.
                 includeFontPadding = false
                 setLineSpacing(0f, 1f)
                 setPadding(0, 0, dp(12), 0)
