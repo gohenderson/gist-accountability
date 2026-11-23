@@ -200,7 +200,7 @@ class LockScreenTest {
         }
         TestEnv.readyDevice()
         TestEnv.eventually(15_000) { assertTrue("the check-in's page is in front", resumed().any { it is CheckinEditActivity }) }
-        assertNotNull("the page is drawn", device.wait(Until.findObject(By.scrollable(true)), 10_000))
+        assertNotNull("the page is drawn", device.wait(Until.findObject(By.pkg(TestEnv.ctx.packageName)), 10_000))
         // Scroll back up to the Details card (a hung page wouldn't move). If the notification
         // shade has the focus, nothing scrolls: close it and try again once. Details is open
         // unless the Try it card was opened instead.

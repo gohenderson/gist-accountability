@@ -41,6 +41,7 @@ class EarlyAndSkipTest {
 
     private fun setUp(c: Checkin): Occurrence {
         TestEnv.reset(listOf(c))
+        TestEnv.store.expandedCheckin = c.id // its card open, with Skip and Do it now
         AlarmScheduler.schedule(TestEnv.ctx, c)
         return AlarmScheduler.nextOpenOccurrence(TestEnv.store, c)!!
     }

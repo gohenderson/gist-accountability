@@ -179,7 +179,7 @@ class TaskTest {
             // Check-ins with no answers yet: a placeholder, and View for just one item.
             onView(tagged("overall-score-none")).check(matches(isDisplayed()))
             onView(tagged("view-mode")).check(matches(isDisplayed()))
-            onView(tagged("toggle-all")).check(matches(isDisplayed()))
+            onView(tagged("toggle-all")).check(doesNotExist()) // only for groups
             // Tasks: done this week (no active tasks, and View is still there).
             onView(tagged("tab:tasks")).perform(click())
             onView(tagged("tasks-done-count")).check(matches(withText("1")))
