@@ -55,8 +55,9 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   **Skip** and **Do it now**), its triggers and steps, its last-7-days stat, and
   **History** / **Edit**.
   - **Cards open one at a time.** Folded, a card is one line: its name, next ring (or
-    **Waiting**, for a no-alarm one that came due) and switch. Tap a title to open that card;
-    whichever was open folds. Tap the open one to fold it too. New ones start folded.
+    **Waiting**, for a no-alarm one that came due) and switch. Tap a card (its title or anywhere
+    that isn't a button or switch) to open it; whichever was open folds. Tap the open one to
+    fold it too. New ones start folded.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
 - **View** (above the list, on every tab) holds both how the list is
   grouped and how it's sorted. Each choice applies right away. The button shows the

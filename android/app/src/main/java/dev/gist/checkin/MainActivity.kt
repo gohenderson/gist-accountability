@@ -419,9 +419,12 @@ class MainActivity : BaseActivity() {
     private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
         card.tag = "card:${c.id}"
+        // Tapping anywhere on the card folds it, like its title; its buttons and switch keep their own taps.
+        card.isClickable = true
+        card.setOnClickListener { toggleFolded(c) }
 
         card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
-        card.add(muted(CheckinText.oneLine(c)), dp(2))
+        card.add(muted(CheckinText.oneLine(c)).apply { tag = "summary:${c.id}" }, dp(2))
 
         if (c.soft) {
             card.add(muted("Soft alarm · not counted in stats", 13f).apply { tag = "soft-note:${c.id}" }, dp(4))

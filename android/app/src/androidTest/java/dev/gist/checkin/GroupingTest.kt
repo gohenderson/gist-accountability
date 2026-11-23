@@ -10,12 +10,14 @@ import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
 import androidx.test.espresso.matcher.ViewMatchers.isChecked
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -587,5 +589,28 @@ class GroupingTest {
                 assertEquals("a circle", plus.height, plus.width)
             }
         }
+    }
+
+    @Test
+    fun tappingACardsBodyFoldsItButItsButtonsDontFold() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        TestEnv.store.expandedCheckin = "a"
+        main().use {
+            // Its buttons do their own thing (History opens; back leaves the card open).
+            onView(allOf(withText("History"), isDescendantOfA(tagged("card:a")))).perform(scrollTo(), click())
+            TestEnv.eventually { onView(withText("History · last 30 days")).check(matches(isDisplayed())) }
+            androidx.test.espresso.Espresso.pressBack()
+            onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            // A plain line of text on the card folds it.
+            onView(tagged("summary:a")).perform(scrollTo(), click())
+            onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertNull(TestEnv.store.expandedCheckin)
+        // And the body of a folded row opens it.
+        main().use {
+            onView(tagged("next-line:b")).perform(scrollTo(), click())
+            onView(tagged("card:b")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertEquals("b", TestEnv.store.expandedCheckin)
     }
 }
