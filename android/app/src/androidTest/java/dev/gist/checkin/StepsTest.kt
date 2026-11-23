@@ -29,6 +29,7 @@ class StepsTest {
     fun tearDown() = TestEnv.reset(emptyList())
 
     private fun edit(id: String) = ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, id))
+        .also { TestEnv.openSection(CheckinEditActivity.SECTION_STEPS) }
 
     private fun kinds() = TestEnv.store.checkin("c")!!.steps.map { it.kind }
 

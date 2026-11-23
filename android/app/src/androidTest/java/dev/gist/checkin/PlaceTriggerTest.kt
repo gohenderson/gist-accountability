@@ -154,6 +154,7 @@ class PlaceTriggerTest {
     fun choosingArriveAndTypingCoordinatesOnTheEditPage() {
         TestEnv.reset(listOf(TestEnv.checkin("g", "Gym")))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "g")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-when:0")).perform(scrollTo(), click())
             onView(withText("When I arrive at a place")).inRoot(isDialog()).perform(click())
             onView(withText("Enter coordinates…")).inRoot(isDialog()).perform(click())

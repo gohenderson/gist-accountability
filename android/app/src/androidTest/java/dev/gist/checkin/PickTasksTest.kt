@@ -110,7 +110,6 @@ class PickTasksTest {
     fun theBacklogIsItsOwnTab() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), backlogTask("b", "Fix the fence"),
             Library.task("t").copy(name = "Call John", enabled = true)))
-        TestEnv.store.collapsedCheckins = setOf("c", "b", "t")
         TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("checkin-title:t")).check(matches(isDisplayed())) // active task

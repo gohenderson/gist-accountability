@@ -8,6 +8,10 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.View
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matcher
@@ -129,6 +133,18 @@ object TestEnv {
     }
 
     /** Retries [block] until it stops throwing or [timeoutMs] passes (for async UI updates). */
+    /**
+     * Opens a section card on a check-in's page (CheckinEditActivity.SECTION_*), unless it's
+     * already open. They open one at a time; Details is open to start.
+     */
+    fun openSection(key: String) {
+        try {
+            onView(tagged("section-chevron:$key")).check(matches(withText("▾")))
+        } catch (e: Throwable) {
+            onView(tagged("section-header:$key")).perform(scrollTo(), click())
+        }
+    }
+
     fun eventually(timeoutMs: Long = 5_000, block: () -> Unit) {
         val deadline = SystemClock.uptimeMillis() + timeoutMs
         while (true) {

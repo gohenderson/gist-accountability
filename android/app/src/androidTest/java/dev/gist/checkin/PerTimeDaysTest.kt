@@ -42,6 +42,7 @@ class PerTimeDaysTest {
         TestEnv.reset(listOf(TestEnv.checkin("t", "Wake").copy(times = listOf(AlarmTime(4, 0), AlarmTime(4, 45)))))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "t")).use {
             // 4:00 AM → Tuesdays only.
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Specific days of the week…")).inRoot(isDialog()).perform(click())
             for (d in listOf("Monday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")) {

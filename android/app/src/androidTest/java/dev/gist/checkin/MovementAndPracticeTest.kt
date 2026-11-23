@@ -84,6 +84,7 @@ class MovementTriggerTest {
     fun choosingFinishRunningAndAMinimumOnTheEditPage() {
         TestEnv.reset(listOf(TestEnv.checkin("r", "After")))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "r")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-when:0")).perform(scrollTo(), click())
             onView(tagged("kind:run-end")).inRoot(isDialog()).perform(click())
             onView(tagged("trigger-min-run:0")).perform(scrollTo(), click())

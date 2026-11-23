@@ -8,6 +8,7 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,6 +54,9 @@ class QuietTest {
         // The start page shows it waiting (and doesn't jump to the alarm screen); dismissing a soft task completes it.
         TestEnv.store.startTab = Store.TAB_TASKS
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
+            // Folded, it says so; open it to see the Waiting box.
+            onView(tagged("next-line:q")).check(matches(withText(org.hamcrest.Matchers.startsWith("Waiting · "))))
+            onView(tagged("checkin-title:q")).perform(click())
             onView(tagged("waiting:q")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("waiting-dismiss:q")).perform(click())
         }

@@ -31,16 +31,24 @@ class CheckinEditActivity : BaseActivity() {
     private lateinit var store: Store
     private lateinit var checkinId: String
     private var scroll: ScrollView? = null
+    /** The one section card that's open (the rest show just their title); Details to start. */
+    private var openSection: String? = SECTION_DETAILS
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
+        if (savedInstanceState != null) openSection = savedInstanceState.getString(STATE_SECTION)
         val extra = intent.getStringExtra(EXTRA_ID)
         if (extra == null || store.checkin(extra) == null) {
             finish()
             return
         }
         checkinId = extra
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_SECTION, openSection)
     }
 
     override fun onResume() {
@@ -70,8 +78,8 @@ class CheckinEditActivity : BaseActivity() {
             col.add(box, dp(8))
         }
 
-        // Name: saved as you type (no redraw, so the keyboard stays put).
-        col = section(page, "Name")
+        // Details: name and description are saved as you type (no redraw, so the keyboard stays put).
+        col = section(page, SECTION_DETAILS, "Details")
         val name = EditText(this).apply {
             setText(c.name)
             hint = "e.g. Starting the Day"
@@ -90,10 +98,32 @@ class CheckinEditActivity : BaseActivity() {
             })
         }
         col.add(name, dp(2))
+        col.add(EditText(this).apply {
+            setText(c.description)
+            hint = "Description: what it's about, notes"
+            tag = "checkin-description"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            isSingleLine = false
+            minLines = 2
+            maxLines = 8
+            gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    val d = s?.toString()?.trim().orEmpty()
+                    store.updateCheckin(checkinId) { it.copy(description = d) }
+                }
+            })
+        }, dp(8))
+        col.add(button("Time commitment: ${Checkin.timeCommitmentName(c.timeCommitment) ?: "not set"}") {
+            pickTimeCommitment(c)
+        }.apply { tag = "time-commitment" }, dp(8))
         col.add(button("Category: ${c.category.ifBlank { "none" }}") { pickCategory(c) }.apply { tag = "category" }, dp(8))
 
         // Schedule
-        col = section(page, "Schedule")
+        col = section(page, SECTION_SCHEDULE, "Schedule")
         val sw = styledSwitch("Alarm on").apply {
             isChecked = c.enabled
             // Turning a done task back on puts it back on the list.
@@ -152,7 +182,7 @@ class CheckinEditActivity : BaseActivity() {
         if (!c.voice) whileItRings(page, c) // a voice check-in doesn't ring
 
         // Commitment (strict, soft or voice), then the steps, or for a voice what it says.
-        col = section(page, if (c.voice) "What it says" else "When it rings")
+        col = section(page, SECTION_STEPS, if (c.voice) "What it says" else "When it rings")
         col.add(button("Commitment: ${commitmentName(c.commitment)}") { pickCommitment(c) }.apply { tag = "commitment" }, dp(4))
         col.add(muted(commitmentDetail(c.commitment), 13f).apply { tag = "commitment-detail" }, dp(2))
         if (c.soft) {
@@ -165,7 +195,7 @@ class CheckinEditActivity : BaseActivity() {
         }
 
         // Test & delete
-        col = section(page, "Try it")
+        col = section(page, SECTION_TRY, "Try it")
         if (c.voice) {
             col.add(button("Play it now") { playNow() }.apply { tag = "test-voice" }, dp(4))
         } else {
@@ -197,12 +227,39 @@ class CheckinEditActivity : BaseActivity() {
         col.add(button("+ Add step") { addStep(c) }.apply { tag = "add-step" }, dp(10))
     }
 
-    /** Starts a new card on [page] with a small title; returns it to add the section's content to. */
-    private fun section(page: LinearLayout, title: String): LinearLayout {
-        val card = card()
-        card.add(sectionTitle(title))
+    /**
+     * Starts a new card on [page] with a small title that opens or folds it. Only one is open
+     * at a time: opening one folds the others. Returns where the section's content goes (for a
+     * folded one, somewhere that isn't shown).
+     */
+    private fun section(page: LinearLayout, key: String, title: String): LinearLayout {
+        val open = openSection == key
+        val card = card().apply { tag = "section:$key" }
+        val head = row().apply {
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            isClickable = true
+            tag = "section-header:$key"
+            contentDescription = "$title, ${if (open) "expanded" else "collapsed"}"
+            setPadding(0, dp(4), 0, dp(4))
+            setOnClickListener {
+                openSection = if (open) null else key
+                render()
+            }
+        }
+        head.addWeighted(sectionTitle(title))
+        head.addWrapped(label(if (open) "▾" else "▸", 18f, color = colorMuted).apply { tag = "section-chevron:$key" })
+        card.add(head)
         page.add(card, dp(14))
-        return card
+        return if (open) card else column()
+    }
+
+    private fun pickTimeCommitment(c: Checkin) {
+        val options = listOf(DialogOption("Not set", tag = "time-commitment:none")) +
+            Checkin.TIME_COMMITMENTS.map { (k, name) -> DialogOption(name, tag = "time-commitment:$k") }
+        val current = Checkin.TIME_COMMITMENTS.indexOfFirst { it.first == c.timeCommitment } + 1
+        pickDialog("Time commitment", options, current) { i ->
+            change { it.copy(timeCommitment = if (i == 0) "" else Checkin.TIME_COMMITMENTS[i - 1].first) }
+        }
     }
 
     /** One step: drag handle, number and name, what it's set to. Tap to open its page. */
@@ -248,7 +305,7 @@ class CheckinEditActivity : BaseActivity() {
     /** Update this check-in, re-arm its alarm, redraw. */
     /** Sound, background and caption: what the alarm screen looks and sounds like. */
     private fun whileItRings(page: LinearLayout, c: Checkin) {
-        val col = section(page, "While it rings")
+        val col = section(page, SECTION_RINGS, "While it rings")
         col.add(button("Sound: ${soundName(c)}") { pickSoundMode(c) }.apply { tag = "sound" }, dp(4))
         val photoCount = Backgrounds.photos(this, checkinId).size
         col.add(
@@ -1146,6 +1203,12 @@ class CheckinEditActivity : BaseActivity() {
 
     companion object {
         private const val EXTRA_ID = "checkinId"
+        private const val STATE_SECTION = "openSection"
+        const val SECTION_DETAILS = "details"
+        const val SECTION_SCHEDULE = "schedule"
+        const val SECTION_RINGS = "rings"
+        const val SECTION_STEPS = "steps"
+        const val SECTION_TRY = "try"
         private const val REQ_SOUND = 5
         private const val REQ_IMAGE = 6
         private const val REQ_IMAGES = 7
