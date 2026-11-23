@@ -513,22 +513,38 @@ class GroupingTest {
     }
 
     @Test
-    fun checkinsHaveADotAndTasksASquare() {
+    fun checkinsHaveADotAndTasksNone() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList())))
         main().use { scenario ->
-            fun shape(id: String): Int {
-                var s = -1
-                scenario.onActivity { act ->
-                    s = (act.window.decorView.findViewWithTag<View>("marker:$id").background as android.graphics.drawable.GradientDrawable).shape
-                }
-                return s
-            }
             onView(tagged("card:c")).perform(scrollTo())
-            assertEquals(android.graphics.drawable.GradientDrawable.OVAL, shape("c"))
+            scenario.onActivity { act ->
+                val dot = act.window.decorView.findViewWithTag<View>("marker:c")
+                assertEquals(android.graphics.drawable.GradientDrawable.OVAL,
+                    (dot.background as android.graphics.drawable.GradientDrawable).shape)
+            }
             onView(tagged("tab:tasks")).perform(click())
             onView(tagged("card:t")).perform(scrollTo())
-            assertEquals(android.graphics.drawable.GradientDrawable.RECTANGLE, shape("t"))
-            onView(tagged("checkin-header:t")).check(matches(withContentDescription(org.hamcrest.Matchers.startsWith("Task: Call John"))))
+            onView(tagged("marker:t")).check(doesNotExist())
         }
+    }
+
+    @Test
+    fun theDragHandleDoesNotMakeCardsTaller() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Daily"), TestEnv.checkin("b", "Evening")))
+        fun heights(sort: String): List<Int> {
+            TestEnv.store.sort = sort
+            var h = emptyList<Int>()
+            main().use { scenario ->
+                onView(tagged("card:a")).perform(scrollTo())
+                scenario.onActivity { act ->
+                    val root = act.window.decorView
+                    h = listOf("checkin-header:a", "card:a").map { root.findViewWithTag<View>(it).height }
+                }
+            }
+            return h
+        }
+        val custom = heights(Grouping.SORT_CUSTOM) // with ≡ handles
+        val byName = heights(Grouping.SORT_NAME)   // without
+        assertEquals("title line and card are the same height either way", byName, custom)
     }
 }

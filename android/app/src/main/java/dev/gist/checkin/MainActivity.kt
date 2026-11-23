@@ -104,7 +104,7 @@ class MainActivity : BaseActivity() {
                 null -> summary("–", colorMuted, "overall-score-none",
                     "on track over the last $days days: shows once you've answered some check-ins")
                 else -> summary(Score.percent(overall), scoreColor(overall), "overall-score",
-                    "on track over the last $days days, across your check-ins")
+                    "on track over the last $days days")
             }
         }
         col.add(box, dp(12))
@@ -161,6 +161,8 @@ class MainActivity : BaseActivity() {
                     }
                 }
                 val handle = label("≡", 22f, color = colorMuted).apply {
+                    includeFontPadding = false
+                    setLineSpacing(0f, 1f)
                     setPadding(0, 0, dp(12), 0)
                     tag = "drag-group:$category"
                     contentDescription = "Drag to reorder the $category group"
@@ -218,7 +220,11 @@ class MainActivity : BaseActivity() {
             render()
         }
         members.forEach { c ->
-            val handle = label("≡", 24f, color = colorMuted).apply {
+            val handle = label("≡", 20f, color = colorMuted).apply {
+                // No font padding or extra line height, and no bigger than the title: the
+                // handle mustn't make the card taller.
+                includeFontPadding = false
+                setLineSpacing(0f, 1f)
                 setPadding(0, 0, dp(12), 0)
                 tag = "drag-checkin:${c.id}"
                 contentDescription = "Drag to reorder ${c.name}"
@@ -323,23 +329,16 @@ class MainActivity : BaseActivity() {
     private fun scoreColor(score: Double) = Score.color(score, colorOf(R.color.bad), colorOf(R.color.good))
 
     /**
-     * What's left of the title: a check-in's dot, filled with its score's color (an empty ring
-     * until it has a score), or a task's square, like a box to tick (dimmer while in the backlog).
+     * What's left of a check-in's title: a dot filled with its score's color (an empty ring
+     * until it has a score). Tasks have none: they're on their own tabs.
      */
-    private fun marker(c: Checkin, score: Double?): View = View(this).apply {
-        tag = "marker:${c.id}"
+    private fun marker(score: Double?): View = View(this).apply {
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         background = GradientDrawable().apply {
-            if (c.isTask) {
-                cornerRadius = dp(3).toFloat()
-                setStroke(dp(2), if (c.inBacklog) colorMuted else colorPrimary)
-            } else {
-                shape = GradientDrawable.OVAL
-                if (score != null) setColor(scoreColor(score)) else setStroke(dp(2), colorMuted)
-            }
+            shape = GradientDrawable.OVAL
+            if (score != null) setColor(scoreColor(score)) else setStroke(dp(2), colorMuted)
         }
-        val size = dp(if (c.isTask) 14 else 12)
-        layoutParams = LinearLayout.LayoutParams(size, size)
+        layoutParams = LinearLayout.LayoutParams(dp(12), dp(12))
     }
 
     /** Folds or unfolds a check-in's card. */
@@ -351,7 +350,7 @@ class MainActivity : BaseActivity() {
 
     /**
      * A check-in's title line: drag handle, its dot (a check-in's, in its score's color; the
-     * number is only read out, and shown on its page) or a task's square, name, chevron and
+     * number is only read out, and shown on its page; tasks have none), name, chevron and
      * on/off switch. Tapping it
      * folds the card to this line (plus the next ring) or unfolds it again.
      */
@@ -363,8 +362,10 @@ class MainActivity : BaseActivity() {
             (score?.let { ", ${Score.percent(it)} on track" } ?: "")
         setOnClickListener { toggleFolded(c) }
         handle?.let { addWrapped(it) }
-        val m = marker(c, score)
-        addView(m, (m.layoutParams as LinearLayout.LayoutParams).apply { marginEnd = dp(10) })
+        if (!c.isTask) {
+            val m = marker(score).apply { tag = "marker:${c.id}" }
+            addView(m, (m.layoutParams as LinearLayout.LayoutParams).apply { marginEnd = dp(10) })
+        }
         addWeighted(label(c.name, size, bold = true).apply {
             maxLines = if (folded) 1 else 3
             ellipsize = android.text.TextUtils.TruncateAt.END
