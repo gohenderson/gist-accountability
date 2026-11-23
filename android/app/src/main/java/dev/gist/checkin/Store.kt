@@ -126,6 +126,8 @@ data class Checkin(
     val description: String = "",
     /** Roughly how long it takes: one of [TIME_COMMITMENTS], or "" if not set. */
     val timeCommitment: String = "",
+    /** A follow-up task: the id of the task it continues ("Sand the patch" → "Replace the liner"). */
+    val followsUp: String? = null,
 ) {
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
@@ -419,6 +421,49 @@ class Store(context: Context) {
         pending = pending.filter { it.checkinId != id || it.practice }
     }
 
+    /**
+     * A follow-up to task [sourceId]: a new task that continues it, with its name, description,
+     * category, time commitment, commitment, sound, snooze and steps (fresh ids), but no
+     * triggers (you set when). [active]: on today's list, or in the backlog. Null if there's
+     * no such check-in.
+     */
+    fun createFollowUp(sourceId: String, active: Boolean, newId: String = Store.newId()): Checkin? {
+        val src = checkin(sourceId) ?: return null
+        val c = Checkin(
+            id = newId,
+            name = followUpName(src.name),
+            times = emptyList(),
+            enabled = active,
+            steps = src.steps.map { it.copy(id = Store.newId()) },
+            soundUri = src.soundUri,
+            soundTitle = src.soundTitle,
+            category = src.category,
+            commitment = src.commitment,
+            snoozeMinutes = src.snoozeMinutes,
+            voiceSource = src.voiceSource,
+            voiceText = src.voiceText,
+            voiceHeadphonesOnly = src.voiceHeadphonesOnly,
+            task = true,
+            description = src.description,
+            timeCommitment = src.timeCommitment,
+            followsUp = src.id,
+        )
+        // Right after the task it follows, so My order keeps them together.
+        val list = checkins.toMutableList()
+        list.add(list.indexOfFirst { it.id == sourceId } + 1, c)
+        checkins = list
+        return c
+    }
+
+    /**
+     * "(Follow-Up) Sand the patch": the prefix makes it plain you're on the new task, not the
+     * old one. A follow-up of a follow-up gets just the one prefix.
+     */
+    fun followUpName(name: String): String = FOLLOW_UP_PREFIX + name.removePrefix(FOLLOW_UP_PREFIX)
+
+    /** Tasks that follow up [id]. */
+    fun followUpsOf(id: String): List<Checkin> = checkins.filter { it.followsUp == id }
+
     /** Puts done task [id] back on the list (on again; change its date if it has passed). */
     fun reopenTask(id: String) = updateCheckin(id) { if (it.isTask) it.copy(enabled = true, doneAt = null) else it }
 
@@ -681,6 +726,7 @@ class Store(context: Context) {
             snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
             description = o.optString("description", ""),
             timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
+            followsUp = o.optString("followsUp", "").ifEmpty { null },
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
             backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
@@ -736,6 +782,7 @@ class Store(context: Context) {
                 // Only when set; apps that don't know them just skip them.
                 if (c.description.isNotEmpty()) put("description", c.description)
                 if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
+                c.followsUp?.let { put("followsUp", it) }
             }
             .apply {
                 if (c.task) put("task", true)
@@ -746,6 +793,7 @@ class Store(context: Context) {
 
     companion object {
         private const val DAY_MS = 24L * 60 * 60 * 1000
+        const val FOLLOW_UP_PREFIX = "(Follow-Up) "
         /** Results that complete a task: done, answered, or (soft) dismissed. */
         private val TASK_DONE_STATUSES = setOf(SlotResult.DONE, SlotResult.ANSWERED, SlotResult.DISMISSED)
         private const val K_CHECKINS = "checkins"

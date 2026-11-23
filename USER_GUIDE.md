@@ -330,6 +330,15 @@ on **One-time task** on any check-in's page.
 - **Done tasks** (at the bottom of the start page) lists them, most recent first, with when
   you did them and what you answered, so you can check whether you did something. **Put
   back** returns one to the list (pick a new date if it has passed); **Delete** removes it.
+- **Follow-ups** keep a job going one step at a time (sand the pool patch, then replace the
+  liner), so you don't have to plan every task up front. When you finish a task, a **Task
+  done** screen offers **Create follow-up** (or **Close**); it's also on each task's page
+  (Schedule) and on each one in **Done tasks**. You choose **Add to backlog** or **Add to
+  today**, and the new task's page opens. It starts as a copy, named **(Follow-Up) Sand the
+  pool patch** so you can tell you're on the new one, with the same description, category,
+  time commitment, commitment, sound and steps, but no set time. Its page shows **Follows:**
+  the task before it, and the earlier one shows **Followed by:** (tap either to open it).
+  Give the job's tasks one category (say "Pool") to keep them together when grouped.
 - A task whose times have passed without being done stays on the list with **Do it now**,
   and its page says so.
 - Tasks don't count toward the overall score (each still has its own History).
