@@ -26,6 +26,11 @@ final class AppModel {
     private(set) var places = PlaceLog()
     /// What's showing full screen.
     var running: RunRequest?
+    /// A task that was just done (its steps, Do it now, or dismissing a soft one): its "Task
+    /// done" sheet offers a follow-up, every time.
+    var justDone: Checkin?
+    /// A check-in's page to open on the start page's stack (a new follow-up).
+    var openEdit: String?
     var alarmsAllowed = false
     var alarmsAsked = false
     /// A short message to show (e.g. after an import).
@@ -373,10 +378,31 @@ final class AppModel {
         rescheduleSoon()
         let still = waiting
         Task { await QuietNotifier.clear(keeping: still) }
+        // A task just done: offer a follow-up (the next alarm waits until that's closed).
+        let done = r.pending.practice ? nil : data.checkin(r.pending.checkinId).flatMap { $0.taskDone ? $0 : nil }
         Task {
             try? await Task.sleep(for: .milliseconds(600))
+            if let done { justDone = done } else { presentNext() }
+        }
+    }
+
+    /// The Task done sheet closed: carry on to anything else that's waiting.
+    func doneWithTaskDone() {
+        justDone = nil
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
             presentNext()
         }
+    }
+
+    /// Creates a follow-up to [sourceId] (today's list, or the backlog) and opens its page.
+    @discardableResult
+    func createFollowUp(_ sourceId: String, active: Bool) -> Checkin? {
+        guard let c = data.createFollowUp(sourceId, active: active) else { return nil }
+        save()
+        rescheduleSoon()
+        openEdit = c.id
+        return c
     }
 
     func skipNext(_ c: Checkin) {
@@ -452,7 +478,9 @@ final class AppModel {
     /// The Check-ins tab keeps the original keys ("view", "sort"); the others add the tab.
     static func tabKey(_ key: String, _ tab: StartTab) -> String { tab == .checkins ? key : "\(key).\(tab.rawValue)" }
 
+    /// Each tab opens with its cards folded.
     func setTab(_ t: StartTab) {
+        if t != tab { expandedCheckin = nil; defaults.removeObject(forKey: "expandedCheckin") }
         tab = t
         defaults.set(t.rawValue, forKey: "startTab")
     }

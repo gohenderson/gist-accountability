@@ -116,6 +116,15 @@ struct CheckinEditView: View {
                     .multilineTextAlignment(.trailing)
                     .accessibilityIdentifier("checkin-name")
             }
+            // A follow-up's chain: the task it continues, and any that continue it.
+            if let prev = c.wrappedValue.followsUp.flatMap({ model.checkin($0) }) {
+                Button("Follows: \(prev.name)") { model.openEdit = prev.id }
+                    .accessibilityIdentifier("follows")
+            }
+            ForEach(model.data.followUps(of: c.wrappedValue.id)) { next in
+                Button("Followed by: \(next.name)") { model.openEdit = next.id }
+                    .accessibilityIdentifier("followed-by")
+            }
             TextField("Description: what it's about, notes", text: c.description, axis: .vertical)
                 .lineLimit(2...8)
                 .accessibilityIdentifier("checkin-description")
@@ -163,6 +172,7 @@ struct CheckinEditView: View {
                     Text("No set time: it waits on the start page until you do it (Do it now).")
                         .accessibilityIdentifier("task-backlog")
                 }
+                FollowUpButton(task: c.wrappedValue)
             }
             Toggle("Answers count for the previous day", isOn: c.aboutYesterday)
         } footer: {

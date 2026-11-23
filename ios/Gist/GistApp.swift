@@ -28,6 +28,11 @@ struct RootView: View {
                     .environment(model)
                     .interactiveDismissDisabled()
             }
+            .sheet(item: $model.justDone, onDismiss: { model.doneWithTaskDone() }) { task in
+                TaskDoneSheet(task: task)
+                    .environment(model)
+                    .presentationDetents([.medium])
+            }
             .onChange(of: phase) { _, now in
                 if now == .active { Task { await model.refresh() } }
             }

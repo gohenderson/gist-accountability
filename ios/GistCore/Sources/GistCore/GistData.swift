@@ -60,6 +60,37 @@ public struct GistData: Equatable {
         }
     }
 
+    // MARK: Follow-ups
+
+    public static let followUpPrefix = "(Follow-Up) "
+
+    /// "(Follow-Up) Sand the patch": plain that it's the new task. One prefix, however deep.
+    public static func followUpName(_ name: String) -> String {
+        followUpPrefix + (name.hasPrefix(followUpPrefix) ? String(name.dropFirst(followUpPrefix.count)) : name)
+    }
+
+    /// A follow-up to task [sourceId] (the Android app's Store.createFollowUp): a new task with
+    /// its name (prefixed), description, category, time commitment, commitment, sound, snooze
+    /// and steps (fresh ids), but no triggers. [active]: today's list, or the backlog. Placed
+    /// right after the task it follows.
+    @discardableResult
+    public mutating func createFollowUp(_ sourceId: String, active: Bool, newId: String = Ids.new()) -> Checkin? {
+        guard let src = checkin(sourceId) else { return nil }
+        var steps = src.steps
+        for i in steps.indices { steps[i].id = Ids.new() }
+        let c = Checkin(id: newId, name: GistData.followUpName(src.name), times: [], enabled: active, steps: steps,
+                        soundUri: src.soundUri, soundTitle: src.soundTitle, category: src.category,
+                        commitment: src.commitment, snoozeMinutes: src.snoozeMinutes,
+                        voiceSource: src.voiceSource, voiceText: src.voiceText, voiceHeadphonesOnly: src.voiceHeadphonesOnly,
+                        task: true, description: src.description, timeCommitment: src.timeCommitment, followsUp: src.id)
+        let at = (checkins.firstIndex { $0.id == sourceId } ?? checkins.count - 1) + 1
+        checkins.insert(c, at: at)
+        return c
+    }
+
+    /// Tasks that follow up [id].
+    public func followUps(of id: String) -> [Checkin] { checkins.filter { $0.followsUp == id } }
+
     /// Puts done task [id] back on the list (on again).
     public mutating func reopenTask(_ id: String) {
         update(id) { c in

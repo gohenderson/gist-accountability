@@ -105,6 +105,10 @@ final class GistUITests: XCTestCase {
         let finish = element("finish")
         waitFor(finish)
         finish.tap()
+        // Task done: a follow-up is offered; close it.
+        let close = element("task-done-close")
+        waitFor(close)
+        close.tap()
         XCTAssertTrue(element("checkin-title:shed").waitForNonExistence(timeout: 10))
         tab("Tasks").tap()
         waitFor(element("done-tasks"))
@@ -372,5 +376,26 @@ final class GistUITests: XCTestCase {
         let delete = element("delete-checkin")
         scrollTo(delete)
         XCTAssertEqual(delete.label, "Delete")
+    }
+
+    func testFinishingATaskOffersAFollowUp() {
+        launch("tab:backlog", tasks: true)
+        waitFor(element("checkin-title:shed"))
+        element("checkin-title:shed").tap()
+        let doIt = element("task-do:shed")
+        waitFor(doIt)
+        doIt.tap()
+        let finish = element("finish")
+        waitFor(finish)
+        finish.tap()
+        let today = element("follow-up:today")
+        waitFor(today)
+        XCTAssertTrue(element("task-done-title").exists)
+        today.tap()
+        // The follow-up's page opens, named so it's plain it's the new one.
+        let name = element("checkin-name")
+        waitFor(name)
+        XCTAssertEqual(name.value as? String, "(Follow-Up) Organize shed")
+        XCTAssertTrue(element("follows").exists)
     }
 }
