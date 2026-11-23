@@ -540,7 +540,8 @@ final class AppModel {
 
     /// For UI tests of tasks: a morning planner that picks 2 tasks, and 3 in the backlog.
     func loadDemoTasks() {
-        data.checkins.append(Checkin(id: "plan", name: "Plan the day", times: [AlarmTime(7, 30)],
+        // No set time, so it never rings by itself during a test (tests run it as a test ring).
+        data.checkins.append(Checkin(id: "plan", name: "Plan the day", times: [],
                                      steps: [StepConfig(id: "plan-p", kind: StepConfig.pickTasks, pickCount: 2)]))
         for (id, name) in [("shed", "Organize shed"), ("milk", "Buy milk"), ("call", "Call John")] {
             var t = Library.task(newId: id)
