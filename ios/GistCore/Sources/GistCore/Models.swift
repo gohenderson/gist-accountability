@@ -596,6 +596,8 @@ public struct Checkin: Equatable, Identifiable {
     public var description: String
     /// Roughly how long it takes: a timeCommitments key, or "" when not set.
     public var timeCommitment: String
+    /// A follow-up task: the id of the task it continues ("Sand the patch" → "Replace the liner").
+    public var followsUp: String?
 
     public init(id: String = Ids.new(), name: String, times: [AlarmTime] = [AlarmTime(12, 0)],
                 repeat: Repeat = .everyDay, enabled: Bool = true, aboutYesterday: Bool = false,
@@ -604,7 +606,7 @@ public struct Checkin: Equatable, Identifiable {
                 commitment: String = Checkin.strict, snoozeMinutes: Int = Checkin.defaultSnooze,
                 voiceSource: String = Checkin.voiceText, voiceText: String = "", voiceHeadphonesOnly: Bool = true,
                 task: Bool = false, doneAt: Int? = nil, backlogAt: Int? = nil, description: String = "",
-                timeCommitment: String = "") {
+                timeCommitment: String = "", followsUp: String? = nil) {
         self.id = id
         self.name = name
         self.times = times
@@ -627,6 +629,7 @@ public struct Checkin: Equatable, Identifiable {
         self.backlogAt = backlogAt
         self.description = description
         self.timeCommitment = timeCommitment
+        self.followsUp = followsUp
     }
 
     public var isTask: Bool { task }
@@ -681,6 +684,7 @@ public struct Checkin: Equatable, Identifiable {
         if task, let backlogAt { o["backlogAt"] = .int(backlogAt) }
         if !description.isEmpty { o["description"] = .string(description) }
         if !timeCommitment.isEmpty { o["timeCommitment"] = .string(timeCommitment) }
+        if let followsUp { o["followsUp"] = .string(followsUp) }
         return .object(o)
     }
 
@@ -723,7 +727,8 @@ public struct Checkin: Equatable, Identifiable {
             doneAt: o.int("doneAt"),
             backlogAt: o.int("backlogAt"),
             description: o.string("description"),
-            timeCommitment: timeCommitmentName(o.string("timeCommitment")) != nil ? o.string("timeCommitment") : ""
+            timeCommitment: timeCommitmentName(o.string("timeCommitment")) != nil ? o.string("timeCommitment") : "",
+            followsUp: o.string("followsUp").isEmpty ? nil : o.string("followsUp")
         )
     }
 

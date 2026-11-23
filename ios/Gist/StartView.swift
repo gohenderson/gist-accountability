@@ -71,6 +71,11 @@ struct StartView: View {
             }
             .sheet(isPresented: $reordering) { ReorderView() }
         }
+        .onChange(of: model.openEdit) { _, id in
+            guard let id else { return }
+            model.openEdit = nil
+            path.append(Route.edit(id))
+        }
         .onChange(of: model.debugRoute) { _, route in
             guard let route else { return }
             model.debugRoute = nil
@@ -373,6 +378,11 @@ struct CheckinCard: View {
             } else {
                 Text(CheckinSummary.oneLine(c)).font(.subheadline).foregroundStyle(Theme.muted)
                     .accessibilityIdentifier("summary:\(c.id)")
+                // Its description: the first few lines (all of it is on its page).
+                if !c.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(c.description).font(.subheadline).lineLimit(4)
+                        .accessibilityIdentifier("description:\(c.id)")
+                }
                 if let waiting {
                     waitingBox(c, waiting)
                 } else {
@@ -489,6 +499,16 @@ struct DoneTasksView: View {
                     if let date = c.times.compactMap({ $0.days?.date }).first {
                         Text("Was set for \(Repeat.dateText(date))").font(.footnote).foregroundStyle(Theme.muted)
                     }
+                    if let prev = c.followsUp.flatMap({ model.checkin($0) }) {
+                        Text("Follows: \(prev.name)").font(.footnote).foregroundStyle(Theme.muted)
+                    }
+                    ForEach(model.data.followUps(of: c.id)) { next in
+                        Text("Followed by: \(next.name)").font(.footnote).foregroundStyle(Theme.muted)
+                            .accessibilityIdentifier("followed-by:\(c.id)")
+                    }
+                    FollowUpButton(task: c)
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
                     HStack {
                         Button("Put back") { model.reopenTask(c.id) }
                             .accessibilityIdentifier("reopen:\(c.id)")

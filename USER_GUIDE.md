@@ -471,6 +471,10 @@ these differences:
   notifications. It then waits on its card on the start page.
 - **A check-in's page** has the same cards (Details, Schedule, While it rings, When it
   rings, Try it), opening one at a time; **History** shows how long it takes as a chart.
+- **Follow-ups** work as on Android: finishing a task opens a **Task done** sheet with
+  **Follow-up to the backlog**, **Follow-up for today** or **Close**; **Create follow-up**
+  is also on a task's page and in **Done tasks**. An open card shows the first lines of
+  its description, and switching tabs folds it.
 
 ## Honest limits
 

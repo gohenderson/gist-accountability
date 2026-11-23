@@ -165,4 +165,34 @@ final class TaskTests: XCTestCase {
         XCTAssertEqual(StartTab.tasks.items(list).map { $0.id }, ["active"])
         XCTAssertEqual(StartTab.backlog.items(list).map { $0.id }, ["back"])
     }
+
+    func testAFollowUpCopiesTheTaskButNotItsTimes() {
+        var src = task("patch", on: true)
+        src.name = "Sand the pool patch"
+        src.description = "Use the 120 grit."
+        src.category = "Pool"
+        src.timeCommitment = "hours"
+        src.steps = [StepConfig(id: "s1", kind: StepConfig.math, mathCount: 2)]
+        src.times = [AlarmTime(9, 0, days: .onDate("2026-11-24"))]
+        var data = GistData(checkins: [Checkin(id: "other", name: "Other"), src, Checkin(id: "last", name: "Last")])
+        let f = data.createFollowUp("patch", active: false, newId: "f1")!
+        XCTAssertEqual(f.name, "(Follow-Up) Sand the pool patch")
+        XCTAssertEqual(f.description, "Use the 120 grit.")
+        XCTAssertEqual(f.category, "Pool")
+        XCTAssertEqual(f.timeCommitment, "hours")
+        XCTAssertTrue(f.isQuiet)
+        XCTAssertEqual(f.steps.map { $0.kind }, [StepConfig.math])
+        XCTAssertNotEqual(f.steps.first?.id, "s1")
+        XCTAssertTrue(f.times.isEmpty && f.events.isEmpty)
+        XCTAssertTrue(data.checkin("f1")!.inBacklog)
+        XCTAssertNotNil(data.checkin("f1")!.backlogAt, "stamped going into the backlog")
+        XCTAssertEqual(f.followsUp, "patch")
+        XCTAssertEqual(data.checkins.map { $0.id }, ["other", "patch", "f1", "last"])
+        XCTAssertEqual(data.followUps(of: "patch").map { $0.id }, ["f1"])
+        let g = data.createFollowUp("f1", active: true, newId: "f2")!
+        XCTAssertEqual(g.name, "(Follow-Up) Sand the pool patch", "one prefix")
+        XCTAssertTrue(g.enabled)
+        // Kept in the JSON (and so in backups).
+        XCTAssertEqual(try? Checkin.from(g.json.objectValue!).followsUp, "f1")
+    }
 }
