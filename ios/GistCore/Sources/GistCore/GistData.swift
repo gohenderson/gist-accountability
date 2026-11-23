@@ -6,7 +6,7 @@ import Foundation
 public struct GistData: Equatable {
     /// The time now (tests can set it).
     public static var clock: () -> Date = { Date() }
-    static var nowMs: Int { Int(clock().timeIntervalSince1970 * 1000) }
+    public static var nowMs: Int { Int(clock().timeIntervalSince1970 * 1000) }
     static let dayMs = 24 * 60 * 60 * 1000
 
     public var checkins: [Checkin] {
