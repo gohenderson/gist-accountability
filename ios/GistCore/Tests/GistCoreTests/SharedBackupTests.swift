@@ -105,6 +105,56 @@ final class SharedBackupTests: XCTestCase {
         XCTAssertEqual(again.days, first.days)
     }
 
+    func testTasksImport() throws {
+        let contents = try Backup.parse(try sample("tasks.yaml"))
+        var data = GistData(checkins: [])
+        importAll(contents, into: &data)
+        XCTAssertEqual(data.checkins.map { $0.id }, ["plan01", "call01", "shed01", "milk01"])
+
+        // The pick-tasks step, a description and a time commitment.
+        let plan = try XCTUnwrap(data.checkin("plan01"))
+        XCTAssertEqual(plan.steps.first?.kind, StepConfig.pickTasks)
+        XCTAssertEqual(plan.steps.first?.pickCount, 3)
+        XCTAssertEqual(plan.description, "Look at the backlog.\nPick what fits today.")
+        XCTAssertEqual(plan.timeCommitment, "minutes")
+        XCTAssertFalse(plan.isTask)
+
+        // An active task on a specific date, with No alarm.
+        let call = try XCTUnwrap(data.checkin("call01"))
+        XCTAssertTrue(call.isActiveTask)
+        XCTAssertTrue(call.isQuiet)
+        XCTAssertEqual(call.times.first?.days, Repeat.onDate("2026-11-24"))
+        XCTAssertEqual(call.backlogAt, 1763800000000)
+        XCTAssertEqual(Checkin.timeCommitmentName(call.timeCommitment), "An hour")
+
+        // The backlog and a done task.
+        XCTAssertEqual(data.backlog.map { $0.id }, ["shed01"])
+        XCTAssertEqual(data.backlog.first?.backlogAt, 1763850000000, "a restored time is kept")
+        XCTAssertEqual(data.doneTasks.map { $0.id }, ["milk01"])
+        XCTAssertEqual(data.checkin("milk01")?.doneAt, 1763900000000)
+
+        // Timing: rang and took (with and without getting started).
+        let timed = try XCTUnwrap(data.result(day: "2026-11-22", checkinId: "plan01", time: "07:30"))
+        XCTAssertEqual(timed.rangAt, 1763793000000)
+        XCTAssertEqual(timed.took, Took(start: 70, steps: 185))
+        XCTAssertEqual(data.result(day: "2026-11-23", checkinId: "plan01", time: "07:30")?.took, Took(start: nil, steps: 120))
+        XCTAssertEqual(data.result(day: "2026-11-21", checkinId: "plan01", time: "07:30")?.rangAt, 1763706600000)
+        let days = Timing.days(data.allResults("plan01"), ["2026-11-23", "2026-11-22", "2026-11-21"])
+        XCTAssertEqual(Timing.line(days), "Getting started 1m 10s · doing it 2m 32s")
+    }
+
+    func testTasksSurviveARoundTripAsVersion5() throws {
+        let first = try Backup.parse(try sample("tasks.yaml"))
+        var data = GistData(checkins: [])
+        importAll(first, into: &data)
+        let exported = try Backup.export(data)
+        XCTAssertTrue(exported.contains("version: 5"))
+        let again = try Backup.parse(exported)
+        var copy = GistData(checkins: [])
+        importAll(again, into: &copy)
+        XCTAssertEqual(copy, data)
+    }
+
     func testEverySampleParses() throws {
         let files = try FileManager.default.contentsOfDirectory(atPath: Self.samples.path).filter { $0.hasSuffix(".yaml") }
         XCTAssertFalse(files.isEmpty, "no samples found in \(Self.samples.path)")

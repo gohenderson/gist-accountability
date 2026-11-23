@@ -4,7 +4,7 @@ import Foundation
 /// imports on the other (shared/backups holds samples both apps' tests import):
 ///
 ///   format: gist-backup
-///   version: 4
+///   version: 5                    # 4 when nothing needs 5 (see version)
 ///   exportedAt: '2026-11-08T…'
 ///   checkins: [ … ]
 ///   entries:                      # history, only for check-ins exported with it
@@ -16,11 +16,16 @@ import Foundation
 public enum Backup {
     public static let format = "gist-backup"
     /// 4: questions can take a typed answer (number or text), saved under "v".
-    public static let version = 4
+    /// 5: one-time tasks ("task", "doneAt", "backlogAt"), "On a specific date" (days kind
+    ///    "once" with a "date") and the pick-tasks step ("pickTasks"). Written only when a
+    ///    check-in uses one, so other files stay readable by apps that read 4 (one that
+    ///    doesn't know "once" would ring every day).
+    public static let version = 5
+    static let versionWithoutTasks = 4
     /// The oldest this version reads (3 has no typed answers, so nothing to convert).
     public static let minVersion = 3
     static let header = "Gist backup. Import it with Settings → Import backup… (you choose what to bring in).\n" +
-        "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly."
+        "You can edit check-ins here; times are \"HH:mm\", repeat kinds are daily / weekly / monthly / once (a task)."
 
     public struct Media: Equatable {
         public var photos: [Data]
@@ -125,13 +130,19 @@ public enum Backup {
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let root = JSONObject([
             ("format", .string(format)),
-            ("version", .int(version)),
+            ("version", .int(checkins.contains { needsVersion5($0) } ? version : versionWithoutTasks)),
             ("exportedAt", .string(iso.string(from: now))),
             ("checkins", .array(checkins.map { c -> JSON in c.json })),
             ("entries", .object(GistData.entriesJSON(entries))),
             ("media", .object(mediaJSON)),
         ])
         return try YAMLCodec.dump(.object(root), header: header)
+    }
+
+    static func needsVersion5(_ c: Checkin) -> Bool {
+        func once(_ r: Repeat?) -> Bool { r?.kind == Repeat.once }
+        return c.task || once(c.repeat) || c.times.contains { once($0.days) } || c.events.contains { once($0.days) } ||
+            c.steps.contains { $0.kind == StepConfig.pickTasks }
     }
 
     // MARK: Parse

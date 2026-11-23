@@ -301,7 +301,8 @@ struct CheckinEditView: View {
             .onDelete { c.wrappedValue.steps.remove(atOffsets: $0) }
             if c.wrappedValue.steps.count < StepConfig.maxSteps {
                 Menu("Add a step") {
-                    ForEach(StepConfig.kinds, id: \.self) { kind in
+                    // Pick today's tasks comes with the tasks screens (next).
+                    ForEach(StepConfig.kinds.filter { $0 != StepConfig.pickTasks }, id: \.self) { kind in
                         Button(StepText.title(kind)) { c.wrappedValue.steps.append(StepConfig(kind: kind)) }
                     }
                 }
@@ -322,6 +323,7 @@ enum StepText {
         switch kind {
         case StepConfig.math: return "Math problems"
         case StepConfig.scan: return "Scan a code"
+        case StepConfig.pickTasks: return "Pick today's tasks"
         default: return "Questions"
         }
     }

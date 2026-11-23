@@ -134,6 +134,14 @@ public enum Library {
     public static func blank(existing: [Checkin], newId: String = Ids.new()) -> Checkin {
         Checkin(id: newId, name: "Check-in \(existing.count + 1)", times: [AlarmTime(12, 0)])
     }
+
+    /// A one-time task, in the backlog: no triggers (it waits on the start page until you do
+    /// it), soft, its alarm off, and set to No alarm, so even a time added later only reminds
+    /// quietly. (The Android app's Library.task.)
+    public static func task(newId: String = Ids.new()) -> Checkin {
+        Checkin(id: newId, name: "New task", times: [], enabled: false, soundUri: Checkin.quiet,
+                category: "Tasks", commitment: Checkin.soft, task: true)
+    }
 }
 
 /// Matching a scanned code against a scan step's registered one.

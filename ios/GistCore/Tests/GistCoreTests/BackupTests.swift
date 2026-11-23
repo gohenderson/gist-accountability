@@ -74,7 +74,7 @@ final class BackupTests: XCTestCase {
             }
         }
         XCTAssertEqual(message("hello: world"), "This isn't a Gist backup file.")
-        XCTAssertEqual(message("format: gist-backup\nversion: 5\ncheckins: []"),
+        XCTAssertEqual(message("format: gist-backup\nversion: 6\ncheckins: []"),
                        "This backup is from a newer version of Gist. Update the app first.")
         XCTAssertEqual(message("format: gist-backup\nversion: 2\ncheckins: []"),
                        "This backup is from an older version of Gist that this one can't read.")

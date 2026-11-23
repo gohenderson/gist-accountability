@@ -126,6 +126,11 @@ public struct JSONObject: Equatable {
         values[key]?.intValue ?? fallback
     }
 
+    /// nil when missing (or not a number).
+    public func int(_ key: String) -> Int? {
+        values[key]?.intValue
+    }
+
     public func double(_ key: String) -> Double? {
         values[key]?.doubleValue
     }

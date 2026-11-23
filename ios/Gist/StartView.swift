@@ -374,6 +374,7 @@ enum CheckinSummary {
         switch s.kind {
         case StepConfig.math: return "\(s.mathCount) × \(MathGen.levelName(s.mathLevel))"
         case StepConfig.scan: return s.scanLabel.isEmpty ? "Scan a code" : "Scan at \(s.scanLabel)"
+        case StepConfig.pickTasks: return "pick \(s.pickCount) task\(s.pickCount == 1 ? "" : "s")"
         default: return "\(s.questions.count) question\(s.questions.count == 1 ? "" : "s")"
         }
     }

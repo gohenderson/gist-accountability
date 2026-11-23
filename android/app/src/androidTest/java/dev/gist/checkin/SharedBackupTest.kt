@@ -110,4 +110,49 @@ class SharedBackupTest {
         assertEquals(before, TestEnv.store.checkins)
         assertEquals(first.days, again.days)
     }
+
+    @Test
+    fun tasksImport() {
+        TestEnv.reset(emptyList())
+        val contents = Backup.parse(TestEnv.ctx, sample("tasks.yaml"))
+        Backup.import(TestEnv.ctx, contents, contents.checkins.map { Backup.ImportChoice(it.id, Backup.Mode.NEW, true) })
+        val store = TestEnv.store
+        assertEquals(listOf("plan01", "call01", "shed01", "milk01"), store.checkins.map { it.id })
+
+        val plan = store.checkin("plan01")!!
+        assertEquals(Steps.PICK_TASKS, plan.steps.first().kind)
+        assertEquals(3, plan.steps.first().pickCount)
+        assertEquals("Look at the backlog.\nPick what fits today.", plan.description)
+        assertEquals("minutes", plan.timeCommitment)
+
+        val call = store.checkin("call01")!!
+        assertTrue(call.isTask && call.enabled && call.quiet)
+        assertEquals(Repeat.once(java.time.LocalDate.of(2026, 11, 24)), call.times.first().days)
+        assertEquals("hour", call.timeCommitment)
+
+        assertEquals(listOf("shed01"), store.backlog.map { it.id })
+        assertEquals(1763850000000L, store.checkin("shed01")!!.backlogAt) // a restored time is kept
+        assertEquals(1763900000000L, store.checkin("milk01")!!.doneAt)
+
+        val timed = store.result("2026-11-22", "plan01", "07:30")!!
+        assertEquals(1763793000000L, timed.rangAt)
+        assertEquals(Took(70, 185), timed.took)
+        assertEquals(Took(null, 120), store.result("2026-11-23", "plan01", "07:30")!!.took)
+        val days = Timing.days(store.allResults("plan01"), listOf("2026-11-23", "2026-11-22", "2026-11-21"))
+        assertEquals("Getting started 1m 10s · doing it 2m 32s", Timing.line(days))
+    }
+
+    @Test
+    fun tasksSurviveARoundTripAsVersion5() {
+        TestEnv.reset(emptyList())
+        val first = Backup.parse(TestEnv.ctx, sample("tasks.yaml"))
+        Backup.import(TestEnv.ctx, first, first.checkins.map { Backup.ImportChoice(it.id, Backup.Mode.NEW, true) })
+        val before = TestEnv.store.checkins
+        val exported = Backup.export(TestEnv.ctx)
+        assertTrue(exported.contains("version: 5"))
+        TestEnv.reset(emptyList())
+        val again = Backup.parse(TestEnv.ctx, exported)
+        Backup.import(TestEnv.ctx, again, again.checkins.map { Backup.ImportChoice(it.id, Backup.Mode.NEW, true) })
+        assertEquals(before, TestEnv.store.checkins)
+    }
 }

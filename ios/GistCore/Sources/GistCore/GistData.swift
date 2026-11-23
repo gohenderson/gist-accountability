@@ -4,7 +4,28 @@ import Foundation
 /// The rules for logging match the Android app's Store:
 ///   results["2026-11-07"]["<checkinId>"]["21:30"] = SlotResult(answered, answers: …)
 public struct GistData: Equatable {
-    public var checkins: [Checkin]
+    /// The time now (tests can set it).
+    public static var clock: () -> Date = { Date() }
+    static var nowMs: Int { Int(clock().timeIntervalSince1970 * 1000) }
+    static let dayMs = 24 * 60 * 60 * 1000
+
+    public var checkins: [Checkin] {
+        // A task that's just gone into the backlog (new, or turned off) gets stamped, unless its
+        // time was set with it (a restored backup). Loading saved data doesn't count.
+        didSet {
+            let was = Dictionary(oldValue.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            var stamped = false
+            var list = checkins
+            for i in list.indices {
+                let c = list[i], old = was[c.id]
+                if c.inBacklog && old?.inBacklog != true && c.backlogAt == old?.backlogAt {
+                    list[i].backlogAt = GistData.nowMs
+                    stamped = true
+                }
+            }
+            if stamped { checkins = list }
+        }
+    }
     /// day → check-in id → time → result
     public var results: [String: [String: DayResults]]
 
@@ -20,6 +41,50 @@ public struct GistData: Equatable {
     public mutating func update(_ id: String, _ change: (inout Checkin) -> Void) {
         guard let i = checkins.firstIndex(where: { $0.id == id }) else { return }
         change(&checkins[i])
+    }
+
+    // MARK: Tasks
+
+    /// Tasks that are on and not done.
+    public var activeTasks: [Checkin] { checkins.filter { $0.isActiveTask } }
+    /// Tasks that are off and not done.
+    public var backlog: [Checkin] { checkins.filter { $0.inBacklog } }
+    public var doneTasks: [Checkin] { checkins.filter { $0.taskDone } }
+
+    /// Marks task [id] done: it turns off (no more rings) and moves to Done tasks.
+    public mutating func completeTask(_ id: String, at: Int = GistData.nowMs) {
+        update(id) { c in
+            guard c.isTask else { return }
+            c.enabled = false
+            c.doneAt = at
+        }
+    }
+
+    /// Puts done task [id] back on the list (on again).
+    public mutating func reopenTask(_ id: String) {
+        update(id) { c in
+            guard c.isTask else { return }
+            c.enabled = true
+            c.doneAt = nil
+        }
+    }
+
+    /// Tasks done in the last [days] days.
+    public func tasksDone(inLast days: Int) -> Int {
+        let since = GistData.nowMs - days * GistData.dayMs
+        return checkins.filter { $0.taskDone && ($0.doneAt ?? 0) >= since }.count
+    }
+
+    /// Tasks that went into the backlog in the last [days] days (even if picked since).
+    public func tasksBacklogged(inLast days: Int) -> Int {
+        let since = GistData.nowMs - days * GistData.dayMs
+        return checkins.filter { $0.isTask && ($0.backlogAt ?? 0) >= since }.count
+    }
+
+    /// The pick-tasks step: how many to pick from the backlog to have [count] active tasks
+    /// (0: already enough, so the step is skipped; never more than the backlog has).
+    public func tasksToPick(_ count: Int) -> Int {
+        min(backlog.count, max(0, count - activeTasks.count))
     }
 
     // MARK: Reading results
@@ -58,25 +123,37 @@ public struct GistData: Equatable {
 
     /// Answers for one time, merged into any already saved for it.
     /// [values]: typed answers, "" for one left empty (which replaces one saved before).
+    /// [took]: how long it took (fixing a day in History keeps the first time's).
     public mutating func saveAnswers(day: String, checkinId: String, time: String, answers: [String: Bool], early: Bool = false,
-                                     values: [String: String] = [:]) {
+                                     values: [String: String] = [:], took: Took? = nil) {
         let prev = result(day: day, checkinId: checkinId, time: time)
         let merged = (prev?.answers ?? [:]).merging(answers) { _, new in new }
         let mergedValues = (prev?.values ?? [:]).merging(values) { _, new in new }
         put(day, checkinId, time, SlotResult(SlotResult.answered, answers: merged, early: early || prev?.early == true,
-                                             values: mergedValues))
+                                             values: mergedValues, took: took ?? prev?.took))
     }
 
     /// A check-in without questions was completed.
-    public mutating func markDone(day: String, checkinId: String, time: String, early: Bool = false) {
-        put(day, checkinId, time, SlotResult(SlotResult.done, early: early))
+    public mutating func markDone(day: String, checkinId: String, time: String, early: Bool = false, took: Took? = nil) {
+        put(day, checkinId, time, SlotResult(SlotResult.done, early: early, took: took))
     }
 
-    /// The alarm rang. Doesn't overwrite a time that's already finished or skipped.
-    public mutating func markRang(day: String, checkinId: String, time: String) {
+    /// The alarm rang (at [at], epoch ms). Doesn't overwrite a time that's already rung,
+    /// finished or skipped.
+    public mutating func markRang(day: String, checkinId: String, time: String, at: Int = GistData.nowMs) {
         if result(day: day, checkinId: checkinId, time: time) == nil {
-            put(day, checkinId, time, SlotResult(SlotResult.rang))
+            put(day, checkinId, time, SlotResult(SlotResult.rang, rangAt: at))
         }
+    }
+
+    /// How long a check-in took, from when this time first rang ([rangAt], nil if done before
+    /// it rang), [startedAt] (Start check-in) and [doneAt], all epoch ms. Only for check-ins
+    /// that count.
+    public func took(day: String, checkinId: String, time: String, startedAt: Int, doneAt: Int = GistData.nowMs) -> Took? {
+        guard checkin(checkinId)?.counted == true else { return nil }
+        let rang = result(day: day, checkinId: checkinId, time: time)?.rangAt
+        let start = rang.map { max(0, (startedAt - $0) / 1000) }
+        return Took(start: start, steps: max(0, (doneAt - startedAt) / 1000))
     }
 
     public mutating func markSkipped(day: String, checkinId: String, time: String) {
@@ -95,12 +172,19 @@ public struct GistData: Equatable {
         if results[day]?.isEmpty == true { results[day] = nil }
     }
 
-    /// Results logged while a check-in isn't strict are marked soft (see allResults).
+    /// Results logged while a check-in isn't strict are marked soft (see allResults). Doing a
+    /// task once completes it.
     private mutating func put(_ day: String, _ checkinId: String, _ time: String, _ r: SlotResult) {
         var r = r
         if let c = checkin(checkinId), !c.counted { r.soft = true }
         results[day, default: [:]][checkinId, default: [:]][time] = r
+        if GistData.taskDoneStatuses.contains(r.status), let c = checkin(checkinId), c.isTask, c.doneAt == nil {
+            completeTask(c.id)
+        }
     }
+
+    /// Results that complete a task: done, answered, or (soft) dismissed.
+    static let taskDoneStatuses: Set<String> = [SlotResult.done, SlotResult.answered, SlotResult.dismissed]
 
     // MARK: History as a whole
 
