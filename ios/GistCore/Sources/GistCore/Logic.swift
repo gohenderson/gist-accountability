@@ -90,6 +90,18 @@ public enum Scheduler {
                             closed: (Occurrence) -> Bool = { _ in false }) -> Occurrence? {
         occurrences(c, now: now, calendar: calendar).first { !closed($0) }
     }
+
+    /// The time "Do it now" logs a task under when it has no ring coming: its time nearest
+    /// [now] (on the clock), or now itself with no set times. (The Android app's nearestTime.)
+    public static func nearestTime(_ c: Checkin, now: Date = Date(), calendar: Calendar = .current) -> AlarmTime {
+        let h = calendar.component(.hour, from: now), m = calendar.component(.minute, from: now)
+        let at = h * 60 + m
+        guard !c.times.isEmpty else { return AlarmTime(h, m) }
+        return c.times.min { a, b in
+            func d(_ t: AlarmTime) -> Int { let x = abs(t.minutesOfDay - at); return min(x, 24 * 60 - x) }
+            return d(a) < d(b)
+        }!
+    }
 }
 
 // MARK: - Math

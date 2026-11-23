@@ -301,8 +301,7 @@ struct CheckinEditView: View {
             .onDelete { c.wrappedValue.steps.remove(atOffsets: $0) }
             if c.wrappedValue.steps.count < StepConfig.maxSteps {
                 Menu("Add a step") {
-                    // Pick today's tasks comes with the tasks screens (next).
-                    ForEach(StepConfig.kinds.filter { $0 != StepConfig.pickTasks }, id: \.self) { kind in
+                    ForEach(StepConfig.kinds, id: \.self) { kind in
                         Button(StepText.title(kind)) { c.wrappedValue.steps.append(StepConfig(kind: kind)) }
                     }
                 }
@@ -390,6 +389,14 @@ struct StepEditView: View {
                     Text(CodeScanner.supported
                          ? "Put a QR code or barcode somewhere you have to walk to (any product's barcode works) and scan it here. When it rings, you scan the same code to finish. If you can't after \(Int(Scan.fallbackAfter) / 60) minutes, you can solve \(Scan.fallbackProblems) very hard problems instead."
                          : "This device can't scan codes, so this step is \(Scan.fallbackProblems) very hard math problems when it rings.")
+                }
+            case StepConfig.pickTasks:
+                Section {
+                    Stepper("\(step.pickCount) active task\(step.pickCount == 1 ? "" : "s")", value: $step.pickCount,
+                            in: 1...StepConfig.maxPick)
+                        .accessibilityIdentifier("pick-count")
+                } footer: {
+                    Text("Have a set number of active tasks for today: pick the rest from your backlog. Picked tasks are turned on and show on the start page. If you already have enough, or the backlog is empty, this step is skipped.")
                 }
             default:
                 Section {

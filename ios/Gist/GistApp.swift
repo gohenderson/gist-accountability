@@ -35,6 +35,7 @@ struct RootView: View {
                 #if DEBUG
                 let args = ProcessInfo.processInfo.arguments
                 if args.contains("-gist-demo") { model.loadDemo() }
+                if args.contains("-gist-demo-tasks") { model.loadDemoTasks() }
                 if let i = args.firstIndex(of: "-gist-route"), i + 1 < args.count {
                     model.debugRoute = args[i + 1]
                 }

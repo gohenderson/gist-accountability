@@ -81,13 +81,14 @@ public enum AlarmPlan {
 
     /// Every alarm to schedule now: each ringing check-in's next open ring (strict ones with
     /// their re-rings after it), re-rings for strict check-ins still [waiting], and [practice]
-    /// rings still ahead. Voice check-ins (Android only for now) and ones that are off don't ring.
+    /// rings still ahead. Voice check-ins (Android only for now) and ones that are off don't ring,
+    /// and No alarm ones only remind with a notification (see [quietRings]).
     /// A time that rings only at (or away from) a place is left out while you're known not
     /// to be (per [places], as of now); crossing into or out of the place reschedules.
     public static func plan(_ data: GistData, waiting: [Pending], practice: [PracticeRing], oneOff: [OneOffRing] = [],
                             places: PlaceLog = PlaceLog(), now: Date, calendar: Calendar = .current) -> [PlannedAlarm] {
         var out: [PlannedAlarm] = []
-        for c in data.checkins where c.enabled && !c.isVoice {
+        for c in data.checkins where c.enabled && !c.isVoice && !c.isQuiet {
             let next = Scheduler.next(c, now: now, calendar: calendar) {
                 data.isClosed(day: $0.day, checkinId: c.id, time: $0.timeKey) || !Places.allows($0.time, at: now, log: places)
             }
@@ -102,7 +103,7 @@ public enum AlarmPlan {
         }
         // Strict check-ins that rang and aren't done: keep ringing from now on.
         for p in waiting where !p.practice {
-            guard let c = data.checkin(p.checkinId), c.enabled, c.counted,
+            guard let c = data.checkin(p.checkinId), c.enabled, c.counted, !c.isQuiet,
                   !data.isClosed(day: p.day, checkinId: p.checkinId, time: p.time) else { continue }
             for n in 1...nagCount {
                 out.append(PlannedAlarm(checkinId: c.id, day: p.day, time: p.time,
@@ -116,11 +117,29 @@ public enum AlarmPlan {
         }
         // Snoozed soft alarms and place rings that aren't done or dismissed yet.
         for z in oneOff where z.at > now {
-            guard let c = data.checkin(z.checkinId), c.enabled,
+            guard let c = data.checkin(z.checkinId), c.enabled, !c.isQuiet,
                   !data.isClosed(day: z.day, checkinId: z.checkinId, time: z.time) else { continue }
             out.append(PlannedAlarm(checkinId: z.checkinId, day: z.day, time: z.time, at: z.at, oneOff: true))
         }
         return out.sorted { $0.at < $1.at }
+    }
+
+    /// No alarm check-ins' next open rings: each reminds with a quiet notification (no alarm,
+    /// no sound) and then waits on the start page.
+    public static func quietRings(_ data: GistData, places: PlaceLog = PlaceLog(), now: Date,
+                                  calendar: Calendar = .current) -> [PlannedAlarm] {
+        data.checkins.filter { $0.enabled && !$0.isVoice && $0.isQuiet }.compactMap { c in
+            Scheduler.next(c, now: now, calendar: calendar) {
+                data.isClosed(day: $0.day, checkinId: c.id, time: $0.timeKey) || !Places.allows($0.time, at: now, log: places)
+            }.map { PlannedAlarm(checkinId: c.id, day: $0.day, time: $0.timeKey, at: $0.at) }
+        }.sorted { $0.at < $1.at }
+    }
+
+    /// [due], with when each rang (for how long getting started took).
+    public static func dueRings(_ data: GistData, now: Date, since: Date? = nil, places: PlaceLog = PlaceLog(),
+                                calendar: Calendar = .current) -> [(Pending, Date)] {
+        openRings(data, now: now, since: since, calendar: calendar).filter { Places.allows($0.0, at: $0.1, log: places) }
+            .map { ($0.2, $0.1) }
     }
 
     /// Rings since [since] (default: [lookbackHours] ago) up to [now] that aren't done or
