@@ -593,7 +593,8 @@ class GroupingTest {
 
     @Test
     fun tappingACardsBodyFoldsItButItsButtonsDontFold() {
-        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        // With a question, so the card has History.
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha", listOf(Question("q", "Did it?"))), TestEnv.checkin("b", "Beta")))
         TestEnv.store.expandedCheckin = "a"
         main().use {
             // Its buttons do their own thing (History opens; back leaves the card open).
