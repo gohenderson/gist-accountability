@@ -73,11 +73,11 @@ class MainActivity : BaseActivity() {
         // Title, with Settings, About and Donate across from it.
         val top = row().apply { gravity = android.view.Gravity.TOP }
         top.addWeighted(header("Gist", todayLong()))
+        top.addWrapped(iconButton("💲", "Donate", "donate") { openLink(Links.DONATE) })
+        top.addWrapped(iconButton("❓", "About Gist", "about") { startActivity(AboutActivity.intent(this)) })
         top.addWrapped(iconButton("⚙️", "Settings", "settings") {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
-        top.addWrapped(iconButton("❓", "About Gist", "about") { startActivity(AboutActivity.intent(this)) })
-        top.addWrapped(iconButton("💲", "Donate", "donate") { openLink(Links.DONATE) })
         col.add(top)
 
         // Scores: each check-in's on-track share over the last week; groups and the page
@@ -122,19 +122,15 @@ class MainActivity : BaseActivity() {
                 tag = "view-mode"
                 contentDescription = "View: ${if (grouped) "by category, " else ""}${Grouping.sortName(store.sort)}"
             })
+            // Expand / collapse all: the groups only (cards open one at a time), so only when grouped.
             val keys = groups.map { groupKey(tab, it.first) }.toSet()
-            val ids = checkins.map { it.id }.toSet()
-            val allFolded = Grouping.allFolded(keys, store.collapsed, ids, store.collapsedCheckins)
-            controls.addWrapped(textButton(if (allFolded) "Expand all" else "Collapse all") {
-                if (allFolded) {
-                    store.collapsed = store.collapsed - keys
-                    store.collapsedCheckins = store.collapsedCheckins - ids
-                } else {
-                    store.collapsed = store.collapsed + keys
-                    store.collapsedCheckins = store.collapsedCheckins + ids
-                }
-                render()
-            }.apply { tag = "toggle-all" })
+            if (grouped && keys.isNotEmpty()) {
+                val allFolded = Grouping.allFolded(keys, store.collapsed)
+                controls.addWrapped(textButton(if (allFolded) "Expand all" else "Collapse all") {
+                    store.collapsed = if (allFolded) store.collapsed - keys else store.collapsed + keys
+                    render()
+                }.apply { tag = "toggle-all" })
+            }
             col.add(controls, dp(4))
         }
         if (grouped) {
@@ -231,7 +227,7 @@ class MainActivity : BaseActivity() {
             }
             val h = if (members.size > 1 && how == Grouping.SORT_CUSTOM) handle else null
             val score = if (c.enabled) Score.of(c, store.allResults(c.id)) else null
-            val folded = c.id in store.collapsedCheckins
+            val folded = c.id != store.expandedCheckin
             val v = if (folded) checkinRow(c, h, score) else checkinCard(c, h, score)
             list.addRow(v, handle, dp(10))
         }
@@ -341,10 +337,9 @@ class MainActivity : BaseActivity() {
         layoutParams = LinearLayout.LayoutParams(dp(12), dp(12))
     }
 
-    /** Folds or unfolds a check-in's card. */
+    /** Opens a check-in's card (folding whichever was open), or folds it if it's the open one. */
     private fun toggleFolded(c: Checkin) {
-        val folded = store.collapsedCheckins
-        store.collapsedCheckins = if (c.id in folded) folded - c.id else folded + c.id
+        store.expandedCheckin = if (store.expandedCheckin == c.id) null else c.id
         render()
     }
 
@@ -382,7 +377,13 @@ class MainActivity : BaseActivity() {
         isClickable = true
         setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
         add(titleRow(c, handle, score, folded = true, size = TITLE_SIZE))
-        val sub = if (c.enabled) "Next: ${CheckinText.next(c)}" else "Off"
+        // A "no alarm" check-in that came due says so even folded.
+        val waiting = if (c.quiet) store.pending.firstOrNull { it.checkinId == c.id && !it.practice } else null
+        val sub = when {
+            waiting != null -> "Waiting · ${Days.timeOf(waiting.time).ifEmpty { "now" }} · tap to open"
+            c.enabled -> "Next: ${CheckinText.next(c)}"
+            else -> "Off"
+        }
         add(muted(sub, 13f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; tag = "next-line:${c.id}" })
     }
 

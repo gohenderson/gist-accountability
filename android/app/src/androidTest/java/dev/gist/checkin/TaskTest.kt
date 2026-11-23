@@ -114,6 +114,7 @@ class TaskTest {
         val backlog = TestEnv.checkin("b", "Fix the fence").copy(task = true, times = emptyList())
         TestEnv.reset(listOf(backlog))
         TestEnv.store.startTab = Store.TAB_TASKS
+        TestEnv.store.expandedCheckin = "b"
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("next:b")).perform(scrollTo()).check(matches(withText("Task · no set time")))
             onView(tagged("task-do:b")).perform(click())
@@ -128,6 +129,7 @@ class TaskTest {
         TestEnv.reset(emptyList())
         ActivityScenario.launch<LibraryActivity>(LibraryActivity.intent(TestEnv.ctx)).use {
             onView(tagged("library:task")).perform(scrollTo(), click())
+            TestEnv.eventually { TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE) }
             TestEnv.eventually { onView(tagged("task-backlog")).check(matches(isDisplayed())) }
         }
         // In the backlog: no triggers, alarm off, soft, no alarm.
@@ -177,7 +179,7 @@ class TaskTest {
             // Check-ins with no answers yet: a placeholder, and View for just one item.
             onView(tagged("overall-score-none")).check(matches(isDisplayed()))
             onView(tagged("view-mode")).check(matches(isDisplayed()))
-            onView(tagged("toggle-all")).check(matches(isDisplayed()))
+            onView(tagged("toggle-all")).check(doesNotExist()) // only for groups
             // Tasks: done this week (no active tasks, and View is still there).
             onView(tagged("tab:tasks")).perform(click())
             onView(tagged("tasks-done-count")).check(matches(withText("1")))

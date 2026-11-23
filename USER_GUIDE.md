@@ -54,12 +54,13 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
 - **Each check-in's card** shows its name, an on/off switch, when it rings next (with
   **Skip** and **Do it now**), its triggers and steps, its last-7-days stat, and
   **History** / **Edit**.
-  - **Tap a check-in's title to fold it** to one line: its name, next ring and switch. Tap
-    again to unfold it. Each check-in remembers how you left it.
+  - **Cards open one at a time.** Folded, a card is one line: its name, next ring (or
+    **Waiting**, for a no-alarm one that came due) and switch. Tap a title to open that card;
+    whichever was open folds. Tap the open one to fold it too. New ones start folded.
   - **Drag a card by its ≡ handle** to put your check-ins in your own order.
 - **View** (above the list, on every tab) holds both how the list is
   grouped and how it's sorted. Each choice applies right away. The button shows the
-  current sort. **Each tab has its own View** (and **Collapse all** folds just that tab),
+  current sort. **Each tab has its own View** (and its own folded groups),
   so check-ins can sort by **Next alarm** while tasks stay in **My order**: drag the most
   important to the top.
   - **By category** (a checkbox): a section per category, A–Z, with uncategorized
@@ -85,7 +86,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   Check-ins without a next ring (switched off, or only place or run triggers) or without
   a score go last, in your order. While sorted, cards can't be dragged; switch back to My
   order to rearrange them. Your order is kept underneath, and the choice is remembered.
-- **Collapse all / Expand all** folds or unfolds everything: groups and check-ins.
+- **Collapse all / Expand all** (when grouped) folds or unfolds the groups.
 - **Dots.** A check-in has a **dot** left of its name. Tasks have none: they're on their own
   tabs.
 - **On-track colors.** Each check-in's dot is filled with a color from red (0%) through
@@ -97,16 +98,19 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
   on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
   turned off), even if you've picked them since.
-- **Settings** (⚙️), **About** (❓) and **Donate** (💲) are at the top right.
+- **Donate** (💲), **About** (❓) and **Settings** (⚙️) are at the top right.
 
 ## A check-in's page
 
-Tap **Edit** on a card. Changes save as you make them.
+Tap **Edit** on a card. Changes save as you make them. The page is a stack of cards that
+open one at a time, like the start page: tap a card's title to open it (the open one folds).
+**Details** is open to start.
 
-- **Name**, **on/off**, **Category**, and **"About yesterday"**, which logs answers to the
-  previous day (see below).
-- **Schedule:** its triggers (see [Triggers](#triggers)). The page shows when it rings
-  next.
+- **Details:** **Name**, **Description** (as many lines as you like), **Time commitment**
+  (from **A few minutes** to **A few months**, or not set) and **Category**.
+- **Schedule:** on/off, **One-time task**, its triggers (see [Triggers](#triggers)), and
+  **"About yesterday"**, which logs answers to the previous day (see below). It shows when
+  it rings next.
 - **While it rings:** sound, background and caption (see [When it rings](#when-it-rings)).
 - **When it rings:** its commitment, and its steps (for a voice check-in, what it says).
 - **Try it:** a 10-second test ring, or **Play it now** for a voice check-in.

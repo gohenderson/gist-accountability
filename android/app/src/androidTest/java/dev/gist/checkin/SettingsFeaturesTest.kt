@@ -393,6 +393,7 @@ class SoundAndBackgroundTest {
         TestEnv.reset(listOf(TestEnv.checkin("b", "Photo test").copy(background = Background(Background.PHOTO, caption = "Keep me"))))
         Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.GREEN))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "b")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_RINGS)
             onView(tagged("background-preview")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(withText("Background: photo")).perform(scrollTo(), click())
             onView(withText("None")).inRoot(isDialog()).perform(click())
@@ -410,6 +411,7 @@ class SoundAndBackgroundTest {
         Backgrounds.savePhoto(TestEnv.ctx, "b", 0, solidPhoto(Color.RED))
         Backgrounds.savePhoto(TestEnv.ctx, "b", 1, solidPhoto(Color.GREEN))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "b")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_RINGS)
             onView(withText("Background: slideshow · 2 photos · every 10 s")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("slideshow-interval")).perform(scrollTo(), click())
             onView(withText("30 seconds")).inRoot(isDialog()).perform(click())

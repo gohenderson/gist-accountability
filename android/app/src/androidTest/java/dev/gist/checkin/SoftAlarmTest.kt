@@ -161,6 +161,7 @@ class SoftAlarmTest {
         TestEnv.store.updateCheckin("s") { it.copy(commitment = Checkin.STRICT) }
         TestEnv.store.saveAnswers(Days.lastN(2)[0], "s", "12:00", mapOf("soda" to false)) // on track, counted only while strict
         TestEnv.store.updateCheckin("s") { it.copy(commitment = Checkin.SOFT) }
+        TestEnv.store.expandedCheckin = "s"
         ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("soft-note:s")).perform(scrollTo()).check(matches(withText("Soft alarm · not counted in stats")))
             onView(tagged("overall-score")).check(matches(withText("0%")))
@@ -173,6 +174,7 @@ class SoftAlarmTest {
     fun commitmentAndSnoozeAreSetOnTheCheckinPage() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Pick", listOf(q))))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "c")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_STEPS)
             onView(tagged("commitment")).perform(scrollTo()).check(matches(withText("Commitment: Strict")))
             onView(tagged("snooze-length")).check(doesNotExist())
             onView(tagged("commitment")).perform(click())

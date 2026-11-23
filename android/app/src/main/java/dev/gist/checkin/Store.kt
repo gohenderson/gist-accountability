@@ -122,6 +122,10 @@ data class Checkin(
     val doneAt: Long? = null,
     /** When this task last went into the backlog (epoch ms); stamped by [Store.checkins]. */
     val backlogAt: Long? = null,
+    /** Free text: what it's about, notes (several lines). */
+    val description: String = "",
+    /** Roughly how long it takes: one of [TIME_COMMITMENTS], or "" if not set. */
+    val timeCommitment: String = "",
 ) {
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
@@ -172,6 +176,15 @@ data class Checkin(
         /** Snooze lengths a soft alarm can use, in minutes. */
         val SNOOZE_CHOICES = listOf(5, 10, 15, 20, 30)
         const val DEFAULT_SNOOZE = 10
+
+        /** Time commitments, shortest first: key to name. */
+        val TIME_COMMITMENTS = listOf(
+            "minutes" to "A few minutes", "hour" to "An hour", "hours" to "A few hours",
+            "day" to "A day", "days" to "A few days", "week" to "A week", "weeks" to "A few weeks",
+            "month" to "A month", "months" to "A few months",
+        )
+
+        fun timeCommitmentName(key: String): String? = TIME_COMMITMENTS.firstOrNull { it.first == key }?.second
     }
 }
 
@@ -522,16 +535,15 @@ class Store(context: Context) {
         set(v) { setSortFor(startTab, v) }
 
     /**
-     * Check-ins folded to one line on the start page (ids); the rest show their full card.
-     * Anyone who had picked the old "Compact" layout starts with all of them folded.
+     * The one check-in whose card is open on the start page; the rest are folded to a line.
+     * None by default, so new ones start folded.
      */
-    var collapsedCheckins: Set<String>
-        get() = if (!prefs.contains(K_COLLAPSED_CHECKINS) && prefs.getString(K_STYLE, null) == "compact") {
-            checkins.map { it.id }.toSet()
-        } else {
-            prefs.getStringSet(K_COLLAPSED_CHECKINS, emptySet())!!.toSet()
+    var expandedCheckin: String?
+        get() = prefs.getString(K_EXPANDED_CHECKIN, null)
+        set(v) {
+            prefs.edit().apply { if (v == null) remove(K_EXPANDED_CHECKIN) else putString(K_EXPANDED_CHECKIN, v) }
+                .remove(K_COLLAPSED_CHECKINS).remove(K_STYLE).commit() // the old per-card settings
         }
-        set(v) { prefs.edit().putStringSet(K_COLLAPSED_CHECKINS, v.toSet()).remove(K_STYLE).commit() }
 
     /** The order of category groups (Grouping.key of each), as you've dragged them. */
     var groupOrder: List<String>
@@ -667,6 +679,8 @@ class Store(context: Context) {
             voiceText = o.optString("voiceText", ""),
             voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
             snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
+            description = o.optString("description", ""),
+            timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
             backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
@@ -719,6 +733,11 @@ class Store(context: Context) {
             .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
             .put("snoozeMinutes", c.snoozeMinutes)
             .apply {
+                // Only when set; apps that don't know them just skip them.
+                if (c.description.isNotEmpty()) put("description", c.description)
+                if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
+            }
+            .apply {
                 if (c.task) put("task", true)
                 c.doneAt?.let { put("doneAt", it) }
                 if (c.task) c.backlogAt?.let { put("backlogAt", it) }
@@ -743,6 +762,7 @@ class Store(context: Context) {
         val TABS = listOf(TAB_CHECKINS, TAB_TASKS, TAB_BACKLOG)
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
+        private const val K_EXPANDED_CHECKIN = "expandedCheckin"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"
         private const val K_GROUP_ORDER = "groupOrder"
         private const val K_COLLAPSED = "collapsedGroups"

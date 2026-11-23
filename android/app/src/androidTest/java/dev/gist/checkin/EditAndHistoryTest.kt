@@ -87,6 +87,7 @@ class EditCheckinTest {
         assertNotNull("alarm should be scheduled to start with", am.nextAlarmClock)
 
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(withText("Alarm on")).perform(scrollTo(), click())
             assertFalse(TestEnv.store.checkin("c")!!.enabled)
             assertNull("alarm should be cancelled", am.nextAlarmClock)
@@ -103,6 +104,7 @@ class EditCheckinTest {
     fun removingATimeReschedulesForTheRemainingOnes() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Teeth").copy(times = listOf(AlarmTime(7, 0), AlarmTime(22, 0)))))
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-remove:0")).perform(scrollTo(), click())
         }
         val c = TestEnv.store.checkin("c")!!
@@ -115,6 +117,7 @@ class EditCheckinTest {
     fun choosingWeekdaysSavesTheRuleAndMovesTheAlarm() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Work")))
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Weekdays (Mon–Fri)")).inRoot(isDialog()).perform(click())
             onView(tagged("trigger-days:0")).perform(scrollTo()).check(matches(withText("Mon–Fri")))
@@ -129,6 +132,7 @@ class EditCheckinTest {
     fun monthlyOnTheFirstThroughTheDateList() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Bills")))
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-days:0")).perform(scrollTo(), click())
             onView(withText("Monthly on certain dates…")).inRoot(isDialog()).perform(click())
             onView(withText("1st")).inRoot(isDialog()).perform(click())
@@ -147,6 +151,7 @@ class EditCheckinTest {
     fun removingTheLastTriggerLeavesItSilentAndSaysSo() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Single")))
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-remove:0")).perform(scrollTo(), click())
             onView(withText("No triggers: it never rings on its own. Add one below.")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("trigger:0")).check(doesNotExist())
@@ -162,6 +167,7 @@ class EditCheckinTest {
         }
         TestEnv.reset(listOf(TestEnv.checkin("c", "Mixed")))
         open("c").use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("add-trigger")).perform(scrollTo(), click())
             onView(tagged("trigger:1")).perform(scrollTo()).check(matches(isDisplayed()))
             // Trigger 2 becomes "when I leave", at an existing coordinate.
@@ -179,6 +185,54 @@ class EditCheckinTest {
         assertEquals(listOf(AlarmTime(12, 0)), c.times)
         assertEquals(Trigger.LEAVE, c.events.single().kind)
         assertEquals("Home", c.events.single().place!!.name)
+    }
+
+    @Test
+    fun descriptionAndTimeCommitmentAreSaved() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Call John")))
+        open("c").use {
+            onView(tagged("checkin-description")).perform(scrollTo(), replaceText("Ask about the boat.\nAnd the dog."), closeSoftKeyboard())
+            onView(tagged("time-commitment")).perform(scrollTo()).check(matches(withText("Time commitment: not set")))
+            onView(tagged("time-commitment")).perform(click())
+            onView(tagged("time-commitment:hours")).inRoot(isDialog()).perform(scrollTo(), click())
+            onView(tagged("time-commitment")).perform(scrollTo()).check(matches(withText("Time commitment: A few hours")))
+        }
+        val c = TestEnv.store.checkin("c")!!
+        assertEquals("Ask about the boat.\nAnd the dog.", c.description)
+        assertEquals("hours", c.timeCommitment)
+        // Kept in a backup.
+        val back = Backup.parse(TestEnv.ctx, Backup.export(TestEnv.ctx)).checkins.single()
+        assertEquals(c.description, back.description)
+        assertEquals("hours", back.timeCommitment)
+        // And it opens with them filled in.
+        open("c").use {
+            onView(tagged("checkin-description")).check(matches(withText("Ask about the boat.\nAnd the dog.")))
+        }
+    }
+
+    @Test
+    fun sectionsOpenOneAtATime() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Noon")))
+        open("c").use {
+            // Details is open to start; the rest show just their titles.
+            onView(tagged("checkin-name")).check(matches(isDisplayed()))
+            onView(tagged("add-trigger")).check(doesNotExist())
+            onView(tagged("section-chevron:schedule")).check(matches(withText("▸")))
+            // Opening Schedule folds Details.
+            onView(tagged("section-header:schedule")).perform(scrollTo(), click())
+            onView(tagged("add-trigger")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("checkin-name")).check(doesNotExist())
+            // Then When it rings folds Schedule.
+            onView(tagged("section-header:steps")).perform(scrollTo(), click())
+            onView(tagged("add-step")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("add-trigger")).check(doesNotExist())
+            // Tapping the open one folds it: all can be folded.
+            onView(tagged("section-header:steps")).perform(scrollTo(), click())
+            onView(tagged("add-step")).check(doesNotExist())
+            onView(tagged("section-chevron:steps")).check(matches(withText("▸")))
+            // Delete stays below the cards.
+            onView(withText("Delete this check-in")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
     }
 
     @Test
@@ -204,6 +258,7 @@ class StartPageTest {
     @Test
     fun cardsAreOnlyAsTallAsTheirContentSoSeveralFitOnScreen() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "First check-in"), TestEnv.checkin("b", "Second check-in")))
+        TestEnv.store.expandedCheckin = "a" // one open, one folded
         TestEnv.allowOverlay(true) // one less "Finish setup" item, as on a set-up phone
         try {
             ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
@@ -219,6 +274,7 @@ class StartPageTest {
     @Test
     fun switchOnTheNameRowTurnsTheAlarmOffAndOn() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Noon")))
+        TestEnv.store.expandedCheckin = "c"
         AlarmScheduler.schedule(TestEnv.ctx, TestEnv.store.checkin("c")!!)
         val am = TestEnv.ctx.getSystemService(AlarmManager::class.java)
 

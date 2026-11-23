@@ -42,11 +42,10 @@ object Grouping {
     }
 
     /**
-     * Expand all / Collapse all: everything is folded when every group in [groups] and every
-     * check-in in [ids] is. Then the button expands them all; otherwise it folds them all.
+     * Expand all / Collapse all (groups only): all folded when every group in [groups] is.
+     * Then the button expands them all; otherwise it folds them all.
      */
-    fun allFolded(groups: Set<String>, foldedGroups: Set<String>, ids: Set<String>, foldedIds: Set<String>): Boolean =
-        foldedGroups.containsAll(groups) && foldedIds.containsAll(ids)
+    fun allFolded(groups: Set<String>, foldedGroups: Set<String>): Boolean = foldedGroups.containsAll(groups)
 
     /** The key for remembering a group's position and collapsed state ("Health" = "health "). */
     fun key(category: String): String = category.trim().lowercase()

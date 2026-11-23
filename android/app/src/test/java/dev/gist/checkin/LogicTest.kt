@@ -712,15 +712,11 @@ class GroupOrderTest {
     }
 
     @Test
-    fun everythingIsFoldedOnlyWhenEveryGroupAndCheckinIs() {
+    fun allFoldedOnlyWhenEveryGroupIs() {
         val groups = setOf("morning", "evening")
-        val ids = setOf("a", "b")
-        assertTrue(Grouping.allFolded(groups, groups, ids, ids))
-        assertTrue("extra ids don't matter", Grouping.allFolded(groups, groups + "gone", ids, ids + "gone"))
-        assertFalse("a group is open", Grouping.allFolded(groups, setOf("morning"), ids, ids))
-        assertFalse("a check-in is open", Grouping.allFolded(groups, groups, ids, setOf("a")))
-        assertTrue("ungrouped: just the check-ins", Grouping.allFolded(emptySet(), emptySet(), ids, ids))
-        assertFalse(Grouping.allFolded(emptySet(), emptySet(), ids, emptySet()))
+        assertTrue(Grouping.allFolded(groups, groups))
+        assertTrue("extra keys don't matter", Grouping.allFolded(groups, groups + "gone"))
+        assertFalse("a group is open", Grouping.allFolded(groups, setOf("morning")))
     }
 }
 

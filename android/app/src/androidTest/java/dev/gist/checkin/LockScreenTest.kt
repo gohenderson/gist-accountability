@@ -142,7 +142,9 @@ class LockScreenTest {
     ) {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         if (overlay) TestEnv.allowOverlay(true)
-        val c = TestEnv.checkin("t", "Test me", listOf(Question("q", "Q?")), mathCount = if (math) 3 else 0)
+        // From the button: a name long enough that the page has to scroll to reach Try it.
+        val name = if (fromButton) "Test me, " + "with a name long enough to push the page down, ".repeat(6) + "the end" else "Test me"
+        val c = TestEnv.checkin("t", name, listOf(Question("q", "Q?")), mathCount = if (math) 3 else 0)
         TestEnv.reset(listOf(if (video) c.copy(background = Background(Background.VIDEO)) else c))
         if (video) Backgrounds.videoFile(TestEnv.ctx, "t").writeBytes(testVideoBytes())
         if (securePin) {
@@ -155,7 +157,12 @@ class LockScreenTest {
 
         // Test, then lock the phone.
         if (fromButton) {
-            val button = scrollTo("Test: ring in 10 seconds", androidx.test.uiautomator.Direction.DOWN)
+            // Open the Try it card (they open one at a time), then scroll to its button.
+            val tryIt = scrollTo("TRY IT", androidx.test.uiautomator.Direction.DOWN)
+            assertNotNull("the Try it card", tryIt)
+            tryIt!!.click()
+            val button = device.wait(Until.findObject(By.text("Test: ring in 10 seconds")), 5_000)
+                ?: scrollTo("Test: ring in 10 seconds", androidx.test.uiautomator.Direction.DOWN)
             assertNotNull("the Test button", button)
             val a = resumed().first { it is CheckinEditActivity }
             val scrolled = onMain { a.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0).scrollY }
@@ -193,15 +200,23 @@ class LockScreenTest {
         }
         TestEnv.readyDevice()
         TestEnv.eventually(15_000) { assertTrue("the check-in's page is in front", resumed().any { it is CheckinEditActivity }) }
-        assertNotNull("the page is drawn", device.wait(Until.findObject(By.scrollable(true)), 10_000))
-        // Scroll back to the top (a hung page wouldn't move). If the notification shade has the
-        // focus, nothing scrolls: close it and try again once.
-        val category = scrollTo("Category: none", androidx.test.uiautomator.Direction.UP) ?: run {
+        assertNotNull("the page is drawn", device.wait(Until.findObject(By.pkg(TestEnv.ctx.packageName)), 10_000))
+        // Scroll back up to the Details card (a hung page wouldn't move). If the notification
+        // shade has the focus, nothing scrolls: close it and try again once. Details is open
+        // unless the Try it card was opened instead.
+        val target = if (fromButton) "DETAILS" else "Category: none"
+        val found = scrollTo(target, androidx.test.uiautomator.Direction.UP) ?: run {
             TestEnv.readyDevice()
             Thread.sleep(1_000)
-            scrollTo("Category: none", androidx.test.uiautomator.Direction.UP)
+            scrollTo(target, androidx.test.uiautomator.Direction.UP)
         }
-        assertNotNull("the page scrolls back to the top. ${diagnose()}", category)
+        assertNotNull("the page scrolls back up. ${diagnose()}", found)
+        val category = if (fromButton) {
+            found!!.click() // opens Details
+            device.wait(Until.findObject(By.text("Category: none")), 5_000)
+                ?: scrollTo("Category: none", androidx.test.uiautomator.Direction.DOWN)
+        } else found
+        assertNotNull("the Details card opens", category)
         category!!.click()
         assertNotNull("and takes taps (the category dialog opens)", device.wait(Until.findObject(By.text("New category…")), 10_000))
         device.pressBack()

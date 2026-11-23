@@ -19,6 +19,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -41,7 +43,7 @@ class GroupingTest {
     fun tearDown() {
         TestEnv.allowOverlay(false)
         TestEnv.store.view = Grouping.UNGROUPED
-        TestEnv.store.collapsedCheckins = emptySet()
+        TestEnv.store.expandedCheckin = null
         TestEnv.store.sort = Grouping.SORT_CUSTOM
         TestEnv.store.groupOrder = emptyList()
         TestEnv.store.collapsed = emptySet()
@@ -168,41 +170,48 @@ class GroupingTest {
     }
 
     @Test
-    fun collapseAllAlsoFoldsTheCheckins() {
+    fun collapseAllLeavesTheCardsAlone() {
         threeGroups()
+        TestEnv.store.expandedCheckin = "m"
         main().use {
             onView(tagged("toggle-all")).perform(scrollTo(), click())
-            // Opening a group shows its check-ins folded to one line.
             onView(tagged("group-header:Morning")).perform(scrollTo(), click())
-            onView(tagged("row:m")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("card:m")).check(doesNotExist())
-            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all"))) // not all folded now
+            onView(tagged("card:m")).perform(scrollTo()).check(matches(isDisplayed())) // still open
+            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all"))) // a group is open
         }
-        assertEquals(setOf("m", "e", "f"), TestEnv.store.collapsedCheckins)
+        assertEquals("m", TestEnv.store.expandedCheckin)
     }
 
     @Test
-    fun tappingTheTitleFoldsAndUnfoldsACheckin() {
+    fun onlyOneCardIsOpenAtATime() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
         main().use {
-            onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("checkin-chevron:a")).check(matches(withText("▾")))
-            onView(tagged("checkin-title:a")).perform(scrollTo(), click())
+            // All folded to start (new ones too).
             onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(tagged("card:a")).check(doesNotExist())
+            onView(tagged("row:b")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(tagged("checkin-chevron:a")).check(matches(withText("▸")))
             onView(tagged("next-line:a")).check(matches(withText(org.hamcrest.Matchers.startsWith("Next: "))))
-            onView(tagged("card:b")).perform(scrollTo()).check(matches(isDisplayed())) // the other stays open
-            onView(tagged("toggle:a")).check(matches(isDisplayed())) // the switch is still there
+            onView(tagged("toggle:a")).check(matches(isDisplayed())) // the switch is there folded too
+            // Opening one...
             onView(tagged("checkin-title:a")).perform(scrollTo(), click())
             onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("checkin-chevron:a")).check(matches(withText("▾")))
+            // ...and then another folds the first.
+            onView(tagged("checkin-title:b")).perform(scrollTo(), click())
+            onView(tagged("card:b")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("card:a")).check(doesNotExist())
+            // Tapping the open one folds it: everything can be folded.
+            onView(tagged("checkin-title:b")).perform(scrollTo(), click())
+            onView(tagged("row:b")).perform(scrollTo()).check(matches(isDisplayed()))
         }
-        assertTrue(TestEnv.store.collapsedCheckins.isEmpty())
+        assertNull(TestEnv.store.expandedCheckin)
     }
 
     @Test
     fun foldingWhileScrolledDownNeverFlashesTheTop() {
         TestEnv.reset((1..10).map { TestEnv.checkin("c$it", "Check-in $it") })
+        TestEnv.store.expandedCheckin = "c10"
         main().use { scenario ->
             var sv: android.widget.ScrollView? = null
             val frames = java.util.Collections.synchronizedList(mutableListOf<Int>())
@@ -232,7 +241,7 @@ class GroupingTest {
     @Test
     fun foldedAndOpenCardsLookAlike() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
-        TestEnv.store.collapsedCheckins = setOf("a")
+        TestEnv.store.expandedCheckin = "b"
         main().use { scenario ->
             onView(tagged("row:a")).perform(scrollTo())
             onView(tagged("card:b")).perform(scrollTo())
@@ -282,7 +291,6 @@ class GroupingTest {
             TestEnv.checkin("a", "apple").copy(enabled = false),
             TestEnv.checkin("m", "Mid").copy(times = listOf(at(30))),
         ))
-        TestEnv.store.collapsedCheckins = setOf("z", "a", "m") // short rows, all on screen
         val ids = listOf("z", "a", "m")
         main().use { scenario ->
             assertEquals(ids, cardOrder(scenario, ids))
@@ -315,7 +323,6 @@ class GroupingTest {
         history("b", 0) // all off track
         TestEnv.store.view = Grouping.BY_CATEGORY
         TestEnv.store.sort = Grouping.SORT_ATTENTION
-        TestEnv.store.collapsedCheckins = setOf("g", "b", "o")
         val ids = listOf("g", "b", "o")
         main().use { scenario ->
             // Groups stay A–Z (Fitness, Health); within Health the worst comes first.
@@ -325,27 +332,23 @@ class GroupingTest {
     }
 
     @Test
-    fun collapseAllFoldsCardsWhenUngrouped() {
+    fun collapseAllIsOnlyForGroups() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
         main().use {
-            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Collapse all")))
-            onView(tagged("toggle-all")).perform(click())
-            for (id in listOf("a", "b")) onView(tagged("row:$id")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(withText("History")).check(doesNotExist())
-            onView(tagged("toggle-all")).perform(scrollTo()).check(matches(withText("Expand all")))
-            onView(tagged("toggle-all")).perform(click())
-            for (id in listOf("a", "b")) onView(tagged("card:$id")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("view-mode")).check(matches(isDisplayed()))
+            onView(tagged("toggle-all")).check(doesNotExist())
         }
     }
 
     @Test
-    fun theOldCompactLayoutStartsFolded() {
+    fun theOldPerCardFoldingIsDropped() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
-        TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE).edit()
-            .putString("style", "compact").commit()
-        assertEquals(setOf("a", "b"), TestEnv.store.collapsedCheckins)
-        TestEnv.store.collapsedCheckins = setOf("b") // the first change replaces the old setting
-        assertEquals(setOf("b"), TestEnv.store.collapsedCheckins)
+        val prefs = TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putStringSet("collapsedCheckins", setOf("a")).putString("style", "compact").commit()
+        assertNull("all folded to start", TestEnv.store.expandedCheckin)
+        TestEnv.store.expandedCheckin = "b"
+        assertEquals("b", TestEnv.store.expandedCheckin)
+        assertFalse(prefs.contains("collapsedCheckins") || prefs.contains("style"))
     }
 
     /** [id] answered on track on [good] of the last 4 days, off track on the rest. */
@@ -424,7 +427,6 @@ class GroupingTest {
         val done = TestEnv.checkin("d", "Done thing").copy(task = true, times = emptyList(), enabled = false,
             doneAt = System.currentTimeMillis())
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), task, backlog, done))
-        TestEnv.store.collapsedCheckins = setOf("c", "t", "b")
         main().use {
             // By default: the Check-ins tab, and no header above the list.
             onView(tagged("tab:checkins")).check(matches(withText("Check-ins")))
@@ -453,6 +455,7 @@ class GroupingTest {
 
             // + on the Backlog tab makes a new backlog task.
             onView(tagged("add")).perform(click())
+            TestEnv.eventually { TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE) }
             TestEnv.eventually { onView(tagged("task-backlog")).check(matches(isDisplayed())) }
         }
         assertEquals(Store.TAB_BACKLOG, TestEnv.store.startTab)
@@ -474,26 +477,27 @@ class GroupingTest {
             onView(tagged("view-mode")).perform(click())
             onView(tagged("sort:${Grouping.SORT_NAME}")).perform(click())
             onView(tagged("view-mode")).check(matches(withText("View: Name ▾")))
-            // Collapse all here folds only the tasks.
-            onView(tagged("toggle-all")).perform(click())
             onView(tagged("tab:checkins")).perform(click())
             onView(tagged("view-mode")).check(matches(withText("View: Next alarm ▾")))
-            onView(tagged("toggle-all")).check(matches(withText("Collapse all")))
         }
         assertEquals(Grouping.SORT_NEXT, TestEnv.store.sortFor(Store.TAB_CHECKINS))
         assertEquals(Grouping.SORT_NAME, TestEnv.store.sortFor(Store.TAB_TASKS))
         assertEquals(Grouping.SORT_CUSTOM, TestEnv.store.sortFor(Store.TAB_BACKLOG))
-        assertEquals(setOf("t1", "t2"), TestEnv.store.collapsedCheckins)
     }
 
     @Test
     fun settingsAboutAndDonateAreAtTheTop() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
-        main().use {
+        main().use { scenario ->
+            scenario.onActivity { act ->
+                fun x(tag: String) = IntArray(2).also { act.window.decorView.findViewWithTag<View>(tag).getLocationOnScreen(it) }[0]
+                assertTrue("donate, about, then settings", x("donate") < x("about") && x("about") < x("settings"))
+            }
             onView(tagged("settings")).check(matches(withContentDescription("Settings")))
             onView(tagged("about")).check(matches(withContentDescription("About Gist")))
             onView(tagged("donate")).check(matches(withContentDescription("Donate")))
             onView(withText("Settings · backup · appearance")).check(doesNotExist())
+            // 💲 ❓ ⚙️, with the gear at the far right.
             onView(tagged("settings")).perform(click())
             TestEnv.eventually { onView(withText("Settings")).check(matches(isDisplayed())) }
         }
@@ -515,6 +519,7 @@ class GroupingTest {
     @Test
     fun checkinsHaveADotAndTasksNone() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), TestEnv.checkin("t", "Call John").copy(task = true, times = emptyList())))
+        TestEnv.store.expandedCheckin = "c"
         main().use { scenario ->
             onView(tagged("card:c")).perform(scrollTo())
             scenario.onActivity { act ->
@@ -523,7 +528,7 @@ class GroupingTest {
                     (dot.background as android.graphics.drawable.GradientDrawable).shape)
             }
             onView(tagged("tab:tasks")).perform(click())
-            onView(tagged("card:t")).perform(scrollTo())
+            onView(tagged("row:t")).perform(scrollTo())
             onView(tagged("marker:t")).check(doesNotExist())
         }
     }
@@ -531,6 +536,7 @@ class GroupingTest {
     @Test
     fun theDragHandleDoesNotMakeCardsTaller() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Daily"), TestEnv.checkin("b", "Evening")))
+        TestEnv.store.expandedCheckin = "a"
         fun heights(sort: String): List<Int> {
             TestEnv.store.sort = sort
             var h = emptyList<Int>()

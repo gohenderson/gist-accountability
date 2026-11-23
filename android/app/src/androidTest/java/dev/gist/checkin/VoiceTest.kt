@@ -138,14 +138,17 @@ class VoiceTest {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Run cheer")))
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.ACTIVITY_RECOGNITION")
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "c")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_STEPS)
             onView(tagged("commitment")).perform(scrollTo(), click())
             onView(tagged("commitment:voice")).inRoot(isDialog()).perform(click())
             onView(tagged("commitment")).perform(scrollTo()).check(matches(withText("Commitment: Voice")))
             onView(tagged("add-step")).check(doesNotExist()) // no steps: it just talks
             onView(tagged("background-kind")).check(doesNotExist()) // and doesn't ring
             onView(tagged("voice-text")).perform(scrollTo(), replaceText("Ahhh, he's training for Boston"), closeSoftKeyboard())
+            TestEnv.openSection(CheckinEditActivity.SECTION_TRY)
             onView(tagged("test-voice")).perform(scrollTo()).check(matches(isDisplayed()))
             // A "partway into a run" trigger, 2 hours in.
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-when:0")).perform(scrollTo(), click())
             onView(tagged("kind:run-for")).inRoot(isDialog()).perform(click())
             TestEnv.eventually(5_000) { assertEquals(Trigger.RUN_FOR, TestEnv.store.checkin("c")!!.events.single().kind) }
@@ -163,6 +166,7 @@ class VoiceTest {
         TestEnv.reset(listOf(c))
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.ACTIVITY_RECOGNITION")
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "v")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("trigger-run-for:0")).perform(scrollTo()).check(matches(withText("After 30 minutes")))
             onView(tagged("trigger-run-for:0")).perform(click())
             onView(tagged("run-for:120")).inRoot(isDialog()).perform(scrollTo(), click())
@@ -176,6 +180,7 @@ class VoiceTest {
     fun theStartPageSaysWhatItSays() {
         TestEnv.allowOverlay(true)
         TestEnv.reset(listOf(voice()))
+        TestEnv.store.expandedCheckin = "v"
         ActivityScenario.launch<MainActivity>(android.content.Intent(TestEnv.ctx, MainActivity::class.java)).use {
             onView(tagged("voice-note:v")).perform(scrollTo())
                 .check(matches(withText("Voice · says \"Is that Forrest Gump?\" · not counted in stats")))
