@@ -299,6 +299,7 @@ class MainActivity : BaseActivity() {
                 setOnClickListener {
                     if (!on) {
                         store.startTab = key
+                        store.expandedCheckin = null // every tab opens with its cards folded
                         render()
                     }
                 }
@@ -425,6 +426,14 @@ class MainActivity : BaseActivity() {
 
         card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
         card.add(muted(CheckinText.oneLine(c)).apply { tag = "summary:${c.id}" }, dp(2))
+        // Its description: the first few lines (all of it is on its page).
+        if (c.description.isNotBlank()) {
+            card.add(label(c.description, 15f).apply {
+                maxLines = DESCRIPTION_LINES
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                tag = "description:${c.id}"
+            }, dp(8))
+        }
 
         if (c.soft) {
             card.add(muted("Soft alarm · not counted in stats", 13f).apply { tag = "soft-note:${c.id}" }, dp(4))
@@ -679,6 +688,8 @@ class MainActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
+        /** How much of a description an open card shows. */
+        const val DESCRIPTION_LINES = 4
         /** Check-in cards, folded or not: the name's size. */
         private const val TITLE_SIZE = 18f
         private const val REQ_NOTIF = 1
