@@ -25,10 +25,22 @@ struct CheckinEditView: View {
         }
     }
 
+    /// The one card that's open (the rest show just their title); Details to start. Like the
+    /// Android app's check-in page: they open one at a time.
+    @State private var open: String? = Card.details
+
+    enum Card {
+        static let details = "details"
+        static let schedule = "schedule"
+        static let rings = "rings"
+        static let steps = "steps"
+        static let tryIt = "try"
+    }
+
     @ViewBuilder private func form(_ c: Binding<Checkin>) -> some View {
         Form {
             if let score = model.score(c.wrappedValue) {
-                Section {
+                SwiftUI.Section {
                     HStack(alignment: .firstTextBaseline) {
                         Text(Score.percent(score)).font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(Theme.scoreColor(score))
@@ -36,75 +48,36 @@ struct CheckinEditView: View {
                     }
                 }
             }
-            Section {
-                LabeledContent("Name") {
-                    TextField("Name", text: c.name)
-                        .multilineTextAlignment(.trailing)
-                        .accessibilityIdentifier("checkin-name")
-                }
-                Toggle("On", isOn: c.enabled)
-                LabeledContent("Category") {
-                    TextField("None", text: c.category)
-                        .multilineTextAlignment(.trailing)
-                        .accessibilityIdentifier("checkin-category")
-                }
-                Toggle("Answers count for the previous day", isOn: c.aboutYesterday)
-            } footer: {
-                Text("For a morning check-in about last night.")
+
+            header(Card.details, "Details")
+            if open == Card.details { details(c) }
+
+            header(Card.schedule, "Schedule")
+            if open == Card.schedule {
+                scheduleTop(c)
+                timesSection(c)
             }
 
-            timesSection(c)
-
-            Section {
-                Picker("Commitment", selection: c.commitment) {
-                    Text("Strict").tag(Checkin.strict)
-                    Text("Soft").tag(Checkin.soft)
-                    Text("Voice").tag(Checkin.voice)
-                }
-                .accessibilityIdentifier("commitment")
-                if c.wrappedValue.isSoft {
-                    Picker("Snooze", selection: c.snoozeMinutes) {
-                        ForEach(Checkin.snoozeChoices, id: \.self) { Text("\($0) minutes").tag($0) }
-                    }
-                    .accessibilityIdentifier("snooze-minutes")
-                }
-            } footer: {
-                Text(commitmentText(c.wrappedValue))
+            if !c.wrappedValue.isVoice {
+                header(Card.rings, "While it rings")
+                if open == Card.rings { whileItRings(c) }
             }
 
-            if c.wrappedValue.isVoice {
-                VoiceSection(checkin: c)
-            } else {
-                stepsSection(c)
-
-                Section {
-                    NavigationLink {
-                        BackgroundEditView(checkin: c)
-                    } label: {
-                        LabeledContent("Background and caption", value: backgroundText(c.wrappedValue))
-                    }
-                    .accessibilityIdentifier("while-it-rings")
-                } header: {
-                    Text("While it rings")
-                }
+            header(Card.steps, c.wrappedValue.isVoice ? "What it says" : "When it rings")
+            if open == Card.steps {
+                commitmentSection(c)
+                if c.wrappedValue.isVoice { VoiceSection(checkin: c) } else { stepsSection(c) }
             }
 
-            Section {
-                if c.wrappedValue.isVoice {
-                    Button("Play it now") { model.playVoice(c.wrappedValue) }
-                        .accessibilityIdentifier("test-voice")
-                } else {
-                    Button("Test: ring in 10 seconds") { model.testRing(c.wrappedValue) }
-                        .accessibilityIdentifier("test-ring")
-                }
-            } footer: {
-                Text(c.wrappedValue.isVoice ? "Nothing is logged." : "A practice run: nothing is logged, and real alarms are left alone.")
-            }
+            header(Card.tryIt, "Try it")
+            if open == Card.tryIt { tryIt(c) }
 
-            Section {
-                Button("Delete this check-in", role: .destructive) { confirmDelete = true }
+            SwiftUI.Section {
+                Button("Delete", role: .destructive) { confirmDelete = true }
+                    .accessibilityIdentifier("delete-checkin")
             }
         }
+        .listSectionSpacing(.compact)
         .confirmationDialog("Delete \(c.wrappedValue.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete check-in and its history", role: .destructive) {
                 let id = c.wrappedValue.id
@@ -112,6 +85,147 @@ struct CheckinEditView: View {
                 model.delete(id)
                 dismiss()
             }
+        }
+    }
+
+    /// A card's title: tap to open it (whichever was open folds), or to fold it.
+    private func header(_ key: String, _ title: String) -> some View {
+        let isOpen = open == key
+        return SwiftUI.Section {
+            Button {
+                withAnimation(.snappy) { open = isOpen ? nil : key }
+            } label: {
+                HStack {
+                    Text(title).font(.headline).foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: isOpen ? "chevron.down" : "chevron.right").foregroundStyle(Theme.muted)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("section-header:\(key)")
+            .accessibilityValue(isOpen ? "expanded" : "collapsed")
+        }
+    }
+
+    /// Name, description, time commitment and category.
+    @ViewBuilder private func details(_ c: Binding<Checkin>) -> some View {
+        SwiftUI.Section {
+            LabeledContent("Name") {
+                TextField("Name", text: c.name)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("checkin-name")
+            }
+            TextField("Description: what it's about, notes", text: c.description, axis: .vertical)
+                .lineLimit(2...8)
+                .accessibilityIdentifier("checkin-description")
+            Picker("Time commitment", selection: c.timeCommitment) {
+                Text("Not set").tag("")
+                ForEach(Checkin.timeCommitments, id: \.key) { Text($0.name).tag($0.key) }
+            }
+            .accessibilityIdentifier("time-commitment")
+            LabeledContent("Category") {
+                TextField("None", text: c.category)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("checkin-category")
+            }
+        }
+    }
+
+    /// On / off, one-time task (and where it stands), and "about yesterday".
+    @ViewBuilder private func scheduleTop(_ c: Binding<Checkin>) -> some View {
+        SwiftUI.Section {
+            // Turning a done task back on puts it back on the list.
+            Toggle("Alarm on", isOn: Binding(get: { c.wrappedValue.enabled }, set: { on in
+                c.wrappedValue.enabled = on
+                if on { c.wrappedValue.doneAt = nil }
+            }))
+            .accessibilityIdentifier("alarm-on")
+            Toggle("One-time task", isOn: Binding(get: { c.wrappedValue.task }, set: { on in
+                c.wrappedValue.task = on
+                c.wrappedValue.doneAt = nil
+            }))
+            .accessibilityIdentifier("task-switch")
+            if c.wrappedValue.isTask {
+                if let doneAt = c.wrappedValue.doneAt {
+                    Text("✓ Done \(TimeText.done(doneAt))").foregroundStyle(Theme.good)
+                        .accessibilityIdentifier("task-done")
+                    Button("Put it back on the list") {
+                        c.wrappedValue.enabled = true
+                        c.wrappedValue.doneAt = nil
+                    }
+                    .accessibilityIdentifier("task-reopen")
+                } else if !c.wrappedValue.times.isEmpty && c.wrappedValue.enabled && model.next(c.wrappedValue) == nil {
+                    Text("Its times have passed: it won't ring again. Pick a new date, or do it from the start page.")
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("task-overdue")
+                } else if c.wrappedValue.hasNoTriggers {
+                    Text("No set time: it waits on the start page until you do it (Do it now).")
+                        .accessibilityIdentifier("task-backlog")
+                }
+            }
+            Toggle("Answers count for the previous day", isOn: c.aboutYesterday)
+        } footer: {
+            Text(c.wrappedValue.isTask
+                 ? "Done once, then it turns off and moves to Done tasks. Give it a time \"On a specific date\" to ring like any alarm, or no times to keep it on the start page until you do it."
+                 : "Answers count for the previous day: for a morning check-in about last night.")
+        }
+    }
+
+    /// Sound (an alarm, or No alarm: just a quiet reminder) and the background.
+    @ViewBuilder private func whileItRings(_ c: Binding<Checkin>) -> some View {
+        SwiftUI.Section {
+            Picker("Sound", selection: Binding(get: { c.wrappedValue.isQuiet ? Checkin.quiet : "" },
+                                               set: { c.wrappedValue.soundUri = $0.isEmpty ? nil : $0 })) {
+                Text("Alarm").tag("")
+                Text("No alarm (just a reminder)").tag(Checkin.quiet)
+            }
+            .accessibilityIdentifier("sound")
+            if !c.wrappedValue.isQuiet {
+                NavigationLink {
+                    BackgroundEditView(checkin: c)
+                } label: {
+                    LabeledContent("Background and caption", value: backgroundText(c.wrappedValue))
+                }
+                .accessibilityIdentifier("while-it-rings")
+            }
+        } footer: {
+            if c.wrappedValue.isQuiet {
+                Text("No alarm screen or sound: a quiet notification, and it waits on the start page.")
+            }
+        }
+    }
+
+    @ViewBuilder private func commitmentSection(_ c: Binding<Checkin>) -> some View {
+        SwiftUI.Section {
+            Picker("Commitment", selection: c.commitment) {
+                Text("Strict").tag(Checkin.strict)
+                Text("Soft").tag(Checkin.soft)
+                Text("Voice").tag(Checkin.voice)
+            }
+            .accessibilityIdentifier("commitment")
+            if c.wrappedValue.isSoft {
+                Picker("Snooze", selection: c.snoozeMinutes) {
+                    ForEach(Checkin.snoozeChoices, id: \.self) { Text("\($0) minutes").tag($0) }
+                }
+                .accessibilityIdentifier("snooze-minutes")
+            }
+        } footer: {
+            Text(commitmentText(c.wrappedValue))
+        }
+    }
+
+    @ViewBuilder private func tryIt(_ c: Binding<Checkin>) -> some View {
+        SwiftUI.Section {
+            if c.wrappedValue.isVoice {
+                Button("Play it now") { model.playVoice(c.wrappedValue) }
+                    .accessibilityIdentifier("test-voice")
+            } else {
+                Button("Test: ring in 10 seconds") { model.testRing(c.wrappedValue) }
+                    .accessibilityIdentifier("test-ring")
+            }
+        } footer: {
+            Text(c.wrappedValue.isVoice ? "Nothing is logged." : "A practice run: nothing is logged, and real alarms are left alone.")
         }
     }
 
@@ -144,7 +258,7 @@ struct CheckinEditView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     DatePicker("Time", selection: timeBinding(c, i), displayedComponents: .hourAndMinute)
                     NavigationLink {
-                        DaysEditor(days: daysBinding(c, i))
+                        DaysEditor(days: daysBinding(c, i), allowsDate: true)
                     } label: {
                         LabeledContent("Days", value: c.wrappedValue.daysFor(t).describe())
                     }
@@ -436,14 +550,20 @@ struct StepEditView: View {
 /// Which days: every day, weekdays, weekends, chosen days of the week, or dates of the month.
 struct DaysEditor: View {
     @Binding var days: Repeat
+    /// For a time: "On a specific date" too (it rings once, e.g. for a task).
+    var allowsDate = false
 
     private enum Choice: String, CaseIterable, Identifiable {
         case every = "Every day", weekdays = "Weekdays", weekends = "Weekends", week = "Days of the week", month = "Days of the month"
+        case date = "On a specific date"
         var id: String { rawValue }
     }
 
+    private var choices: [Choice] { Choice.allCases.filter { allowsDate || $0 != .date } }
+
     private var choice: Choice {
         switch days.kind {
+        case Repeat.once: return .date
         case Repeat.weekly:
             if days.days == Repeat.weekdays { return .weekdays }
             if days.days == Repeat.weekends { return .weekends }
@@ -457,10 +577,21 @@ struct DaysEditor: View {
         Form {
             Section {
                 Picker("Days", selection: Binding(get: { choice }, set: { apply($0) })) {
-                    ForEach(Choice.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(choices) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
+            }
+            if choice == .date {
+                Section {
+                    DatePicker("Date", selection: Binding(get: {
+                        days.date.flatMap { Days.date($0) } ?? Date()
+                    }, set: { days = .onDate(Days.string($0)) }), displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .accessibilityIdentifier("once-date")
+                } footer: {
+                    Text("It rings once, on this date.")
+                }
             }
             if choice == .week {
                 Section("Days of the week") {
@@ -499,6 +630,7 @@ struct DaysEditor: View {
         case .weekends: days = Repeat(Repeat.weekly, Repeat.weekends)
         case .week: days = Repeat(Repeat.weekly, days.kind == Repeat.weekly ? days.days : [1, 3, 5])
         case .month: days = Repeat(Repeat.monthly, days.kind == Repeat.monthly ? days.days : [1])
+        case .date: days = .onDate(days.date ?? Days.today())
         }
     }
 }

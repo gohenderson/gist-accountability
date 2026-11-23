@@ -87,6 +87,16 @@ enum TimeText {
         return date.formatted(.dateTime.month(.abbreviated).day()) + " \(time)"
     }
 
+    /// When a task was done (epoch ms): "today 3:05 PM", "yesterday 9:00 AM", "Sat, Nov 21 9:00 AM".
+    static func done(_ ms: Int) -> String {
+        let date = Date(timeIntervalSince1970: Double(ms) / 1000)
+        let cal = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if cal.isDateInToday(date) { return "today \(time)" }
+        if cal.isDateInYesterday(date) { return "yesterday \(time)" }
+        return Repeat.dateText(Days.string(date)) + " \(time)"
+    }
+
     /// "Monday, Nov 9" from "2026-11-09".
     static func day(_ day: String) -> String {
         guard let d = Days.date(day) else { return day }

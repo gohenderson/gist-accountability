@@ -337,8 +337,8 @@ on **One-time task** on any check-in's page.
 **On a specific date** works on any time trigger, not just tasks: a daily check-in can have
 one extra time that rings once.
 
-Backups with a task or a time on a specific date are version 5, which the iPhone app can't
-read yet; backups without them stay version 4.
+Backups with a task, a time on a specific date or a pick-tasks step are version 5 (both
+apps read them); backups without them stay version 4.
 
 ## History, scores and logging
 
@@ -451,6 +451,16 @@ these differences:
 - **Voice check-ins** speak (or play your clip) through your headphones, with your music
   dipping, as on Android. Runs and places set them off any time. Their set times speak
   only while Gist is awake: open, or watching for runs.
+- **Tasks, the backlog and picking today's tasks** work as on Android, with the same start
+  page: **Check-ins · Tasks · Backlog** as a segmented control with **+** beside it, a
+  View per tab, the number above for each tab, and cards that open one at a time. The
+  gear at the top right opens Settings (with About and Donate). **My order** is changed
+  with **View → Change my order…**, for the tab you're on.
+- **No alarm** (under **While it rings → Sound**) reminds with a quiet notification (no
+  sound, and it doesn't light the screen); the first time, iOS asks to allow
+  notifications. It then waits on its card on the start page.
+- **A check-in's page** has the same cards (Details, Schedule, While it rings, When it
+  rings, Try it), opening one at a time; **History** shows how long it takes as a chart.
 
 ## Honest limits
 

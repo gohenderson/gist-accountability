@@ -195,8 +195,8 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(groups[1].1.map { $0.id }, ["1", "4"])
         XCTAssertEqual(Grouping.byCategory(list, order: ["health"]).map { $0.0 }, ["Health", "fitness", "Other"])
         XCTAssertEqual(Grouping.categories(list), ["fitness", "Health"])
-        XCTAssertTrue(Grouping.allFolded(groups: ["a"], foldedGroups: ["a", "b"], ids: ["x"], foldedIds: ["x"]))
-        XCTAssertFalse(Grouping.allFolded(groups: ["a"], foldedGroups: [], ids: ["x"], foldedIds: ["x"]))
+        XCTAssertTrue(Grouping.allFolded(groups: ["a"], foldedGroups: ["a", "b"]))
+        XCTAssertFalse(Grouping.allFolded(groups: ["a"], foldedGroups: []))
     }
 
     func testPlacesAndRunText() {

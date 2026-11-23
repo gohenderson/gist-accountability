@@ -156,4 +156,13 @@ final class TaskTests: XCTestCase {
         dated.enabled = true
         XCTAssertTrue(try Backup.export(GistData(checkins: [dated])).contains("version: 5"))
     }
+
+    func testTheStartTabs() {
+        var done = task("done")
+        done.doneAt = 1
+        let list = [Checkin(id: "c", name: "C"), task("active", on: true), task("back"), done]
+        XCTAssertEqual(StartTab.checkins.items(list).map { $0.id }, ["c"])
+        XCTAssertEqual(StartTab.tasks.items(list).map { $0.id }, ["active"])
+        XCTAssertEqual(StartTab.backlog.items(list).map { $0.id }, ["back"])
+    }
 }

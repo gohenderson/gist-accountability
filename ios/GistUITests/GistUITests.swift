@@ -34,6 +34,17 @@ final class GistUITests: XCTestCase {
         XCTAssertTrue(e.exists && e.isHittable, "couldn't scroll to \(e)", file: file, line: line)
     }
 
+    /// Opens a card on a check-in's page (they open one at a time), unless it's open.
+    func openSection(_ key: String, file: StaticString = #filePath, line: UInt = #line) {
+        let h = element("section-header:\(key)")
+        waitFor(h, file: file, line: line)
+        if !h.isHittable { scrollTo(h, file: file, line: line) }
+        if h.value as? String != "expanded" { h.tap() }
+    }
+
+    /// The start page's tab called [title].
+    func tab(_ title: String) -> XCUIElement { app.segmentedControls["tabs"].buttons[title] }
+
     // MARK: Start page
 
     func testStartPageShowsCheckins() {
@@ -43,22 +54,72 @@ final class GistUITests: XCTestCase {
         XCTAssertTrue(element("overall-score").exists)
     }
 
-    func testTappingTheTitleFoldsAndUnfolds() {
+    func testCardsOpenOneAtATime() {
         launch()
-        waitFor(element("card:evening"))
-        element("checkin-title:evening").tap()
+        // All folded to start.
         waitFor(element("row:evening"))
+        XCTAssertTrue(element("row:morning").exists)
         element("checkin-title:evening").tap()
         waitFor(element("card:evening"))
+        // Opening another folds the first.
+        element("checkin-title:morning").tap()
+        waitFor(element("card:morning"))
+        waitFor(element("row:evening"))
+        // Tapping the card's body (not a button) folds it too.
+        element("summary:morning").tap()
+        waitFor(element("row:morning"))
+    }
+
+    func testTheTabsAndTheirSummaries() {
+        launch(tasks: true)
+        waitFor(element("overall-score"))
+        XCTAssertTrue(element("checkin-title:morning").exists)
+        XCTAssertFalse(element("checkin-title:shed").exists, "tasks aren't on the Check-ins tab")
+        XCTAssertTrue(element("view-mode").exists, "View is always there")
+        tab("Backlog").tap()
+        waitFor(element("backlog-added-count"))
+        waitFor(element("checkin-title:shed"))
+        XCTAssertFalse(element("checkin-title:morning").exists)
+        tab("Tasks").tap()
+        waitFor(element("tasks-done-count"))
+        waitFor(showing("No active tasks"))
+        XCTAssertTrue(element("done-tasks").exists)
+        XCTAssertTrue(element("settings").exists, "the gear, top right")
+    }
+
+    func testPlusOnTheBacklogMakesABacklogTaskAndDoingOneCompletesIt() {
+        launch("tab:backlog", tasks: true)
+        let add = element("add")
+        waitFor(add)
+        add.tap()
+        let name = element("checkin-name")
+        waitFor(name)
+        XCTAssertEqual(name.value as? String, "New task")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // Do the shed task from its card: it moves to Done tasks.
+        waitFor(element("checkin-title:shed"))
+        element("checkin-title:shed").tap()
+        let doIt = element("task-do:shed")
+        waitFor(doIt)
+        doIt.tap()
+        let finish = element("finish")
+        waitFor(finish)
+        finish.tap()
+        XCTAssertTrue(element("checkin-title:shed").waitForNonExistence(timeout: 10))
+        tab("Tasks").tap()
+        waitFor(element("done-tasks"))
+        element("done-tasks").tap()
+        waitFor(element("done-task:shed"))
+        element("reopen:shed").tap()
+        XCTAssertTrue(element("done-task:shed").waitForNonExistence(timeout: 10))
     }
 
     // MARK: Adding
 
     func testAddingFromTheLibrary() {
         launch()
-        let add = element("add-checkin")
+        let add = element("add")
         waitFor(add)
-        scrollTo(add)
         add.tap()
         let water = element("library:water")
         waitFor(water)
@@ -159,6 +220,7 @@ final class GistUITests: XCTestCase {
     func testSettingACaption() {
         launch("edit:wake")
         waitFor(element("checkin-name"))
+        openSection("rings")
         let link = element("while-it-rings")
         scrollTo(link) // below the fold: the list only makes it when it's near
         link.tap()
@@ -173,6 +235,7 @@ final class GistUITests: XCTestCase {
 
     func testAddingAPlaceTrigger() {
         launch("edit:morning")
+        openSection("schedule")
         let add = element("add-place-trigger")
         waitFor(add)
         scrollTo(add)
@@ -191,6 +254,7 @@ final class GistUITests: XCTestCase {
 
     func testATimeOnlyAtAPlace() {
         launch("edit:morning")
+        openSection("schedule")
         let whereLink = element("where:0")
         waitFor(whereLink)
         scrollTo(whereLink)
@@ -209,6 +273,7 @@ final class GistUITests: XCTestCase {
     func testAddingARunTrigger() {
         launch("edit:wake")
         waitFor(element("checkin-name"))
+        openSection("schedule")
         let add = element("add-run-trigger")
         scrollTo(add)
         add.tap()
@@ -231,6 +296,7 @@ final class GistUITests: XCTestCase {
         waitFor(blank)
         blank.tap()
         waitFor(element("checkin-name"))
+        openSection("steps")
         let commitment = element("commitment")
         scrollTo(commitment)
         commitment.tap()
@@ -241,7 +307,8 @@ final class GistUITests: XCTestCase {
         scrollTo(text)
         text.tap()
         text.typeText("Halfway there")
-        XCTAssertFalse(element("while-it-rings").exists, "a voice check-in doesn't ring")
+        XCTAssertFalse(element("section-header:rings").exists, "a voice check-in doesn't ring")
+        openSection("try")
         let play = element("test-voice")
         scrollTo(play)
     }
@@ -279,5 +346,24 @@ final class GistUITests: XCTestCase {
         go.tap()
         // A test ring: the steps are done and nothing changed.
         XCTAssertTrue(element("pick-go").waitForNonExistence(timeout: 10))
+    }
+
+    func testSectionsOpenOneAtATimeAndTheNewFields() {
+        launch("edit:morning")
+        let desc = element("checkin-description")
+        waitFor(desc)
+        desc.tap()
+        desc.typeText("Before coffee")
+        XCTAssertTrue(element("time-commitment").exists)
+        XCTAssertFalse(element("add-time").exists, "Schedule is folded")
+        openSection("schedule")
+        waitFor(element("add-time"))
+        XCTAssertFalse(element("checkin-description").exists, "Details folded")
+        XCTAssertTrue(element("task-switch").exists)
+        element("section-header:schedule").tap() // the open one: now everything's folded
+        XCTAssertTrue(element("add-time").waitForNonExistence(timeout: 5))
+        let delete = element("delete-checkin")
+        scrollTo(delete)
+        XCTAssertEqual(delete.label, "Delete")
     }
 }
