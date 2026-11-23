@@ -35,7 +35,8 @@ struct RunView: View {
     private var checkin: Checkin? { model.checkin(request.pending.checkinId) }
 
     private var steps: [RunStep] {
-        (checkin?.activeSteps ?? []).map { s in
+        // (Pick today's tasks runs once the tasks screens are here; until then it's skipped.)
+        (checkin?.activeSteps ?? []).filter { $0.kind != StepConfig.pickTasks }.map { s in
             switch s.kind {
             case StepConfig.math: return .math(count: s.mathCount, level: s.mathLevel, note: nil)
             case StepConfig.scan:

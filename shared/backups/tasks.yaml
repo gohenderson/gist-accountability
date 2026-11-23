@@ -1,0 +1,107 @@
+# Gist backup. Import it with Settings → Import backup… (you choose what to bring in).
+# A sample with tasks and check-in timing (version 5), shared by the Android and iOS test suites.
+format: gist-backup
+version: 5
+exportedAt: 2026-11-23T12:00:00Z
+checkins:
+# A morning check-in that has you pick today's tasks, with how long it took.
+- id: plan01
+  name: Plan the day
+  times: ['07:30']
+  repeat: {kind: daily, days: []}
+  enabled: true
+  aboutYesterday: false
+  soundUri: ''
+  soundTitle: ''
+  background: {kind: none, intervalSec: 10, caption: ''}
+  steps:
+  - id: p1
+    kind: pickTasks
+    pickCount: 3
+  events: []
+  category: Morning
+  commitment: strict
+  voiceSource: text
+  voiceText: ''
+  voiceHeadphonesOnly: true
+  snoozeMinutes: 10
+  description: |-
+    Look at the backlog.
+    Pick what fits today.
+  timeCommitment: minutes
+# An active task with a time on a specific date, reminding quietly (No alarm).
+- id: call01
+  name: Call John
+  times:
+  - t: '15:00'
+    days: {kind: once, days: [], date: '2026-11-24'}
+  repeat: {kind: daily, days: []}
+  enabled: true
+  aboutYesterday: false
+  soundUri: quiet
+  soundTitle: ''
+  background: {kind: none, intervalSec: 10, caption: ''}
+  steps: []
+  events: []
+  category: Tasks
+  commitment: soft
+  voiceSource: text
+  voiceText: ''
+  voiceHeadphonesOnly: true
+  snoozeMinutes: 10
+  task: true
+  backlogAt: 1763800000000
+  timeCommitment: hour
+# A task in the backlog: off, no triggers.
+- id: shed01
+  name: Organize shed
+  times: []
+  repeat: {kind: daily, days: []}
+  enabled: false
+  aboutYesterday: false
+  soundUri: quiet
+  soundTitle: ''
+  background: {kind: none, intervalSec: 10, caption: ''}
+  steps: []
+  events: []
+  category: Tasks
+  commitment: soft
+  voiceSource: text
+  voiceText: ''
+  voiceHeadphonesOnly: true
+  snoozeMinutes: 10
+  task: true
+  backlogAt: 1763850000000
+  timeCommitment: days
+# A task that's been done.
+- id: milk01
+  name: Buy milk
+  times: []
+  repeat: {kind: daily, days: []}
+  enabled: false
+  aboutYesterday: false
+  soundUri: quiet
+  soundTitle: ''
+  background: {kind: none, intervalSec: 10, caption: ''}
+  steps: []
+  events: []
+  category: Tasks
+  commitment: soft
+  voiceSource: text
+  voiceText: ''
+  voiceHeadphonesOnly: true
+  snoozeMinutes: 10
+  task: true
+  doneAt: 1763900000000
+  backlogAt: 1763700000000
+entries:
+  '2026-11-22':
+    plan01:
+      '07:30': {s: done, a: {}, early: false, rangAt: 1763793000000, took: {start: 70, steps: 185}}
+  '2026-11-23':
+    plan01:
+      '07:30': {s: done, a: {}, early: true, took: {steps: 120}}
+  '2026-11-21':
+    plan01:
+      '07:30': {s: rang, a: {}, early: false, rangAt: 1763706600000}
+media: {}

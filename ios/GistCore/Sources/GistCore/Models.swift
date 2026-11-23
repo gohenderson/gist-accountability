@@ -73,11 +73,13 @@ public struct Question: Equatable, Identifiable {
 ///  - daily: every day;
 ///  - weekly: on [days] of the week (1 = Monday … 7 = Sunday);
 ///  - monthly: on [days] of the month (1…31, or lastDay). A date a month doesn't have is
-///    skipped that month; lastDay means "end of month".
+///    skipped that month; lastDay means "end of month";
+///  - once: only on [date] ("yyyy-MM-dd": "On a specific date"), for one time trigger.
 public struct Repeat: Equatable {
     public static let daily = "daily"
     public static let weekly = "weekly"
     public static let monthly = "monthly"
+    public static let once = "once"
     public static let lastDay = -1
     public static let weekdays: Set<Int> = [1, 2, 3, 4, 5]
     public static let weekends: Set<Int> = [6, 7]
@@ -85,11 +87,17 @@ public struct Repeat: Equatable {
 
     public var kind: String
     public var days: Set<Int>
+    /// once: the day, "yyyy-MM-dd".
+    public var date: String?
 
-    public init(_ kind: String = Repeat.daily, _ days: Set<Int> = []) {
+    public init(_ kind: String = Repeat.daily, _ days: Set<Int> = [], date: String? = nil) {
         self.kind = kind
         self.days = days
+        self.date = date
     }
+
+    /// Only on [day] ("yyyy-MM-dd").
+    public static func onDate(_ day: String) -> Repeat { Repeat(once, [], date: day) }
 
     public static func weeklyOn(_ days: Set<Int>) -> Repeat {
         days.isEmpty || days.count == 7 ? .everyDay : Repeat(weekly, days)
@@ -101,6 +109,7 @@ public struct Repeat: Equatable {
 
     /// Does it ring on [date] (in [calendar]'s time zone)?
     public func matches(_ date: Date, calendar: Calendar) -> Bool {
+        if kind == Repeat.once { return Days.string(date, calendar: calendar) == self.date }
         let c = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
         let length = calendar.range(of: .day, in: .month, for: date)?.count ?? 31
         return matches(day: c.day ?? 1, isoWeekday: Days.isoWeekday(c.weekday ?? 1), daysInMonth: length)
@@ -110,6 +119,7 @@ public struct Repeat: Equatable {
         switch kind {
         case Repeat.weekly: return days.contains(isoWeekday)
         case Repeat.monthly: return days.contains(day) || (days.contains(Repeat.lastDay) && day == daysInMonth)
+        case Repeat.once: return false // needs the year and month: see matches(_:calendar:)
         default: return true
         }
     }
@@ -129,13 +139,29 @@ public struct Repeat: Equatable {
             var parts = days.filter { $0 != Repeat.lastDay }.sorted().map { Repeat.ordinal($0) }
             if days.contains(Repeat.lastDay) { parts.append("last day") }
             return "monthly on the " + Repeat.joinWithAnd(parts)
+        case Repeat.once:
+            return "on " + (date.map { Repeat.dateText($0) } ?? "no date")
         default:
             return "every day"
         }
     }
 
     public var json: JSON {
-        .object(JSONObject([("kind", .string(kind)), ("days", .array(days.sorted().map { d -> JSON in .int(d) }))]))
+        var o = JSONObject([("kind", .string(kind)), ("days", .array(days.sorted().map { d -> JSON in .int(d) }))])
+        if let date { o["date"] = .string(date) }
+        return .object(o)
+    }
+
+    /// "Sat, Nov 21", with the year when it isn't this year.
+    public static func dateText(_ day: String, today: Date = Date(), calendar: Calendar = .current) -> String {
+        guard let d = Days.date(day, calendar: calendar) else { return day }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        let sameYear = calendar.component(.year, from: d) == calendar.component(.year, from: today)
+        f.dateFormat = sameYear ? "EEE, MMM d" : "EEE, MMM d, yyyy"
+        return f.string(from: d)
     }
 
     /// Missing or unreadable: every day.
@@ -145,6 +171,9 @@ public struct Repeat: Equatable {
         switch o.string("kind") {
         case weekly: return weeklyOn(days.filter { (1...7).contains($0) })
         case monthly: return monthlyOn(days.filter { (1...31).contains($0) || $0 == lastDay })
+        case once:
+            let d = o.string("date")
+            return Days.date(d, calendar: Calendar(identifier: .gregorian)) != nil && d.count == 10 ? onDate(d) : .everyDay
         default: return .everyDay
         }
     }
@@ -394,9 +423,12 @@ public struct StepConfig: Equatable, Identifiable {
     public static let math = "math"
     public static let scan = "scan"
     public static let questions = "questions"
-    public static let kinds = [math, scan, questions]
+    /// Have [pickCount] active tasks for today: pick the difference from the backlog.
+    public static let pickTasks = "pickTasks"
+    public static let kinds = [math, scan, questions, pickTasks]
     public static let maxSteps = 100
     public static let maxProblems = 100
+    public static let maxPick = 20
 
     public var id: String
     public var kind: String
@@ -405,9 +437,11 @@ public struct StepConfig: Equatable, Identifiable {
     public var scanCode: String?
     public var scanLabel: String
     public var questions: [Question]
+    /// pickTasks: how many active tasks to have (fewer if the backlog has fewer).
+    public var pickCount: Int
 
     public init(id: String = Ids.new(), kind: String, mathCount: Int = 3, mathLevel: Int = 2,
-                scanCode: String? = nil, scanLabel: String = "", questions: [Question] = []) {
+                scanCode: String? = nil, scanLabel: String = "", questions: [Question] = [], pickCount: Int = 3) {
         self.id = id
         self.kind = kind
         self.mathCount = mathCount
@@ -415,6 +449,7 @@ public struct StepConfig: Equatable, Identifiable {
         self.scanCode = scanCode
         self.scanLabel = scanLabel
         self.questions = questions
+        self.pickCount = pickCount
     }
 
     public var configured: Bool {
@@ -422,6 +457,7 @@ public struct StepConfig: Equatable, Identifiable {
         case StepConfig.math: return mathCount > 0
         case StepConfig.scan: return scanCode != nil
         case StepConfig.questions: return !questions.isEmpty
+        case StepConfig.pickTasks: return pickCount > 0
         default: return false
         }
     }
@@ -437,6 +473,8 @@ public struct StepConfig: Equatable, Identifiable {
             o["scanLabel"] = .string(scanLabel)
         case StepConfig.questions:
             o["questions"] = .array(questions.map { $0.json })
+        case StepConfig.pickTasks:
+            o["pickCount"] = .int(pickCount)
         default:
             break
         }
@@ -462,7 +500,8 @@ public struct StepConfig: Equatable, Identifiable {
             mathLevel: min(MathGen.levels.count, max(1, o.int("mathLevel", 2))),
             scanCode: code.isEmpty ? nil : code,
             scanLabel: o.string("scanLabel"),
-            questions: qs
+            questions: qs,
+            pickCount: min(maxPick, max(1, o.int("pickCount", 3)))
         )
     }
 }
@@ -516,6 +555,18 @@ public struct Checkin: Equatable, Identifiable {
     public static let voiceClip = "clip"
     public static let snoozeChoices = [5, 10, 15, 20, 30]
     public static let defaultSnooze = 10
+    /// soundUri for "No alarm": a quiet notification instead of an alarm.
+    public static let quiet = "quiet"
+    /// Time commitments, shortest first: key and name.
+    public static let timeCommitments: [(key: String, name: String)] = [
+        ("minutes", "A few minutes"), ("hour", "An hour"), ("hours", "A few hours"),
+        ("day", "A day"), ("days", "A few days"), ("week", "A week"), ("weeks", "A few weeks"),
+        ("month", "A month"), ("months", "A few months"),
+    ]
+
+    public static func timeCommitmentName(_ key: String) -> String? {
+        timeCommitments.first { $0.key == key }?.name
+    }
 
     public var id: String
     public var name: String
@@ -534,13 +585,26 @@ public struct Checkin: Equatable, Identifiable {
     public var voiceSource: String
     public var voiceText: String
     public var voiceHeadphonesOnly: Bool
+    /// A one-time task ("Call John"): doing it once (finishing, Do it now, or dismissing a soft
+    /// one) completes it. With no triggers and off, it waits in the backlog.
+    public var task: Bool
+    /// When a task was done (epoch ms). Done tasks are off and listed apart.
+    public var doneAt: Int?
+    /// When a task last went into the backlog (epoch ms); stamped by GistData.
+    public var backlogAt: Int?
+    /// Free text: what it's about, notes.
+    public var description: String
+    /// Roughly how long it takes: a timeCommitments key, or "" when not set.
+    public var timeCommitment: String
 
     public init(id: String = Ids.new(), name: String, times: [AlarmTime] = [AlarmTime(12, 0)],
                 repeat: Repeat = .everyDay, enabled: Bool = true, aboutYesterday: Bool = false,
                 steps: [StepConfig] = [], soundUri: String? = nil, soundTitle: String = "",
                 background: Background = Background(), events: [Trigger] = [], category: String = "",
                 commitment: String = Checkin.strict, snoozeMinutes: Int = Checkin.defaultSnooze,
-                voiceSource: String = Checkin.voiceText, voiceText: String = "", voiceHeadphonesOnly: Bool = true) {
+                voiceSource: String = Checkin.voiceText, voiceText: String = "", voiceHeadphonesOnly: Bool = true,
+                task: Bool = false, doneAt: Int? = nil, backlogAt: Int? = nil, description: String = "",
+                timeCommitment: String = "") {
         self.id = id
         self.name = name
         self.times = times
@@ -558,7 +622,20 @@ public struct Checkin: Equatable, Identifiable {
         self.voiceSource = voiceSource
         self.voiceText = voiceText
         self.voiceHeadphonesOnly = voiceHeadphonesOnly
+        self.task = task
+        self.doneAt = doneAt
+        self.backlogAt = backlogAt
+        self.description = description
+        self.timeCommitment = timeCommitment
     }
+
+    public var isTask: Bool { task }
+    public var taskDone: Bool { task && doneAt != nil }
+    /// A task that's off (and not done) waits in the backlog; on, it's active.
+    public var inBacklog: Bool { task && !enabled && doneAt == nil }
+    public var isActiveTask: Bool { task && enabled && doneAt == nil }
+    /// Reminds with a quiet notification instead of an alarm.
+    public var isQuiet: Bool { soundUri == Checkin.quiet }
 
     public var isSoft: Bool { commitment == Checkin.soft }
     public var isVoice: Bool { commitment == Checkin.voice }
@@ -579,7 +656,7 @@ public struct Checkin: Equatable, Identifiable {
     public var activeSteps: [StepConfig] { steps.filter { $0.configured } }
 
     public var json: JSON {
-        .object(JSONObject([
+        var o = JSONObject([
             ("id", .string(id)),
             ("name", .string(name)),
             ("times", .array(times.map { t -> JSON in t.json })),
@@ -597,7 +674,14 @@ public struct Checkin: Equatable, Identifiable {
             ("voiceText", .string(voiceText)),
             ("voiceHeadphonesOnly", .bool(voiceHeadphonesOnly)),
             ("snoozeMinutes", .int(snoozeMinutes)),
-        ]))
+        ])
+        // Only when set, as the Android app writes them.
+        if task { o["task"] = .bool(true) }
+        if let doneAt { o["doneAt"] = .int(doneAt) }
+        if task, let backlogAt { o["backlogAt"] = .int(backlogAt) }
+        if !description.isEmpty { o["description"] = .string(description) }
+        if !timeCommitment.isEmpty { o["timeCommitment"] = .string(timeCommitment) }
+        return .object(o)
     }
 
     /// Reads a check-in as the Android app writes it. Throws if it has no id.
@@ -634,7 +718,12 @@ public struct Checkin: Equatable, Identifiable {
             snoozeMinutes: snoozeChoices.contains(snooze) ? snooze : defaultSnooze,
             voiceSource: o.string("voiceSource") == voiceClip ? voiceClip : voiceText,
             voiceText: o.string("voiceText"),
-            voiceHeadphonesOnly: o.bool("voiceHeadphonesOnly", true)
+            voiceHeadphonesOnly: o.bool("voiceHeadphonesOnly", true),
+            task: o.bool("task", false),
+            doneAt: o.int("doneAt"),
+            backlogAt: o.int("backlogAt"),
+            description: o.string("description"),
+            timeCommitment: timeCommitmentName(o.string("timeCommitment")) != nil ? o.string("timeCommitment") : ""
         )
     }
 
@@ -665,7 +754,8 @@ public struct Checkin: Equatable, Identifiable {
 ///  - done: finished without questions; skipped: skipped before it rang;
 ///  - dismissed: a soft alarm dismissed without its steps.
 /// [early]: finished before the alarm time. [soft]: logged by a soft or voice check-in, kept
-/// for scheduling but left out of the stats.
+/// for scheduling but left out of the stats. [rangAt]: when a waiting time first rang (epoch
+/// ms). [took]: how long a check-in that counts took.
 public struct SlotResult: Equatable {
     public static let rang = "rang"
     public static let answered = "answered"
@@ -679,14 +769,18 @@ public struct SlotResult: Equatable {
     public var soft: Bool
     /// Typed answers (number and text questions): question id → value, "" when left empty.
     public var values: [String: String]
+    public var rangAt: Int?
+    public var took: Took?
 
     public init(_ status: String, answers: [String: Bool] = [:], early: Bool = false, soft: Bool = false,
-                values: [String: String] = [:]) {
+                values: [String: String] = [:], rangAt: Int? = nil, took: Took? = nil) {
         self.status = status
         self.answers = answers
         self.early = early
         self.soft = soft
         self.values = values
+        self.rangAt = rangAt
+        self.took = took
     }
 
     /// Finished or skipped: the alarm for this time no longer needs to ring.
@@ -710,6 +804,13 @@ public struct SlotResult: Equatable {
                 return (k, .string(v))
             }))
         }
+        if let rangAt { o["rangAt"] = .int(rangAt) }
+        if let took {
+            var t = JSONObject()
+            if let s = took.start { t["start"] = .int(s) }
+            t["steps"] = .int(took.steps)
+            o["took"] = .object(t)
+        }
         return .object(o)
     }
 
@@ -728,8 +829,34 @@ public struct SlotResult: Equatable {
                 }
             }
         }
+        let took = o.object("took").flatMap { t -> Took? in
+            guard let steps = t.int("steps") else { return nil }
+            return Took(start: t.int("start"), steps: steps)
+        }
         return SlotResult(o.string("s", answered), answers: answers, early: o.bool("early", false), soft: o.bool("soft", false),
-                          values: values)
+                          values: values, rangAt: o.int("rangAt"), took: took)
+    }
+}
+
+/// How long a check-in took, in seconds: [start] from the first ring to Start check-in
+/// ("getting started"; nil when done early, before it rang), and [steps] from then to done
+/// ("doing it").
+public struct Took: Equatable {
+    public var start: Int?
+    public var steps: Int
+
+    public init(start: Int?, steps: Int) {
+        self.start = start
+        self.steps = steps
+    }
+
+    public var total: Int { (start ?? 0) + steps }
+
+    /// "42s", "3m 05s", "1h 02m"
+    public static func text(_ seconds: Int) -> String {
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds < 3600 { return String(format: "%dm %02ds", seconds / 60, seconds % 60) }
+        return String(format: "%dh %02dm", seconds / 3600, seconds / 60 % 60)
     }
 }
 
