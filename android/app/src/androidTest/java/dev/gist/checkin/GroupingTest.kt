@@ -614,4 +614,34 @@ class GroupingTest {
         }
         assertEquals("b", TestEnv.store.expandedCheckin)
     }
+
+    @Test
+    fun anOpenCardShowsItsDescription() {
+        val long = (1..10).joinToString("\n") { "Line $it" }
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha").copy(description = long), TestEnv.checkin("b", "Beta")))
+        main().use {
+            onView(tagged("description:a")).check(doesNotExist()) // folded
+            onView(tagged("checkin-title:a")).perform(click())
+            onView(tagged("description:a")).perform(scrollTo()).check(matches(withText(long)))
+            onView(tagged("checkin-title:b")).perform(scrollTo(), click())
+            onView(tagged("description:b")).check(doesNotExist()) // none to show
+        }
+    }
+
+    @Test
+    fun switchingTabsFoldsTheOpenCard() {
+        TestEnv.reset(listOf(TestEnv.checkin("c", "Daily"), Library.task("t").copy(name = "Call John", enabled = true)))
+        TestEnv.store.expandedCheckin = "c"
+        main().use {
+            onView(tagged("card:c")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("tab:tasks")).perform(click())
+            onView(tagged("checkin-title:t")).perform(click())
+            onView(tagged("card:t")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("tab:checkins")).perform(click())
+            onView(tagged("row:c")).perform(scrollTo()).check(matches(isDisplayed())) // folded on return
+            onView(tagged("tab:tasks")).perform(click())
+            onView(tagged("row:t")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertNull(TestEnv.store.expandedCheckin)
+    }
 }
