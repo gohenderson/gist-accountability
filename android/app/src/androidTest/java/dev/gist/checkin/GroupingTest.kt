@@ -10,12 +10,14 @@ import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
 import androidx.test.espresso.matcher.ViewMatchers.isChecked
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.containsString
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -486,16 +488,12 @@ class GroupingTest {
     }
 
     @Test
-    fun settingsAboutAndDonateAreAtTheTop() {
+    fun settingsIsAtTheTop() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
         main().use { scenario ->
-            scenario.onActivity { act ->
-                fun x(tag: String) = IntArray(2).also { act.window.decorView.findViewWithTag<View>(tag).getLocationOnScreen(it) }[0]
-                assertTrue("donate, about, then settings", x("donate") < x("about") && x("about") < x("settings"))
-            }
             onView(tagged("settings")).check(matches(withContentDescription("Settings")))
-            onView(tagged("about")).check(matches(withContentDescription("About Gist")))
-            onView(tagged("donate")).check(matches(withContentDescription("Donate")))
+            onView(tagged("about")).check(doesNotExist()) // in Settings
+            onView(tagged("donate")).check(doesNotExist())
             onView(withText("Settings · backup · appearance")).check(doesNotExist())
             // 💲 ❓ ⚙️, with the gear at the far right.
             onView(tagged("settings")).perform(click())
@@ -552,5 +550,68 @@ class GroupingTest {
         val custom = heights(Grouping.SORT_CUSTOM) // with ≡ handles
         val byName = heights(Grouping.SORT_NAME)   // without
         assertEquals("title line and card are the same height either way", byName, custom)
+    }
+
+    @Test
+    fun theTitleLineStaysPutWhenALongTitleUnfolds() {
+        val long = "Paint the latch screw heads white, maybe with nail polish, before the weekend"
+        TestEnv.reset(listOf(TestEnv.checkin("a", long), TestEnv.checkin("b", "Short")))
+        // Where each thing on the title line sits, from the top of its card.
+        fun tops(): List<Int> {
+            var t = emptyList<Int>()
+            main().use { scenario ->
+                onView(tagged("checkin-title:a")).perform(scrollTo())
+                scenario.onActivity { act ->
+                    val root = act.window.decorView
+                    fun y(tag: String) = IntArray(2).also { root.findViewWithTag<View>(tag).getLocationOnScreen(it) }[1]
+                    val card = y(if (TestEnv.store.expandedCheckin == "a") "card:a" else "row:a")
+                    t = listOf("checkin-title:a", "drag-checkin:a", "marker:a", "checkin-chevron:a", "toggle:a").map { y(it) - card }
+                }
+            }
+            return t
+        }
+        TestEnv.store.sort = Grouping.SORT_CUSTOM // with drag handles
+        val folded = tops()
+        TestEnv.store.expandedCheckin = "a"
+        val open = tops()
+        assertEquals("nothing on the title line moves", folded, open)
+    }
+
+    @Test
+    fun plusIsAsTallAsTheTabs() {
+        TestEnv.reset(emptyList())
+        main().use { scenario ->
+            scenario.onActivity { act ->
+                val root = act.window.decorView
+                val tab = root.findViewWithTag<View>("tab:checkins")
+                val plus = root.findViewWithTag<View>("add")
+                assertEquals(tab.height, plus.height)
+                assertEquals("a circle", plus.height, plus.width)
+            }
+        }
+    }
+
+    @Test
+    fun tappingACardsBodyFoldsItButItsButtonsDontFold() {
+        // With a question, so the card has History.
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha", listOf(Question("q", "Did it?"))), TestEnv.checkin("b", "Beta")))
+        TestEnv.store.expandedCheckin = "a"
+        main().use {
+            // Its buttons do their own thing (History opens; back leaves the card open).
+            onView(allOf(withText("History"), isDescendantOfA(tagged("card:a")))).perform(scrollTo(), click())
+            TestEnv.eventually { onView(withText("History · last 30 days")).check(matches(isDisplayed())) }
+            androidx.test.espresso.Espresso.pressBack()
+            onView(tagged("card:a")).perform(scrollTo()).check(matches(isDisplayed()))
+            // A plain line of text on the card folds it.
+            onView(tagged("summary:a")).perform(scrollTo(), click())
+            onView(tagged("row:a")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertNull(TestEnv.store.expandedCheckin)
+        // And the body of a folded row opens it.
+        main().use {
+            onView(tagged("next-line:b")).perform(scrollTo(), click())
+            onView(tagged("card:b")).perform(scrollTo()).check(matches(isDisplayed()))
+        }
+        assertEquals("b", TestEnv.store.expandedCheckin)
     }
 }

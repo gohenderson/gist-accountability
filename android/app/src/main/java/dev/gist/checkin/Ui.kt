@@ -115,6 +115,12 @@ fun Context.card(tint: Int? = null): LinearLayout = column().apply {
 }
 
 /** A pill that's lit when [on] (like a tab), for showing or hiding something. */
+/** How tall tabs (and the + beside them) are, in dp. */
+const val TAB_HEIGHT = 40
+
+/** Layout size: as big as its content. */
+const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+
 fun Context.toggleTab(text: String, on: Boolean): Button = Button(this).apply {
     this.text = text
     isAllCaps = false
@@ -122,8 +128,8 @@ fun Context.toggleTab(text: String, on: Boolean): Button = Button(this).apply {
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
     setTextColor(if (on) colorOf(R.color.on_primary) else colorText)
     typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-    minHeight = dp(40)
-    minimumHeight = dp(40)
+    minHeight = dp(TAB_HEIGHT)
+    minimumHeight = dp(TAB_HEIGHT)
     setPadding(dp(8), 0, dp(8), 0)
     stateListAnimator = null
     maxLines = 1

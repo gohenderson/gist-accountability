@@ -25,10 +25,10 @@ class AboutTest {
     fun tearDown() = TestEnv.reset(emptyList())
 
     @Test
-    fun aboutOpensFromTheStartPageWithVersionDonateAndSource() {
+    fun aboutOpensFromSettingsWithVersionDonateAndSource() {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(emptyList())
-        ActivityScenario.launch<MainActivity>(Intent(TestEnv.ctx, MainActivity::class.java)).use {
+        ActivityScenario.launch<SettingsActivity>(Intent(TestEnv.ctx, SettingsActivity::class.java)).use {
             onView(tagged("about")).perform(scrollTo(), click())
             onView(withText("About Gist")).check(matches(isDisplayed()))
             onView(withText(startsWith("Version "))).check(matches(isDisplayed()))

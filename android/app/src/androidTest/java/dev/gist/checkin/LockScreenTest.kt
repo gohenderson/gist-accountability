@@ -222,6 +222,6 @@ class LockScreenTest {
         device.pressBack()
         assertTrue("the dialog closes with Back", device.wait(Until.gone(By.text("New category…")), 10_000))
         // And it scrolls down again.
-        assertNotNull("scrolled to the bottom", scrollTo("Delete this check-in", androidx.test.uiautomator.Direction.DOWN))
+        assertNotNull("scrolled to the bottom", scrollTo("Delete", androidx.test.uiautomator.Direction.DOWN))
     }
 }

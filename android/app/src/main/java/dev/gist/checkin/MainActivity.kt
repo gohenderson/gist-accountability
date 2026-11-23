@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -70,11 +71,9 @@ class MainActivity : BaseActivity() {
         }
         val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
-        // Title, with Settings, About and Donate across from it.
+        // Title, with Settings across from it (About and Donate are in Settings).
         val top = row().apply { gravity = android.view.Gravity.TOP }
         top.addWeighted(header("Gist", todayLong()))
-        top.addWrapped(iconButton("💲", "Donate", "donate") { openLink(Links.DONATE) })
-        top.addWrapped(iconButton("❓", "About Gist", "about") { startActivity(AboutActivity.intent(this)) })
         top.addWrapped(iconButton("⚙️", "Settings", "settings") {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
@@ -305,19 +304,28 @@ class MainActivity : BaseActivity() {
                 }
             }
             r.addWeighted(b, startMargin = if (r.childCount == 0) 0 else dp(8))
+            b.layoutParams.height = dp(TAB_HEIGHT)
         }
-        r.addWrapped(primaryButton("+") { add(current) }.apply {
+        // +: a circle as tall as the tabs, with their corner radius.
+        val plus = primaryButton("+") { add(current) }.apply {
             tag = "add"
             contentDescription = when (current) {
                 Store.TAB_TASKS -> "New task"
                 Store.TAB_BACKLOG -> "New backlog task"
                 else -> "Add check-in"
             }
-            minWidth = dp(48)
-            minimumWidth = dp(48)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-            setPadding(dp(12), 0, dp(12), 0)
-        }, dp(8))
+            includeFontPadding = false
+            setPadding(0, 0, 0, 0)
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            gravity = Gravity.CENTER
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(colorOf(R.color.ripple)), rounded(colorPrimary, 20), null)
+        }
+        r.addView(plus, LinearLayout.LayoutParams(dp(TAB_HEIGHT), dp(TAB_HEIGHT)).apply { marginStart = dp(8) })
         return r
     }
 
@@ -356,19 +364,40 @@ class MainActivity : BaseActivity() {
         contentDescription = "${if (c.isTask) "Task: " else ""}${c.name}, ${if (folded) "collapsed" else "expanded"}" +
             (score?.let { ", ${Score.percent(it)} on track" } ?: "")
         setOnClickListener { toggleFolded(c) }
-        handle?.let { addWrapped(it) }
-        if (!c.isTask) {
-            val m = marker(score).apply { tag = "marker:${c.id}" }
-            addView(m, (m.layoutParams as LinearLayout.LayoutParams).apply { marginEnd = dp(10) })
-        }
-        addWeighted(label(c.name, size, bold = true).apply {
+        // Everything sits on the title's first line, so nothing moves when a long title
+        // unfolds onto more lines.
+        gravity = Gravity.TOP
+        val title = label(c.name, size, bold = true).apply {
             maxLines = if (folded) 1 else 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             tag = "checkin-title:${c.id}"
-        })
-        addWrapped(label(if (folded) "▸" else "▾", 18f, color = colorMuted).apply { tag = "checkin-chevron:${c.id}" },
-            startMargin = dp(6))
-        addWrapped(alarmSwitch(c), startMargin = dp(8))
+        }
+        val line = firstLineHeight(size)
+        handle?.let { addView(onFirstLine(it, line), LinearLayout.LayoutParams(WRAP, line)) }
+        if (!c.isTask) {
+            val m = marker(score).apply { tag = "marker:${c.id}" }
+            addView(onFirstLine(m, line), LinearLayout.LayoutParams(WRAP, line).apply { marginEnd = dp(10) })
+        }
+        addWeighted(title)
+        val chevron = label(if (folded) "▸" else "▾", 18f, color = colorMuted).apply { tag = "checkin-chevron:${c.id}" }
+        addView(onFirstLine(chevron, line), LinearLayout.LayoutParams(WRAP, line).apply { marginStart = dp(6) })
+        addView(onFirstLine(alarmSwitch(c), line), LinearLayout.LayoutParams(WRAP, line).apply { marginStart = dp(8) })
+    }
+
+    /** How tall a title's first line is (at [size] sp), or the switch beside it, whichever is taller. */
+    private fun firstLineHeight(size: Float): Int {
+        val probe = label("Xg", size, bold = true)
+        probe.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val sw = styledSwitch()
+        sw.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        return maxOf(probe.measuredHeight, sw.measuredHeight)
+    }
+
+    /** [v], centered in a box as tall as the title's first line. */
+    private fun onFirstLine(v: View, line: Int): FrameLayout = FrameLayout(this).apply {
+        val lp = v.layoutParams
+        addView(v, FrameLayout.LayoutParams(lp?.width ?: WRAP, lp?.height?.takeIf { it > 0 } ?: WRAP, Gravity.CENTER_VERTICAL))
+        minimumHeight = line
     }
 
     /** A folded check-in: its title line and when it rings next. Tap the title to unfold. */
@@ -390,9 +419,12 @@ class MainActivity : BaseActivity() {
     private fun checkinCard(c: Checkin, handle: View? = null, score: Double? = null): LinearLayout {
         val card = card()
         card.tag = "card:${c.id}"
+        // Tapping anywhere on the card folds it, like its title; its buttons and switch keep their own taps.
+        card.isClickable = true
+        card.setOnClickListener { toggleFolded(c) }
 
         card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
-        card.add(muted(CheckinText.oneLine(c)), dp(2))
+        card.add(muted(CheckinText.oneLine(c)).apply { tag = "summary:${c.id}" }, dp(2))
 
         if (c.soft) {
             card.add(muted("Soft alarm · not counted in stats", 13f).apply { tag = "soft-note:${c.id}" }, dp(4))
@@ -631,14 +663,6 @@ class MainActivity : BaseActivity() {
             minimumWidth = dp(44)
             setPadding(dp(6), paddingTop, dp(6), paddingBottom)
         }
-
-    private fun openLink(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
-        } catch (e: ActivityNotFoundException) {
-            toast("No browser found. The page is $url")
-        }
-    }
 
     private fun openSettings(action: String) {
         try {
