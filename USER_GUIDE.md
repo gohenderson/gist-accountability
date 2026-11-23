@@ -86,8 +86,8 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   a score go last, in your order. While sorted, cards can't be dragged; switch back to My
   order to rearrange them. Your order is kept underneath, and the choice is remembered.
 - **Collapse all / Expand all** folds or unfolds everything: groups and check-ins.
-- **Dots and squares.** A check-in has a **dot** left of its name; a task has a **square**,
-  like a box to tick (dimmer while it's in the backlog).
+- **Dots.** A check-in has a **dot** left of its name. Tasks have none: they're on their own
+  tabs.
 - **On-track colors.** Each check-in's dot is filled with a color from red (0%) through
   amber to green (100%) by its score (an empty ring until it has one) (see [History, scores and
   logging](#history-scores-and-logging)), and group headers are colored by their average.
