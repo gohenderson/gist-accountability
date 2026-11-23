@@ -453,6 +453,8 @@ class MainActivity : BaseActivity() {
                     r.addWrapped(textButton("Dismiss", colorMuted) {
                         SoftAlarm.dismiss(this, p)
                         render()
+                        // Dismissing a soft task completes it: offer a follow-up.
+                        store.checkin(c.id)?.takeIf { it.taskDone }?.let { FollowUp.offer(this, it) }
                     }.apply { tag = "waiting-dismiss:${c.id}" })
                 }
                 r.addWrapped(button("Do it") {

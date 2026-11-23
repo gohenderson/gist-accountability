@@ -40,6 +40,10 @@ class DoneTasksActivity : BaseActivity() {
         card.add(label(c.name, 19f, bold = true))
         card.add(label("✓ Done ${CheckinText.doneText(c.doneAt!!)}", 15f, color = colorGood), dp(4))
         c.repeat.date?.let { card.add(muted("Was set for ${Repeat.dateText(it)}", 13f), dp(2)) }
+        store.checkin(c.followsUp ?: "")?.let { card.add(muted("Follows: ${it.name}", 13f).apply { tag = "follows:${c.id}" }, dp(2)) }
+        store.followUpsOf(c.id).forEach {
+            card.add(muted("Followed by: ${it.name}", 13f).apply { tag = "followed-by:${c.id}" }, dp(2))
+        }
         // Its answers, if it asked anything.
         val answers = store.allResults(c.id).values.flatMap { it.values }
             .filter { it.status == SlotResult.ANSWERED }
@@ -55,7 +59,8 @@ class DoneTasksActivity : BaseActivity() {
         r.addWeighted(outlineButton("Open") { startActivity(CheckinEditActivity.intent(this, c.id)) }, startMargin = dp(8))
         r.addWeighted(textButton("Delete", colorOf(R.color.bad)) { confirmDelete(c) }.apply { tag = "delete:${c.id}" },
             startMargin = dp(8))
-        card.add(r, dp(10))
+        card.add(button("Create follow-up") { FollowUp.ask(this, c) }.apply { tag = "follow-up:${c.id}" }, dp(10))
+        card.add(r, dp(8))
         return card
     }
 

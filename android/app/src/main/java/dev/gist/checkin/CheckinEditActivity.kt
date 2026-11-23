@@ -98,6 +98,19 @@ class CheckinEditActivity : BaseActivity() {
             })
         }
         col.add(name, dp(2))
+        // A follow-up's chain: the task it continues, and any that continue it (tap to open).
+        store.checkin(c.followsUp ?: "")?.let { prev ->
+            col.add(textButton("Follows: ${prev.name}") { startActivity(intent(this, prev.id)) }.apply {
+                tag = "follows"
+                gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            }, dp(4))
+        }
+        store.followUpsOf(c.id).forEach { next ->
+            col.add(textButton("Followed by: ${next.name}") { startActivity(intent(this, next.id)) }.apply {
+                tag = "followed-by"
+                gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            }, dp(2))
+        }
         col.add(EditText(this).apply {
             setText(c.description)
             hint = "Description: what it's about, notes"
@@ -672,6 +685,7 @@ class CheckinEditActivity : BaseActivity() {
             col.add(label("Its times have passed: it won't ring again. Pick a new date, or do it from the start page.", 14f,
                 color = colorWarn).apply { tag = "task-overdue" }, dp(8))
         }
+        col.add(outlineButton("Create follow-up") { FollowUp.ask(this, c) }.apply { tag = "create-follow-up" }, dp(8))
     }
 
     /** Today if [time] is still ahead, else tomorrow. */

@@ -86,6 +86,8 @@ class CheckinActivity : BaseActivity() {
     /** When the steps first showed (Start check-in), epoch ms; for how long it took. */
     private var startedAt: Long? = null
     private var seenChanges = 0 // SoftAlarm.changes when last checked
+    /** Showing "Task done" (with Create follow-up): stays put until you choose. */
+    private var taskDoneShown = false
     private var barLabel: TextView? = null
     private var barProgress: ProgressBar? = null
     private val ticker = object : Runnable {
@@ -146,7 +148,7 @@ class CheckinActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!::checkin.isInitialized) return
+        if (!::checkin.isInitialized || taskDoneShown) return
         // Snoozed or dismissed from the notification while this screen was away: move on.
         if (forced && target !in store.pending && !moveOn()) return
         seenChanges = SoftAlarm.changes
@@ -267,7 +269,36 @@ class CheckinActivity : BaseActivity() {
     private fun dismissSoft() {
         SoftAlarm.dismiss(this, target)
         seenChanges = SoftAlarm.changes
+        // Dismissing a soft task completes it: offer a follow-up first.
+        if (checkin.isTask && !target.practice && store.checkin(checkin.id)?.taskDone == true) {
+            showTaskDone { if (moveOn()) showStep() }
+            return
+        }
         if (moveOn()) showStep()
+    }
+
+    /**
+     * A task was just done: say so, and offer to create a follow-up (backlog or today), every
+     * time; [then] carries on (the next alarm, or closing).
+     */
+    private fun showTaskDone(then: () -> Unit) {
+        taskDoneShown = true
+        ticks.removeCallbacksAndMessages(null)
+        stopScanner()
+        stopBackground()
+        val col = column()
+        col.add(label("✓ Task done", 30f, bold = true, color = colorGood).apply { tag = "task-done-title" })
+        col.add(label(checkin.name, 20f, bold = true), dp(6))
+        col.add(muted("Is there a next step? A follow-up starts as a copy of this task, so you only have to change what's new.", 15f), dp(16))
+        fun carryOn() {
+            taskDoneShown = false
+            then()
+        }
+        col.add(primaryButton("Create follow-up") {
+            FollowUp.ask(this, store.checkin(checkin.id) ?: checkin) { carryOn() }
+        }.apply { tag = "create-follow-up" }, dp(20))
+        col.add(outlineButton("Close") { carryOn() }.apply { tag = "task-done-close" }, dp(10))
+        setScreen(col, withBar = false)
     }
 
     /**
@@ -395,14 +426,27 @@ class CheckinActivity : BaseActivity() {
         if (checkin.questions.isEmpty() && (forced || early) && !target.practice) {
             store.markDone(target.day, checkin.id, slot, early, took())
         }
-        // A task done (here or by its answers): stop its alarm and any place / run watching.
-        if (checkin.isTask && store.checkin(checkin.id)?.taskDone == true && !early) {
+        // A task done (here or by its answers): stop its alarm and any place / run watching,
+        // and offer a follow-up before carrying on.
+        if (checkin.isTask && !target.practice && store.checkin(checkin.id)?.taskDone == true) {
             AlarmScheduler.schedule(this, store.checkin(checkin.id)!!)
-            toast("Task done: ${checkin.name}")
+            if (!early) { // it's done: no more ringing for it while the screen asks
+                store.removePending(target)
+                Notif.clearQuiet(this, checkin.id)
+                store.prunePending()
+                stopIfNothingPending()
+            }
+            showTaskDone { finishUp() }
+            return
         }
+        finishUp()
+    }
+
+    /** After the steps (and any task-done screen): the next alarm, or close. */
+    private fun finishUp() {
         if (early) {
             AlarmScheduler.schedule(this, store.checkin(checkin.id) ?: checkin) // skip this ring; arm the one after (a done task: none)
-            toast(if (checkin.isTask) "Task done: ${checkin.name}" else "Done early. No alarm at ${Days.timeOf(slot)}.")
+            if (!checkin.isTask) toast("Done early. No alarm at ${Days.timeOf(slot)}.")
             finish()
             return
         }
