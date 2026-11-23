@@ -128,7 +128,14 @@ final class GistUITests: XCTestCase {
         waitFor(name)
         XCTAssertEqual(name.value as? String, "Water")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        waitFor(element("checkin-title:\(waterId())"))
+        waitFor(element("add"))
+        var id = "none"
+        for _ in 0..<20 where id == "none" {
+            id = waterId()
+            if id == "none" { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        if id == "none" { print("GIST-DEBUG\n" + app.debugDescription) }
+        waitFor(element("checkin-title:\(id)"))
     }
 
     /// The new check-in's id isn't known up front: find its title on the start page.
