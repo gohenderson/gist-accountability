@@ -231,7 +231,7 @@ class EditCheckinTest {
             onView(tagged("add-step")).check(doesNotExist())
             onView(tagged("section-chevron:steps")).check(matches(withText("▸")))
             // Delete stays below the cards.
-            onView(withText("Delete this check-in")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(tagged("delete-checkin")).perform(scrollTo()).check(matches(withText("Delete")))
         }
     }
 
@@ -239,7 +239,7 @@ class EditCheckinTest {
     fun deleteCheckinAfterConfirming() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Doomed"), TestEnv.checkin("d", "Survivor")))
         open("c").use {
-            onView(withText("Delete this check-in")).perform(scrollTo(), click())
+            onView(tagged("delete-checkin")).perform(scrollTo(), click())
             onView(withText("Delete")).inRoot(isDialog()).perform(click())
         }
         assertEquals(listOf("d"), TestEnv.store.checkins.map { it.id })

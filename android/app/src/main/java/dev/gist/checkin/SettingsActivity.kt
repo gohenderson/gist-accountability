@@ -105,7 +105,7 @@ class SettingsActivity : BaseActivity() {
         val about = card()
         about.add(sectionTitle("About"))
         about.add(label("Version, privacy, source code, and how to support Gist.", 15f), dp(6))
-        about.add(outlineButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }, dp(12))
+        about.add(outlineButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply { tag = "about" }, dp(12))
         col.add(about, dp(12))
 
         setContentView(screen(col))

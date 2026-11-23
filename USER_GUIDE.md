@@ -98,7 +98,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
   on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
   turned off), even if you've picked them since.
-- **Donate** (💲), **About** (❓) and **Settings** (⚙️) are at the top right.
+- **Settings** (⚙️) is at the top right; **About** and **Donate** are in Settings.
 
 ## A check-in's page
 
@@ -114,7 +114,7 @@ open one at a time, like the start page: tap a card's title to open it (the open
 - **While it rings:** sound, background and caption (see [When it rings](#when-it-rings)).
 - **When it rings:** its commitment, and its steps (for a voice check-in, what it says).
 - **Try it:** a 10-second test ring, or **Play it now** for a voice check-in.
-- **Delete this check-in.**
+- **Delete** removes it (after asking).
 
 Once it has history, its on-track score is shown at the top.
 
@@ -406,12 +406,11 @@ read yet; backups without them stay version 4.
 
 ## About
 
-**About** (the ❓ at the top right of the start page, or Settings → About) shows:
+**About** (Settings → About) shows:
 - the version;
 - privacy;
 - links to the source code and to report a problem;
-- **Donate**, which opens the [Donate](README.md#donate) section of the README (the 💲 at the
-  top right of the start page goes straight there).
+- **Donate**, which opens the [Donate](README.md#donate) section of the README.
 
 ## On iPhone and iPad
 

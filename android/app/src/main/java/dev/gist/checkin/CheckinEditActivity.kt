@@ -205,7 +205,7 @@ class CheckinEditActivity : BaseActivity() {
             }, dp(4))
         }
 
-        page.add(dangerButton("Delete this check-in") { confirmDelete(c) }, dp(24))
+        page.add(dangerButton("Delete") { confirmDelete(c) }.apply { tag = "delete-checkin" }, dp(24))
 
         val sv = screen(page)
         
