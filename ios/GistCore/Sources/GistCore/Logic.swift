@@ -368,9 +368,10 @@ public enum Grouping {
         }.map { $0.element }
     }
 
-    /// Expand all / Collapse all: everything is folded when every group and check-in is.
-    public static func allFolded(groups: Set<String>, foldedGroups: Set<String>, ids: Set<String>, foldedIds: Set<String>) -> Bool {
-        groups.isSubset(of: foldedGroups) && ids.isSubset(of: foldedIds)
+    /// Expand all / Collapse all (groups only: cards open one at a time): all folded when
+    /// every group is.
+    public static func allFolded(groups: Set<String>, foldedGroups: Set<String>) -> Bool {
+        groups.isSubset(of: foldedGroups)
     }
 
     /// The categories in use, A–Z.

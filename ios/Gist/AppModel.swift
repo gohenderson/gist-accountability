@@ -34,9 +34,15 @@ final class AppModel {
     /// "settings" or "run:<id>".
     var debugRoute: String?
 
-    private(set) var groupByCategory: Bool
-    private(set) var sort: String
-    private(set) var foldedCheckins: Set<String>
+    /// The start page's tab.
+    private(set) var tab: StartTab
+    /// Each tab's view: grouped by category, and its sort (the Check-ins tab keeps the
+    /// original keys).
+    private(set) var groupedTabs: Set<StartTab>
+    private(set) var sorts: [StartTab: String]
+    /// The one card open on the start page (the rest are folded to a line); none to start.
+    private(set) var expandedCheckin: String?
+    /// Folded groups, by key (tab-prefixed for Tasks and Backlog: see groupKey).
     private(set) var foldedGroups: Set<String>
     private(set) var groupOrder: [String]
 
@@ -54,9 +60,16 @@ final class AppModel {
         } else {
             data = GistData()
         }
-        groupByCategory = defaults.string(forKey: "view") == Grouping.byCategoryView
-        sort = defaults.string(forKey: "sort").flatMap { Grouping.sorts.contains($0) ? $0 : nil } ?? Grouping.sortCustom
-        foldedCheckins = Set(defaults.stringArray(forKey: "foldedCheckins") ?? [])
+        tab = defaults.string(forKey: "startTab").flatMap { StartTab(rawValue: $0) } ?? .checkins
+        groupedTabs = Set(StartTab.allCases.filter {
+            UserDefaults.standard.string(forKey: AppModel.tabKey("view", $0)) == Grouping.byCategoryView
+        })
+        sorts = Dictionary(uniqueKeysWithValues: StartTab.allCases.map { t in
+            (t, UserDefaults.standard.string(forKey: AppModel.tabKey("sort", t)).flatMap { Grouping.sorts.contains($0) ? $0 : nil }
+                ?? Grouping.sortCustom)
+        })
+        expandedCheckin = defaults.string(forKey: "expandedCheckin")
+        defaults.removeObject(forKey: "foldedCheckins") // the old per-card setting
         foldedGroups = Set(defaults.stringArray(forKey: "foldedGroups") ?? [])
         groupOrder = defaults.stringArray(forKey: "groupOrder") ?? []
         waiting = Self.decode([Pending].self, defaults.data(forKey: "waiting")) ?? []
@@ -392,7 +405,11 @@ final class AppModel {
     }
 
     func setEnabled(_ id: String, _ on: Bool) {
-        data.update(id) { $0.enabled = on }
+        // Turning a done task back on puts it back on the list.
+        data.update(id) { c in
+            c.enabled = on
+            if on { c.doneAt = nil }
+        }
         save()
         rescheduleSoon()
     }
@@ -419,38 +436,78 @@ final class AppModel {
         save()
     }
 
+    /// Moves within the current tab's list; everything else keeps its place.
+    func moveInTab(from: IndexSet, to: Int) {
+        var shown = tab.items(data.checkins)
+        let slots = data.checkins.indices.filter { i in shown.contains { $0.id == data.checkins[i].id } }
+        shown.move(fromOffsets: from, toOffset: to)
+        var all = data.checkins
+        for (slot, c) in zip(slots, shown) { all[slot] = c }
+        data.checkins = all
+        save()
+    }
+
     // MARK: - View settings
 
+    /// The Check-ins tab keeps the original keys ("view", "sort"); the others add the tab.
+    static func tabKey(_ key: String, _ tab: StartTab) -> String { tab == .checkins ? key : "\(key).\(tab.rawValue)" }
+
+    func setTab(_ t: StartTab) {
+        tab = t
+        defaults.set(t.rawValue, forKey: "startTab")
+    }
+
+    var groupByCategory: Bool { groupedTabs.contains(tab) }
+    var sort: String { sorts[tab] ?? Grouping.sortCustom }
+
     func setGroupByCategory(_ on: Bool) {
-        groupByCategory = on
-        defaults.set(on ? Grouping.byCategoryView : Grouping.ungrouped, forKey: "view")
+        if on { groupedTabs.insert(tab) } else { groupedTabs.remove(tab) }
+        defaults.set(on ? Grouping.byCategoryView : Grouping.ungrouped, forKey: Self.tabKey("view", tab))
     }
 
     func setSort(_ how: String) {
-        sort = how
-        defaults.set(how, forKey: "sort")
+        sorts[tab] = how
+        defaults.set(how, forKey: Self.tabKey("sort", tab))
     }
 
-    func toggleFolded(_ id: String) {
-        if foldedCheckins.contains(id) { foldedCheckins.remove(id) } else { foldedCheckins.insert(id) }
-        defaults.set(Array(foldedCheckins), forKey: "foldedCheckins")
+    /// A group's fold state is kept per tab.
+    func groupKey(_ category: String) -> String {
+        tab == .checkins ? Grouping.key(category) : "\(tab.rawValue)/\(Grouping.key(category))"
     }
+
+    /// Opens [id]'s card (folding whichever was open), or folds it if it's the open one.
+    func toggleFolded(_ id: String) {
+        expandedCheckin = expandedCheckin == id ? nil : id
+        defaults.set(expandedCheckin, forKey: "expandedCheckin")
+    }
+
+    /// A new task (from + on the Tasks or Backlog tab): active, or in the backlog.
+    func addTask(active: Bool) -> Checkin {
+        var t = Library.task()
+        t.enabled = active
+        save(t)
+        return t
+    }
+
+    /// A done task back on the list.
+    func reopenTask(_ id: String) {
+        data.reopenTask(id)
+        save()
+        rescheduleSoon()
+    }
+
+    /// Tasks done, most recent first.
+    var doneTasks: [Checkin] { data.doneTasks.sorted { ($0.doneAt ?? 0) > ($1.doneAt ?? 0) } }
 
     func toggleGroup(_ key: String) {
         if foldedGroups.contains(key) { foldedGroups.remove(key) } else { foldedGroups.insert(key) }
         defaults.set(Array(foldedGroups), forKey: "foldedGroups")
     }
 
-    func setAllFolded(_ folded: Bool, groups: Set<String>, ids: Set<String>) {
-        if folded {
-            foldedGroups.formUnion(groups)
-            foldedCheckins.formUnion(ids)
-        } else {
-            foldedGroups.subtract(groups)
-            foldedCheckins.subtract(ids)
-        }
+    /// Expand all / Collapse all: the groups only.
+    func setAllFolded(_ folded: Bool, groups: Set<String>) {
+        if folded { foldedGroups.formUnion(groups) } else { foldedGroups.subtract(groups) }
         defaults.set(Array(foldedGroups), forKey: "foldedGroups")
-        defaults.set(Array(foldedCheckins), forKey: "foldedCheckins")
     }
 
     // MARK: - Backups
@@ -494,9 +551,15 @@ final class AppModel {
     func loadDemo() {
         data = GistData()
         // Default view settings too, so screenshots and UI tests start the same every time.
-        setGroupByCategory(false)
-        setSort(Grouping.sortCustom)
-        setAllFolded(false, groups: foldedGroups, ids: foldedCheckins)
+        for t in StartTab.allCases {
+            setTab(t)
+            setGroupByCategory(false)
+            setSort(Grouping.sortCustom)
+        }
+        setTab(.checkins)
+        setAllFolded(false, groups: foldedGroups)
+        expandedCheckin = nil
+        defaults.removeObject(forKey: "expandedCheckin")
         groupOrder = []
         defaults.removeObject(forKey: "groupOrder")
         places = PlaceLog()

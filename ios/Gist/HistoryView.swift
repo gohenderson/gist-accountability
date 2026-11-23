@@ -1,3 +1,4 @@
+import Charts
 import GistCore
 import SwiftUI
 
@@ -19,6 +20,7 @@ struct HistoryView: View {
                         LabeledContent(q.text, value: "\(off)× off track")
                     }
                 }
+                timing(results, days)
                 Section("Day by day") {
                     ForEach(days, id: \.self) { day in
                         HStack {
@@ -34,6 +36,38 @@ struct HistoryView: View {
             .navigationBarTitleDisplayMode(.inline)
         } else {
             Text("This check-in was deleted.").foregroundStyle(Theme.muted)
+        }
+    }
+
+    /// How long it takes: medians for the last 7 and 30 days, and a bar per day (getting
+    /// started, then doing it). Only once something has been timed.
+    @ViewBuilder private func timing(_ results: History, _ days: [String]) -> some View {
+        let timed = Timing.days(results, days)
+        if let month = Timing.line(timed) {
+            Section {
+                if let week = Timing.line(Timing.days(results, Array(days.prefix(7)))) {
+                    LabeledContent("Last 7 days", value: week)
+                }
+                LabeledContent("Last 30 days", value: month)
+                    .accessibilityIdentifier("timing-30")
+                Chart {
+                    ForEach(timed, id: \.day) { d in
+                        if let s = d.start {
+                            BarMark(x: .value("Day", Days.date(d.day) ?? Date(), unit: .day), y: .value("Minutes", Double(s) / 60))
+                                .foregroundStyle(by: .value("Part", "Getting started"))
+                        }
+                        BarMark(x: .value("Day", Days.date(d.day) ?? Date(), unit: .day), y: .value("Minutes", Double(d.steps) / 60))
+                            .foregroundStyle(by: .value("Part", "Doing it"))
+                    }
+                }
+                .chartForegroundStyleScale(["Getting started": Color.orange, "Doing it": Theme.primaryColor])
+                .chartYAxisLabel("minutes")
+                .frame(height: 160)
+            } header: {
+                Text("How long it takes")
+            } footer: {
+                Text("Getting started: from when it rang to Start check-in. Doing it: from then to done. Middle values (medians), so one slow day doesn't skew them.")
+            }
         }
     }
 

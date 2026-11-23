@@ -6,41 +6,39 @@ enum Route: Hashable {
     case history(String)
     case settings
     case library
+    case doneTasks
 }
 
-/// The start page: setup, what's waiting, the overall score, and every check-in as a card
-/// (folded to one line or open), optionally grouped by category and sorted.
+/// The start page (laid out like the Android app's): a summary for the tab, setup and
+/// what's waiting, the Check-ins · Tasks · Backlog tabs with + beside them, the tab's View,
+/// and its cards, which open one at a time.
 struct StartView: View {
     @Environment(AppModel.self) private var model
     @State private var path = NavigationPath()
     @State private var reordering = false
 
+    private var items: [Checkin] { model.tab.items(model.checkins) }
+
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    overall
+                    summary
                     if !model.alarmsAllowed { setupCard }
                     if model.usesPlaces && !PlaceMonitor.shared.always { locationCard }
                     if model.usesRuns && !RunWatcher.shared.problem.isEmpty { runsCard }
                     waitingCards
-                    if model.checkins.count > 1 { controls }
+                    tabs
+                    controls
                     list
-                    Button {
-                        path.append(Route.library)
-                    } label: {
-                        Label("Add check-in", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                    if model.tab == .tasks {
+                        NavigationLink(value: Route.doneTasks) {
+                            Text("Done tasks (\(model.doneTasks.count))").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 12)
+                        .accessibilityIdentifier("done-tasks")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
-                    .accessibilityIdentifier("add-checkin")
-                    NavigationLink(value: Route.settings) {
-                        Text("Settings · backup · about").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 16)
                 }
                 .padding(16)
                 .frame(maxWidth: 720) // readable on an iPad
@@ -48,11 +46,22 @@ struct StartView: View {
             }
             .background(Theme.surfaceVariant.opacity(0.6).ignoresSafeArea())
             .navigationTitle("Gist")
+            .navigationSubtitle(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: Route.settings) {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                    .accessibilityIdentifier("settings")
+                }
+            }
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .edit(let id): CheckinEditView(checkinId: id)
                 case .history(let id): HistoryView(checkinId: id)
                 case .settings: SettingsView()
+                case .doneTasks: DoneTasksView(path: $path)
                 case .library:
                     LibraryView { c in
                         path.removeLast()
@@ -71,6 +80,8 @@ struct StartView: View {
             case "history": if parts.count == 2 { path.append(Route.history(parts[1])) }
             case "settings": path.append(Route.settings)
             case "library": path.append(Route.library)
+            case "done": path.append(Route.doneTasks)
+            case "tab": if parts.count == 2, let t = StartTab(rawValue: parts[1]) { model.setTab(t) }
             case "run":
                 if parts.count == 2 {
                     model.running = RunRequest(pending: Pending(checkinId: parts[1], day: Days.today(), time: "07:00", practice: true), early: false)
@@ -82,16 +93,39 @@ struct StartView: View {
 
     // MARK: Top
 
-    @ViewBuilder private var overall: some View {
-        if let score = Score.average(model.checkins.map { model.score($0) }) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(Score.percent(score))
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.scoreColor(score))
-                    .accessibilityIdentifier("overall-score")
-                Text("on track over the last \(Score.days) days")
-                    .foregroundStyle(Theme.muted)
+    /// The tab's number, always there so the tabs stay put when you switch.
+    @ViewBuilder private var summary: some View {
+        let (big, color, text, id) = summaryParts
+        HStack(alignment: .center, spacing: 12) {
+            Text(big)
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundStyle(color)
+                .accessibilityIdentifier(id)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Theme.muted)
+                .accessibilityIdentifier("summary-text")
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 56)
+    }
+
+    private var summaryParts: (String, Color, String, String) {
+        let days = Score.days
+        switch model.tab {
+        case .tasks:
+            let n = model.data.tasksDone(inLast: days)
+            return ("\(n)", Theme.good, "\(n == 1 ? "task" : "tasks") done in the last \(days) days", "tasks-done-count")
+        case .backlog:
+            let n = model.data.tasksBacklogged(inLast: days)
+            return ("\(n)", Theme.primaryColor, "\(n == 1 ? "task" : "tasks") added to the backlog in the last \(days) days",
+                    "backlog-added-count")
+        case .checkins:
+            if let score = Score.average(items.map { model.score($0) }) {
+                return (Score.percent(score), Theme.scoreColor(score), "on track over the last \(days) days", "overall-score")
             }
+            return ("–", Theme.muted, "on track over the last \(days) days: shows once you've answered some check-ins",
+                    "overall-score-none")
         }
     }
 
@@ -153,10 +187,11 @@ struct StartView: View {
         .card()
     }
 
-    /// Soft check-ins that rang and are waiting (strict ones open full screen by themselves).
+    /// Soft check-ins that rang and are waiting (strict ones open full screen by themselves;
+    /// No alarm ones wait on their own card).
     @ViewBuilder private var waitingCards: some View {
         ForEach(model.waiting) { p in
-            if let c = model.checkin(p.checkinId) {
+            if let c = model.checkin(p.checkinId), !c.isQuiet {
                 HStack {
                     VStack(alignment: .leading) {
                         Text(c.name).font(.headline)
@@ -176,13 +211,47 @@ struct StartView: View {
         }
     }
 
+    // MARK: Tabs
+
+    /// Check-ins · Tasks · Backlog, one at a time, and + to add to the tab you're on.
+    private var tabs: some View {
+        HStack(spacing: 10) {
+            Picker("Show", selection: Binding(get: { model.tab }, set: { t in withAnimation(.snappy) { model.setTab(t) } })) {
+                ForEach(StartTab.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.large)
+            .accessibilityIdentifier("tabs")
+            Button {
+                add()
+            } label: {
+                Image(systemName: "plus").font(.title3.weight(.semibold)).frame(width: 30, height: 30)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.circle)
+            .accessibilityLabel(model.tab == .checkins ? "Add check-in" : model.tab == .tasks ? "New task" : "New backlog task")
+            .accessibilityIdentifier("add")
+        }
+        .padding(.top, 4)
+    }
+
+    /// + : a check-in from the library, a new active task, or a new backlog task.
+    private func add() {
+        switch model.tab {
+        case .checkins: path.append(Route.library)
+        case .tasks: path.append(Route.edit(model.addTask(active: true).id))
+        case .backlog: path.append(Route.edit(model.addTask(active: false).id))
+        }
+    }
+
     // MARK: View menu
 
+    /// The tab's View (grouping and sort), always there; Expand / Collapse all for its groups
+    /// when grouped (cards open one at a time).
     private var controls: some View {
-        let groups = model.groupByCategory ? Grouping.byCategory(model.checkins, order: model.groupOrder) : []
-        let keys = Set(groups.map { Grouping.key($0.0) })
-        let ids = Set(model.checkins.map { $0.id })
-        let allFolded = Grouping.allFolded(groups: keys, foldedGroups: model.foldedGroups, ids: ids, foldedIds: model.foldedCheckins)
+        let groups = model.groupByCategory ? Grouping.byCategory(items, order: model.groupOrder) : []
+        let keys = Set(groups.map { model.groupKey($0.0) })
+        let allFolded = Grouping.allFolded(groups: keys, foldedGroups: model.foldedGroups)
         return HStack {
             Menu {
                 Toggle("By category", isOn: Binding(get: { model.groupByCategory }, set: { model.setGroupByCategory($0) }))
@@ -198,21 +267,24 @@ struct StartView: View {
             }
             .accessibilityIdentifier("view-mode")
             Spacer()
-            Button(allFolded ? "Expand all" : "Collapse all") {
-                model.setAllFolded(!allFolded, groups: keys, ids: ids)
+            if !keys.isEmpty {
+                Button(allFolded ? "Expand all" : "Collapse all") {
+                    withAnimation { model.setAllFolded(!allFolded, groups: keys) }
+                }
+                .accessibilityIdentifier("toggle-all")
             }
-            .accessibilityIdentifier("toggle-all")
         }
+        .frame(minHeight: 32)
     }
 
     // MARK: List
 
     @ViewBuilder private var list: some View {
-        if model.checkins.isEmpty {
-            Text("No check-ins yet. Add one to get started.").foregroundStyle(Theme.muted).card()
+        if items.isEmpty {
+            Text(model.tab.empty(anyCheckins: !model.checkins.isEmpty)).foregroundStyle(Theme.muted).card()
         } else if model.groupByCategory {
-            ForEach(Grouping.byCategory(model.checkins, order: model.groupOrder), id: \.0) { group in
-                let key = Grouping.key(group.0)
+            ForEach(Grouping.byCategory(items, order: model.groupOrder), id: \.0) { group in
+                let key = model.groupKey(group.0)
                 let folded = model.foldedGroups.contains(key)
                 let score = Score.average(group.1.filter { $0.enabled }.map { model.score($0) })
                 Button {
@@ -227,13 +299,14 @@ struct StartView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 10)
+                .accessibilityIdentifier("group-header:\(group.0)")
                 .accessibilityLabel("\(group.0), \(folded ? "collapsed" : "expanded")" + (score.map { ", \(Score.percent($0)) on track" } ?? ""))
                 if !folded {
                     ForEach(sorted(group.1)) { CheckinCard(checkin: $0, path: $path) }
                 }
             }
         } else {
-            ForEach(sorted(model.checkins)) { CheckinCard(checkin: $0, path: $path) }
+            ForEach(sorted(items)) { CheckinCard(checkin: $0, path: $path) }
         }
     }
 
@@ -242,40 +315,69 @@ struct StartView: View {
     }
 }
 
-/// One check-in. Tap its title to fold it to one line or open it again.
+/// One check-in or task. Cards open one at a time: tap a card (its title, or anywhere that
+/// isn't a button or switch) to open it; whichever was open folds. Its dot, chevron and
+/// switch sit on the title's first line, so nothing moves when a long title unfolds.
 struct CheckinCard: View {
     @Environment(AppModel.self) private var model
     let checkin: Checkin
     @Binding var path: NavigationPath
 
+    /// The title's first line (and the switch beside it).
+    private let line: CGFloat = 31
+
     var body: some View {
         let c = checkin
-        let folded = model.foldedCheckins.contains(c.id)
+        let folded = model.expandedCheckin != c.id
         let score = model.score(c)
+        let waiting = c.isQuiet ? model.waiting.first { $0.checkinId == c.id && !$0.practice } : nil
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button {
-                    withAnimation(.snappy) { model.toggleFolded(c.id) }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(c.name).font(.headline).foregroundStyle(.primary).lineLimit(folded ? 1 : 3)
-                        Image(systemName: folded ? "chevron.right" : "chevron.down").font(.caption).foregroundStyle(Theme.muted)
-                        Spacer(minLength: 0)
+            HStack(alignment: .top, spacing: 10) {
+                if !c.isTask {
+                    // A check-in's dot, filled with its score's color (an empty ring until it has one).
+                    Group {
+                        if let score {
+                            Circle().fill(Theme.scoreColor(score))
+                        } else {
+                            Circle().strokeBorder(Theme.muted, lineWidth: 2)
+                        }
                     }
-                    .contentShape(Rectangle())
+                    .frame(width: 11, height: 11)
+                    .frame(height: line)
+                    .accessibilityHidden(true)
+                }
+                Button {
+                    toggle(c)
+                } label: {
+                    Text(c.name).font(.headline).foregroundStyle(.primary).lineLimit(folded ? 1 : 3)
+                        .multilineTextAlignment(.leading)
+                        .padding(.top, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("checkin-title:\(c.id)")
                 .accessibilityLabel("\(c.name), \(folded ? "collapsed" : "expanded")" + (score.map { ", \(Score.percent($0)) on track" } ?? ""))
+                Image(systemName: folded ? "chevron.right" : "chevron.down")
+                    .font(.caption).foregroundStyle(Theme.muted)
+                    .frame(height: line)
+                    .accessibilityIdentifier("checkin-chevron:\(c.id)")
                 Toggle("On", isOn: Binding(get: { c.enabled }, set: { model.setEnabled(c.id, $0) }))
                     .labelsHidden()
+                    .frame(height: line)
                     .accessibilityIdentifier("toggle:\(c.id)")
             }
             if folded {
-                Text(nextText(c)).font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(nextText(c, waiting)).font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1)
+                    .accessibilityIdentifier("next-line:\(c.id)")
             } else {
                 Text(CheckinSummary.oneLine(c)).font(.subheadline).foregroundStyle(Theme.muted)
-                nextBox(c)
+                    .accessibilityIdentifier("summary:\(c.id)")
+                if let waiting {
+                    waitingBox(c, waiting)
+                } else {
+                    nextBox(c)
+                }
                 if c.isSoft {
                     Text("Soft alarm · not counted in stats").font(.footnote).foregroundStyle(Theme.muted)
                 } else if c.isVoice {
@@ -286,6 +388,7 @@ struct CheckinCard: View {
                 HStack {
                     if !c.questions.isEmpty && c.counted {
                         Button("History") { path.append(Route.history(c.id)) }
+                            .accessibilityIdentifier("history:\(c.id)")
                     }
                     Spacer()
                     Button("Edit") { path.append(Route.edit(c.id)) }
@@ -293,15 +396,40 @@ struct CheckinCard: View {
                 }
             }
         }
-        .card(score: score)
+        .card()
+        .contentShape(Rectangle())
+        .onTapGesture { toggle(c) } // the card's body folds or opens it, like its title
         .accessibilityElement(children: .contain) // keeps the title's and buttons' own ids
         .accessibilityIdentifier(folded ? "row:\(c.id)" : "card:\(c.id)")
     }
 
-    private func nextText(_ c: Checkin) -> String {
-        if !c.enabled { return "Off" }
+    private func toggle(_ c: Checkin) {
+        withAnimation(.snappy) { model.toggleFolded(c.id) }
+    }
+
+    private func nextText(_ c: Checkin, _ waiting: Pending?) -> String {
+        if let waiting { return "Waiting · \(TimeText.of(waiting.time)) · tap to open" }
+        if !c.enabled { return c.inBacklog ? "In the backlog" : "Off" }
         if let o = model.next(c) { return "Next: \(TimeText.at(o.at))" }
+        if c.isTask { return c.times.isEmpty && c.events.isEmpty ? "No set time" : "Its time has passed" }
         return c.times.isEmpty ? "No set times" : "Not scheduled"
+    }
+
+    /// A No alarm check-in that came due: it waits here.
+    private func waitingBox(_ c: Checkin, _ p: Pending) -> some View {
+        HStack {
+            Text("Waiting · \(TimeText.of(p.time))").font(.subheadline.bold())
+                .accessibilityIdentifier("waiting:\(c.id)")
+            Spacer()
+            if c.isSoft {
+                Button("Dismiss") { model.dismiss(RunRequest(pending: p, early: false)) }
+                    .accessibilityIdentifier("waiting-dismiss:\(c.id)")
+            }
+            Button("Check in") { model.start(p) }
+                .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(Theme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder private func nextBox(_ c: Checkin) -> some View {
@@ -315,16 +443,83 @@ struct CheckinCard: View {
         if c.enabled, let o = model.next(c) {
             HStack {
                 Text("Next: \(TimeText.at(o.at))").font(.subheadline.bold())
+                    .accessibilityIdentifier("next:\(c.id)")
                 Spacer()
                 Button("Skip") { model.skipNext(c) }
                 Button("Do it now") { model.doNow(c) }
                     .buttonStyle(.bordered)
             }
+        } else if c.isTask && !c.isVoice {
+            // A task with no ring coming (in the backlog, off, or its time has passed): do it from here.
+            let passed = c.enabled && !c.times.isEmpty
+            HStack {
+                Text(passed ? "Its time has passed" : c.inBacklog ? "In the backlog"
+                     : c.times.isEmpty && c.events.isEmpty ? "Task · no set time" : "Task · alarm off")
+                    .font(.subheadline)
+                    .foregroundStyle(passed ? .orange : .primary)
+                    .accessibilityIdentifier("next:\(c.id)")
+                Spacer()
+                Button("Do it now") { model.doNow(c) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("task-do:\(c.id)")
+            }
+            .padding(12)
+            .background(Theme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
         }
     }
 }
 
-/// "My order": drag check-ins up and down.
+/// Tasks you've done, most recent first, so you can check whether you did something. Each
+/// can be opened, put back on the list, or deleted.
+struct DoneTasksView: View {
+    @Environment(AppModel.self) private var model
+    @Binding var path: NavigationPath
+    @State private var deleting: Checkin?
+
+    var body: some View {
+        let done = model.doneTasks
+        List {
+            if done.isEmpty {
+                Text("Nothing here yet. Tasks you finish show up here.").foregroundStyle(Theme.muted)
+            }
+            ForEach(done) { c in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(c.name).font(.headline)
+                    Text("✓ Done \(TimeText.done(c.doneAt ?? 0))").font(.subheadline).foregroundStyle(Theme.good)
+                    if let date = c.times.compactMap({ $0.days?.date }).first {
+                        Text("Was set for \(Repeat.dateText(date))").font(.footnote).foregroundStyle(Theme.muted)
+                    }
+                    HStack {
+                        Button("Put back") { model.reopenTask(c.id) }
+                            .accessibilityIdentifier("reopen:\(c.id)")
+                        Spacer()
+                        Button("Open") { path.append(Route.edit(c.id)) }
+                        Spacer()
+                        Button("Delete", role: .destructive) { deleting = c }
+                            .accessibilityIdentifier("delete:\(c.id)")
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.top, 4)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("done-task:\(c.id)")
+            }
+        }
+        .navigationTitle("Done tasks")
+        .navigationSubtitle(done.count == 1 ? "1 task" : "\(done.count) tasks")
+        .confirmationDialog("Delete \"\(deleting?.name ?? "")\"?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let c = deleting { model.delete(c.id) }
+                deleting = nil
+            }
+        } message: {
+            Text("It's removed from Done tasks for good.")
+        }
+    }
+}
+
+/// "My order": drag the tab's check-ins (or tasks: their priority) up and down.
 struct ReorderView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -332,8 +527,8 @@ struct ReorderView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(model.checkins) { c in Text(c.name) }
-                    .onMove { model.move(from: $0, to: $1) }
+                ForEach(model.tab.items(model.checkins)) { c in Text(c.name) }
+                    .onMove { model.moveInTab(from: $0, to: $1) }
             }
             .environment(\.editMode, .constant(.active))
             .navigationTitle("My order")
