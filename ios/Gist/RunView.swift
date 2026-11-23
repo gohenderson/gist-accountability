@@ -23,6 +23,13 @@ struct RunView: View {
     @State private var wrongCode = false
     /// Past the opening screen (background and caption), into the steps.
     @State private var started = false
+    /// When the steps began (Start check-in, or the steps screen opening): for how long
+    /// getting started and doing it took.
+    @State private var startedAt: Date?
+    /// The steps, worked out once when it opens (picking tasks mustn't make its own step vanish).
+    @State private var frozen: [RunStep]?
+    /// Tasks ticked in the pick-tasks step.
+    @State private var picked: Set<String> = []
 
     /// What runs. A scan step that can't work here (no code registered, or no camera
     /// scanning on this device) becomes 5 very hard problems.
@@ -30,14 +37,22 @@ struct RunView: View {
         case math(count: Int, level: Int, note: String?)
         case scan(label: String, code: String)
         case questions([Question])
+        /// Have [count] active tasks: pick the rest from the backlog.
+        case pick(count: Int)
     }
 
     private var checkin: Checkin? { model.checkin(request.pending.checkinId) }
 
-    private var steps: [RunStep] {
-        // (Pick today's tasks runs once the tasks screens are here; until then it's skipped.)
-        (checkin?.activeSteps ?? []).filter { $0.kind != StepConfig.pickTasks }.map { s in
+    private var steps: [RunStep] { frozen ?? buildSteps() }
+
+    /// Pick today's tasks is left out when there's nothing to pick (enough tasks are active
+    /// already, or the backlog is empty).
+    private func buildSteps() -> [RunStep] {
+        (checkin?.activeSteps ?? []).filter { s in
+            s.kind != StepConfig.pickTasks || model.data.tasksToPick(s.pickCount) > 0
+        }.map { s in
             switch s.kind {
+            case StepConfig.pickTasks: return .pick(count: s.pickCount)
             case StepConfig.math: return .math(count: s.mathCount, level: s.mathLevel, note: nil)
             case StepConfig.scan:
                 if let code = s.scanCode, !code.isEmpty, CodeScanner.supported {
@@ -60,11 +75,14 @@ struct RunView: View {
     }
 
     var body: some View {
-        if hasOpening && !started {
-            opening
-        } else {
-            stepsScreen
+        Group {
+            if hasOpening && !started {
+                opening
+            } else {
+                stepsScreen.onAppear { if startedAt == nil { startedAt = Date() } }
+            }
         }
+        .onAppear { if frozen == nil { frozen = buildSteps() } }
     }
 
     /// The background full screen, with the time, name and caption at the top and one big
@@ -90,6 +108,7 @@ struct RunView: View {
                 }
                 Spacer()
                 Button {
+                    startedAt = Date()
                     withAnimation { started = true }
                 } label: {
                     Text(steps.isEmpty ? "Continue" : "Start check-in")
@@ -115,7 +134,7 @@ struct RunView: View {
             } else {
                 Spacer()
                 Button {
-                    model.finish(request, answers: answers, values: values)
+                    model.finish(request, answers: answers, values: values, startedAt: startedAt)
                 } label: {
                     Text(steps.isEmpty ? "Dismiss" : "Done").frame(maxWidth: .infinity).padding(.vertical, 12)
                 }
@@ -195,6 +214,77 @@ struct RunView: View {
             mathView(count: count, note: note)
         case let .questions(questions):
             questionsView(questions)
+        case let .pick(count):
+            pickView(count: count)
+        }
+    }
+
+    /// Pick today's tasks: tick the difference between [count] and the active tasks, from
+    /// the backlog; they turn on and show on the start page.
+    @ViewBuilder private func pickView(count: Int) -> some View {
+        let backlog = model.data.backlog
+        let active = model.data.activeTasks.count
+        let need = model.data.tasksToPick(count)
+        let chosen = picked.intersection(backlog.map { $0.id })
+        let left = need - chosen.count
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if need == 0 {
+                    Text(count <= active ? "You already have \(active) active tasks." : "Your backlog is empty: nothing to pick today.")
+                        .font(.title3)
+                    Button {
+                        advance()
+                    } label: {
+                        Text("Continue").frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("pick-continue")
+                } else {
+                    let more = active == 0 ? "" : " more"
+                    Text(need == 1 ? "Pick 1\(more) task to do today" : "Pick \(need)\(more) tasks to do today")
+                        .font(.title2.bold())
+                    Text((active == 0 ? "" : "You have \(active) active already. ") +
+                         (backlog.count > need ? "From your backlog of \(backlog.count). They'll show on your start page."
+                                               : "That's your whole backlog. They'll show on your start page."))
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                    ForEach(backlog) { t in
+                        let on = chosen.contains(t.id)
+                        Button {
+                            if on { picked.remove(t.id) } else { picked.insert(t.id) }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(on ? Theme.primaryColor : Theme.muted)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(t.name).font(.title3)
+                                    let detail = [t.category, Checkin.timeCommitmentName(t.timeCommitment) ?? ""].filter { !$0.isEmpty }
+                                    if !detail.isEmpty {
+                                        Text(detail.joined(separator: " · ")).font(.footnote).foregroundStyle(Theme.muted)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(12)
+                            .background(on ? Theme.primaryContainer : Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("pick:\(t.id)")
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                    Button {
+                        model.pickTasks(Array(chosen), practice: request.pending.practice)
+                        picked = []
+                        advance()
+                    } label: {
+                        Text(left > 0 ? "Pick \(left) more" : left < 0 ? "Untick \(-left)"
+                             : request.pending.practice ? "Done (test: nothing changes)" : "Add to today")
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(left != 0)
+                    .accessibilityIdentifier("pick-go")
+                }
+            }
         }
     }
 
@@ -319,7 +409,7 @@ struct RunView: View {
         wrongCode = false
         resetMath()
         if index >= steps.count && !steps.isEmpty {
-            model.finish(request, answers: answers, values: values)
+            model.finish(request, answers: answers, values: values, startedAt: startedAt)
         }
     }
 

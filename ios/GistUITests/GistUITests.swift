@@ -10,9 +10,9 @@ final class GistUITests: XCTestCase {
     }
 
     @discardableResult
-    func launch(_ route: String? = nil) -> XCUIApplication {
+    func launch(_ route: String? = nil, tasks: Bool = false) -> XCUIApplication {
         app = XCUIApplication()
-        app.launchArguments = ["-gist-demo"] + (route.map { ["-gist-route", $0] } ?? [])
+        app.launchArguments = ["-gist-demo"] + (tasks ? ["-gist-demo-tasks"] : []) + (route.map { ["-gist-route", $0] } ?? [])
         app.launch()
         return app
     }
@@ -259,5 +259,25 @@ final class GistUITests: XCTestCase {
         app.buttons["export-all"].firstMatch.tap()
         XCTAssertFalse(app.buttons["export-go"].firstMatch.isEnabled, "nothing to export")
         app.buttons["Cancel"].tap()
+    }
+
+    // MARK: Tasks
+
+    func testPickTodaysTasks() {
+        launch("run:plan", tasks: true)
+        let go = element("pick-go")
+        waitFor(go)
+        XCTAssertTrue(showing("Pick 2 tasks to do today").exists)
+        XCTAssertFalse(go.isEnabled, "pick 2 first")
+        element("pick:shed").tap()
+        element("pick:milk").tap()
+        XCTAssertTrue(go.isEnabled)
+        XCTAssertEqual(go.label, "Done (test: nothing changes)")
+        element("pick:call").tap()
+        XCTAssertFalse(go.isEnabled, "one too many")
+        element("pick:call").tap()
+        go.tap()
+        // A test ring: the steps are done and nothing changed.
+        XCTAssertTrue(element("pick-go").waitForNonExistence(timeout: 10))
     }
 }

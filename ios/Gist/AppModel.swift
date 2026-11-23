@@ -109,8 +109,12 @@ final class AppModel {
         for p in AlarmPlan.placeSkips(data, now: now, places: places, calendar: calendar) {
             data.markSkipped(day: p.day, checkinId: p.checkinId, time: p.time)
         }
-        let due = AlarmPlan.due(data, now: now, places: places, calendar: calendar)
-        for p in due { data.markRang(day: p.day, checkinId: p.checkinId, time: p.time) }
+        // Logged as rung when they rang, for how long getting started took.
+        let rings = AlarmPlan.dueRings(data, now: now, places: places, calendar: calendar)
+        for (p, at) in rings {
+            data.markRang(day: p.day, checkinId: p.checkinId, time: p.time, at: Int(at.timeIntervalSince1970 * 1000))
+        }
+        let due = rings.map { $0.0 }
         let practiceDue = AlarmPlan.duePractice(practice, now: now, calendar: calendar)
         practice.removeAll { $0.at <= now }
         var all: [Pending] = []
@@ -120,6 +124,7 @@ final class AppModel {
         save()
         presentNext()
         await reschedule()
+        await QuietNotifier.clear(keeping: waiting)
     }
 
     func allowAlarms() async {
@@ -133,11 +138,13 @@ final class AppModel {
         return c.enabled && !data.isClosed(day: p.day, checkinId: p.checkinId, time: p.time)
     }
 
-    /// Strict check-ins and test rings open full screen by themselves; soft ones wait on the
-    /// start page.
+    /// Strict check-ins and test rings open full screen by themselves; soft and No alarm ones
+    /// wait on the start page.
     private func presentNext() {
         guard running == nil else { return }
-        if let p = waiting.first(where: { p in p.practice || data.checkin(p.checkinId)?.counted == true }) {
+        if let p = waiting.first(where: { p in
+            p.practice || (data.checkin(p.checkinId).map { $0.counted && !$0.isQuiet } ?? false)
+        }) {
             running = RunRequest(pending: p, early: false)
         }
     }
@@ -147,6 +154,8 @@ final class AppModel {
                                   places: places, now: Date(), calendar: calendar)
         let checkins = Dictionary(data.checkins.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         await AlarmService.replaceAll(with: plan, checkins: checkins)
+        await QuietNotifier.sync(AlarmPlan.quietRings(data, places: places, now: Date(), calendar: calendar),
+                                 names: checkins.mapValues { $0.name })
     }
 
     private func rescheduleSoon() {
@@ -195,7 +204,11 @@ final class AppModel {
         data.markRang(day: day, checkinId: c.id, time: time)
         let p = Pending(checkinId: c.id, day: day, time: time)
         if !waiting.contains(p) { waiting.append(p) }
-        OneOffStore.add(OneOffRing(checkinId: c.id, day: day, time: time, at: now.addingTimeInterval(3)))
+        if c.isQuiet {
+            Task { await QuietNotifier.showNow(p, name: c.name) } // no alarm: a quiet reminder
+        } else {
+            OneOffStore.add(OneOffRing(checkinId: c.id, day: day, time: time, at: now.addingTimeInterval(3)))
+        }
     }
 
     // MARK: - Runs and voice
@@ -285,19 +298,39 @@ final class AppModel {
 
     func start(_ p: Pending) { running = RunRequest(pending: p, early: false) }
 
-    /// "Do it now": run the next ring early; that time's alarm then stays quiet.
+    /// "Do it now": run the next ring early; that time's alarm then stays quiet. A task with
+    /// no ring coming (in the backlog, off, or its time passed) is done today, under its
+    /// nearest time.
     func doNow(_ c: Checkin) {
-        guard let o = next(c) else { return }
-        running = RunRequest(pending: Pending(checkinId: c.id, day: o.day, time: o.timeKey), early: true)
+        if let o = next(c) {
+            running = RunRequest(pending: Pending(checkinId: c.id, day: o.day, time: o.timeKey), early: true)
+        } else if c.isTask {
+            let time = Scheduler.nearestTime(c, calendar: calendar).description
+            running = RunRequest(pending: Pending(checkinId: c.id, day: Days.today(calendar: calendar), time: time), early: true)
+        }
     }
 
-    /// The steps are done: log the answers (nothing for a test).
+    /// The pick-tasks step: turns [ids] on (out of the backlog, onto today's list). A test
+    /// changes nothing.
+    func pickTasks(_ ids: [String], practice: Bool) {
+        guard !practice, !ids.isEmpty else { return }
+        for id in ids { data.update(id) { if $0.inBacklog { $0.enabled = true } } }
+        save()
+        rescheduleSoon()
+    }
+
+    /// The steps are done: log the answers (nothing for a test), and how long it took, from
+    /// [startedAt] (Start check-in, or the steps opening).
     /// [values]: typed answers as typed; every typed question is saved, "" when left empty.
-    func finish(_ r: RunRequest, answers: [String: Bool], values: [String: String] = [:]) {
+    func finish(_ r: RunRequest, answers: [String: Bool], values: [String: String] = [:], startedAt: Date? = nil) {
         let p = r.pending
         if !p.practice, let c = data.checkin(p.checkinId) {
+            let now = Date()
+            let took = data.took(day: p.day, checkinId: p.checkinId, time: p.time,
+                                 startedAt: Int((startedAt ?? now).timeIntervalSince1970 * 1000),
+                                 doneAt: Int(now.timeIntervalSince1970 * 1000))
             if c.questions.isEmpty {
-                data.markDone(day: p.day, checkinId: p.checkinId, time: p.time, early: r.early)
+                data.markDone(day: p.day, checkinId: p.checkinId, time: p.time, early: r.early, took: took)
             } else {
                 var typed: [String: String] = [:]
                 for q in c.questions where q.takesValue {
@@ -305,7 +338,7 @@ final class AppModel {
                     typed[q.id] = q.type == Question.number ? (Question.cleanNumber(v) ?? "") : v
                 }
                 data.saveAnswers(day: p.day, checkinId: p.checkinId, time: p.time, answers: answers, early: r.early,
-                                 values: typed)
+                                 values: typed, took: took)
             }
         }
         close(r)
@@ -325,6 +358,8 @@ final class AppModel {
         running = nil
         save()
         rescheduleSoon()
+        let still = waiting
+        Task { await QuietNotifier.clear(keeping: still) }
         Task {
             try? await Task.sleep(for: .milliseconds(600))
             presentNext()
@@ -500,6 +535,18 @@ final class AppModel {
         }
         waiting = []
         practice = []
+        save()
+    }
+
+    /// For UI tests of tasks: a morning planner that picks 2 tasks, and 3 in the backlog.
+    func loadDemoTasks() {
+        data.checkins.append(Checkin(id: "plan", name: "Plan the day", times: [AlarmTime(7, 30)],
+                                     steps: [StepConfig(id: "plan-p", kind: StepConfig.pickTasks, pickCount: 2)]))
+        for (id, name) in [("shed", "Organize shed"), ("milk", "Buy milk"), ("call", "Call John")] {
+            var t = Library.task(newId: id)
+            t.name = name
+            data.checkins.append(t)
+        }
         save()
     }
     #endif

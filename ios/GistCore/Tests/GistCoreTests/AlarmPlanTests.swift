@@ -37,6 +37,36 @@ final class AlarmPlanTests: XCTestCase {
         XCTAssertEqual(plan.map { $0.checkinId }, ["soft"], "soft rings once; off and voice don't ring")
     }
 
+    func testNoAlarmCheckinsRemindQuietlyInstead() {
+        var quiet = strict("q", 8)
+        quiet.soundUri = Checkin.quiet
+        let data = GistData(checkins: [quiet, strict("s", 9)])
+        let plan = AlarmPlan.plan(data, waiting: [Pending(checkinId: "q", day: "2026-11-10", time: "08:00")], practice: [],
+                                  oneOff: [OneOffRing(checkinId: "q", day: "2026-11-10", time: "08:00", at: at(10, 8, 30))],
+                                  now: at(10, 6), calendar: cal)
+        XCTAssertFalse(plan.contains { $0.checkinId == "q" }, "no alarm, no re-rings, no one-off rings")
+        let quietRings = AlarmPlan.quietRings(data, now: at(10, 6), calendar: cal)
+        XCTAssertEqual(quietRings.map { $0.checkinId }, ["q"])
+        XCTAssertEqual(quietRings.first?.at, at(10, 8))
+        // Once it's rung it still waits like any other (shown on the start page).
+        XCTAssertEqual(AlarmPlan.due(data, now: at(10, 8, 5), calendar: cal).map { $0.checkinId }, ["q"])
+    }
+
+    func testDueRingsSayWhenTheyRang() {
+        let data = GistData(checkins: [strict("s", 7)])
+        let rings = AlarmPlan.dueRings(data, now: at(10, 9), calendar: cal)
+        XCTAssertEqual(rings.map { $0.0.checkinId }, ["s"])
+        XCTAssertEqual(rings.first?.1, at(10, 7))
+    }
+
+    func testDoItNowOnATaskUsesItsNearestTime() {
+        var t = Library.task(newId: "t")
+        XCTAssertEqual(Scheduler.nearestTime(t, now: at(10, 14, 25), calendar: cal).description, "14:25", "no times: now")
+        t.times = [AlarmTime(9, 0), AlarmTime(15, 0)]
+        XCTAssertEqual(Scheduler.nearestTime(t, now: at(10, 14, 25), calendar: cal).description, "15:00")
+        XCTAssertEqual(Scheduler.nearestTime(t, now: at(10, 1, 0), calendar: cal).description, "09:00")
+    }
+
     func testDoneOrSkippedRingsMoveToTheNextOne() {
         var data = GistData(checkins: [strict("s", 7)])
         data.markSkipped(day: "2026-11-10", checkinId: "s", time: "07:00")
