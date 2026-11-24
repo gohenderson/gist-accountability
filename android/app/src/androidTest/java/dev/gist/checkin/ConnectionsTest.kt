@@ -65,7 +65,10 @@ class ConnectionsTest {
     /** Jess joins the connection waiting in [dir]: her hello, and the key she works out. */
     private fun jessJoins(jess: Peer, link: Link): ByteArray {
         val f = FileFolder(dir)
-        LinkProtocol.writeHello(f, LinkHello(jess.side, jess.name, jess.pub))
+        val inv = links.invitation(link)!!.first
+        val now = System.currentTimeMillis()
+        LinkProtocol.writeHello(f, LinkHello(jess.side, jess.name, jess.pub,
+            LinkInvites.proof(inv.token, link.id, jess.side, jess.pub, now), now))
         val mine = LinkProtocol.otherHello(f, jess.side)!!
         assertEquals(link.side, mine.side)
         assertEquals("Alex", mine.name)
@@ -184,13 +187,15 @@ class ConnectionsTest {
         // Jess invited; you join the same folder.
         val jess = Peer()
         LinkProtocol.invite(FileFolder(dir), "link-j", LinkHello(jess.side, jess.name, jess.pub))
-        val link = links.join(dir.path)!!
+        val inv = LinkInvite('c', LinkInvites.fingerprint(jess.pub), LinkInvites.newToken())
+        val link = links.join(dir.path, inv).first!!
         assertEquals("link-j", link.id)
         assertTrue(link.connected)
         assertEquals("Jess", link.peerName)
-        assertNotNull(LinkProtocol.hello(FileFolder(dir), link.side))
-        assertNull("not twice", links.join(dir.path))
-        assertNull("no invite there", links.join(File(dir, "empty").apply { mkdirs() }.path))
+        val mine = LinkProtocol.hello(FileFolder(dir), link.side)!!
+        assertTrue("it proves it had the invite", LinkInvites.proves(mine, inv.token, "link-j", Long.MAX_VALUE))
+        assertEquals(Connections.JoinProblem.ALREADY_YOURS, links.join(dir.path, inv).second)
+        assertEquals(Connections.JoinProblem.NOT_A_CONNECTION, links.join(File(dir, "empty").apply { mkdirs() }.path, inv).second)
         assertNotEquals(link.side, jess.side)
     }
 

@@ -64,7 +64,10 @@ class DevicesTest {
 
     /** The tablet joins the devices this phone set up, and gets the key once the phone lets it in. */
     private fun tabletJoins(): ByteArray {
-        LinkProtocol.writeHello(f, LinkHello(tab, "Tablet", tabKeys.first))
+        val inv = devices.invitation()!!.first
+        val now = System.currentTimeMillis()
+        LinkProtocol.writeHello(f, LinkHello(tab, "Tablet", tabKeys.first,
+            LinkInvites.proof(inv.token, group(), tab, tabKeys.first, now), now))
         devices.sync()
         val phone = LinkProtocol.hello(f, devices.side)!!
         val name = "from-${devices.side}/key-$tab.gist"
@@ -106,7 +109,7 @@ class DevicesTest {
         f.write(Devices.MARKER, JSONObject().put("format", Devices.FORMAT).put("group", "g1").toString().toByteArray())
         LinkProtocol.writeHello(f, LinkHello(tab, "Tablet", tabKeys.first))
         tabletHas(key, mapOf("c:t" to json(TestEnv.checkin("t", "Tablet's").copy(updatedAt = 5L))))
-        assertTrue(devices.join(dir.path))
+        assertNull(devices.join(dir.path, LinkInvite('d', LinkInvites.fingerprint(tabKeys.first), LinkInvites.newToken())))
         assertFalse("waiting to be let in", devices.ready)
         devices.sync()
         assertFalse(devices.ready)

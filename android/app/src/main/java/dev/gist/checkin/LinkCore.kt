@@ -218,8 +218,98 @@ object LinkCrypto {
     }
 }
 
-/** One side's hello: who's there, and their public key. */
-data class LinkHello(val side: String, val name: String, val key: String)
+/**
+ * One side's hello: who's there, and their public key. A side that joined with an invite also
+ * proves it had the invite's token: [proof] (see LinkInvites.proof) as of [joinedAt].
+ */
+data class LinkHello(val side: String, val name: String, val key: String, val proof: String? = null, val joinedAt: Long? = null)
+
+/**
+ * An invite, passed outside the folder (a QR code to scan, or a text code to type): which kind
+ * ('c' a connection, 'd' your devices), a fingerprint of the inviting side's public key (so the
+ * joiner knows whose hello is real), and a one-time token the joiner proves it has (so the
+ * inviter lets in only that joiner). The token never goes in the folder.
+ */
+class LinkInvite(val kind: Char, val fingerprint: ByteArray, val token: ByteArray) {
+    /** The text code: 36 letters and digits in groups of 4 ("ABCD-EFGH-…"); the QR code holds it too. */
+    val code: String get() = LinkInvites.base32(byteArrayOf(1, kind.code.toByte()) + fingerprint + token).chunked(4).joinToString("-")
+
+    /** What the QR code holds. */
+    val qr: String get() = "GIST:" + code.replace("-", "")
+
+    companion object {
+        /** An invite from a scanned QR code or a typed code (spaces, dashes and case don't matter); null if it isn't one. */
+        fun parse(text: String): LinkInvite? {
+            val raw = text.trim().removePrefix("GIST:").removePrefix("gist:").uppercase().filter { it.isLetterOrDigit() }
+            val bytes = LinkInvites.unbase32(raw) ?: return null
+            if (bytes.size != 2 + LinkInvites.FINGERPRINT + LinkInvites.TOKEN || bytes[0] != 1.toByte()) return null
+            val kind = bytes[1].toInt().toChar()
+            if (kind != 'c' && kind != 'd') return null
+            return LinkInvite(kind, bytes.copyOfRange(2, 2 + LinkInvites.FINGERPRINT), bytes.copyOfRange(2 + LinkInvites.FINGERPRINT, bytes.size))
+        }
+    }
+}
+
+object LinkInvites {
+    const val FINGERPRINT = 10
+    const val TOKEN = 10
+    /** How long an invite can be used. */
+    const val VALID_MS = 15 * 60 * 1000L
+    private const val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+    fun fingerprint(publicKey: String): ByteArray =
+        MessageDigest.getInstance("SHA-256").digest(publicKey.toByteArray()).copyOf(FINGERPRINT)
+
+    fun newToken(): ByteArray = ByteArray(TOKEN).also { SecureRandom().nextBytes(it) }
+
+    /** Proof that the side [side] with [publicKey] joining [scope] (a connection or devices id) at [joinedAt] had [token]. */
+    fun proof(token: ByteArray, scope: String, side: String, publicKey: String, joinedAt: Long): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(token, "HmacSHA256"))
+        return Base64.getEncoder().encodeToString(mac.doFinal("gist-join|$scope|$side|$publicKey|$joinedAt".toByteArray()))
+    }
+
+    /** [h] joined [scope] with [token], before [expires]. */
+    fun proves(h: LinkHello, token: ByteArray, scope: String, expires: Long): Boolean {
+        val proof = h.proof ?: return false
+        val at = h.joinedAt ?: return false
+        if (at > expires) return false
+        return MessageDigest.isEqual(proof.toByteArray(), proof(token, scope, h.side, h.key, at).toByteArray())
+    }
+
+    fun base32(bytes: ByteArray): String {
+        val out = StringBuilder()
+        var buffer = 0
+        var bits = 0
+        for (b in bytes) {
+            buffer = (buffer shl 8) or (b.toInt() and 0xff)
+            bits += 8
+            while (bits >= 5) {
+                out.append(ALPHABET[(buffer shr (bits - 5)) and 31])
+                bits -= 5
+            }
+        }
+        if (bits > 0) out.append(ALPHABET[(buffer shl (5 - bits)) and 31])
+        return out.toString()
+    }
+
+    fun unbase32(text: String): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        var buffer = 0
+        var bits = 0
+        for (ch in text) {
+            val v = ALPHABET.indexOf(ch)
+            if (v < 0) return null
+            buffer = (buffer shl 5) or v
+            bits += 5
+            if (bits >= 8) {
+                out.write((buffer shr (bits - 8)) and 0xff)
+                bits -= 8
+            }
+        }
+        return out.toByteArray()
+    }
+}
 
 /** Reading and writing a connection's folder (no app state: see Connections for that). */
 object LinkProtocol {
@@ -247,7 +337,17 @@ object LinkProtocol {
 
     fun writeHello(folder: LinkFolder, hello: LinkHello) {
         folder.write("${dir(hello.side)}/hello.json", JSONObject().put("side", hello.side).put("name", hello.name)
-            .put("key", hello.key).toString(2).toByteArray())
+            .put("key", hello.key).apply {
+                hello.proof?.let { put("proof", it) }
+                hello.joinedAt?.let { put("joinedAt", it) }
+            }.toString(2).toByteArray())
+    }
+
+    /** Rewrites [side]'s hello with a new [name], keeping its key and proof. */
+    fun rename(folder: LinkFolder, side: String, name: String, key: String) {
+        val h = hello(folder, side)
+        if (h?.name == name) return
+        writeHello(folder, (h ?: LinkHello(side, name, key)).copy(name = name, key = key))
     }
 
     /** A side id: letters and digits only (it's part of file paths). */
@@ -259,7 +359,8 @@ object LinkProtocol {
         return folder.read("${dir(side)}/hello.json")?.let {
             try {
                 val o = JSONObject(String(it))
-                LinkHello(o.getString("side"), o.optString("name").take(60), o.getString("key"))
+                LinkHello(o.getString("side"), o.optString("name").take(60), o.getString("key"),
+                    o.optString("proof").ifEmpty { null }, if (o.has("joinedAt")) o.optLong("joinedAt") else null)
                     .takeIf { h -> h.side == side }
             } catch (e: Exception) {
                 null

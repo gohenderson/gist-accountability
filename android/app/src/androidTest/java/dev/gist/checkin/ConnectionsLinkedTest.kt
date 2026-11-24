@@ -66,7 +66,9 @@ class ConnectionsLinkedTest {
         TestEnv.reset(mine)
         link = links.invite(dir.path)
         val (pub, priv) = LinkCrypto.newKeyPair()
-        LinkProtocol.writeHello(FileFolder(dir), LinkHello(jess, "Jess", pub))
+        val inv = links.invitation(link)!!.first
+        val now = System.currentTimeMillis()
+        LinkProtocol.writeHello(FileFolder(dir), LinkHello(jess, "Jess", pub, LinkInvites.proof(inv.token, link.id, jess, pub, now), now))
         key = LinkCrypto.sharedKey(priv, link.publicKey, link.id)
         links.sync()
         link = links.all.single()

@@ -421,9 +421,15 @@ Share check-ins and tasks with another copy of Gist, your partner's say, **read-
 they see what you share, but only you can change it, and the other way round.
 
 - **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
-  and picks an empty folder; the other taps **Join…** and picks the same folder. Each
-  connection has its own folder. Both phones then show the same **code** (like
-  `4F7A-91C2`): compare it once, and if it matches, nobody swapped in a key of their own.
+  and picks an empty folder: Gist shows an **invite**, a QR code with a code under it
+  (like `AFYW-…`). The other taps **Join…**, **scans** the QR code (or taps **Type the
+  code**, for a device without a camera), then picks the same folder. Each connection has
+  its own folder.
+- **The invite is the key to the door.** It never goes in the folder, so someone who can
+  see the folder but not your screen can't join. It works **once**, for **15 minutes**;
+  **Show the invite** (on a connection still waiting) shows it again, or a new one if it
+  ran out. Pass it in person or over a channel you trust, not through the shared folder.
+  Both phones then show the same **code** (like `4F7A-91C2`), which you can still compare.
 - **Between phones** the folder has to be kept in step by
   [Syncthing](https://syncthing.net) (on Android, Syncthing-Fork). Gist never goes online
   itself. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
@@ -453,10 +459,13 @@ they see what you share, but only you can change it, and the other way round.
 ### Your devices
 
 **Settings → Connections → Your devices** keeps everything on your phone and tablet (say)
-in step: check-ins, tasks and answers. **Set up…** on one (pick an empty folder), then
-**Join…** on each of the others (the same folder, kept in step by Syncthing between
-devices). A joining device waits to be let in until Gist opens on one that's already in;
-each pair then shows the same code.
+in step: check-ins, tasks and answers. **Set up…** on one (pick an empty folder). Then, for
+each of the others: tap **Add a device…** on one that's in, which shows an invite (a QR
+code and a code to type, good once for 15 minutes); on the new one tap **Join…**, scan or
+type it, and pick the same folder (kept in step by Syncthing between devices). The new
+device waits to be let in until Gist opens on the one that showed the invite; only that
+device lets it in, and the new one takes the shared key only from it. Each pair then shows
+the same code.
 
 - **Edit on any.** The later edit of a check-in wins, and a delete reaches them all (unless
   it's been changed since).
