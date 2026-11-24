@@ -43,7 +43,7 @@ class MainActivity : BaseActivity() {
         if (store.alarmPending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
         Connections.syncInBackground(this) { render() } // what connections share with you
-        Devices.syncInBackground(this) { render() } // your other devices
+        Devices.syncInBackground(this) { if (!recreateForTheme()) render() } // your other devices
     }
 
     override fun onRequestPermissionsResult(

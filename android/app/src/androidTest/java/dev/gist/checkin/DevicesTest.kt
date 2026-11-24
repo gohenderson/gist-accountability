@@ -218,4 +218,109 @@ class DevicesTest {
         }
         assertFalse(store.ringHere)
     }
+
+    private fun setting(v: String, at: Long) = JSONObject().put("v", v).put("at", at).toString()
+    private fun order(ids: List<String>, at: Long) = JSONObject().put("ids", org.json.JSONArray(ids)).put("at", at).toString()
+    private fun ids(json: String) = JSONObject(json).getJSONArray("ids").let { a -> (0 until a.length()).map { a.getString(it) } }
+
+    @Test
+    fun theOrderAndSettingsGoToDevicesThatJoin() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        store.theme = Store.THEME_DARK
+        store.setSortFor(Store.TAB_TASKS, Grouping.SORTS.last())
+        store.collapsed = setOf("Home")
+        store.ringHere = false
+        store.startTab = Store.TAB_TASKS
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        devices.sync()
+        val mine = phoneHas(key)
+        assertEquals(listOf("a", "b"), ids(mine.getValue("o:list")))
+        assertEquals(Store.THEME_DARK.toString(), JSONObject(mine.getValue("s:theme")).getString("v"))
+        assertEquals(JSONObject.quote(Grouping.SORTS.last()), JSONObject(mine.getValue("s:sort.tasks")).getString("v"))
+        assertEquals("[\"Home\"]", JSONObject(mine.getValue("s:collapsedGroups")).getString("v"))
+        assertFalse("per device", mine.keys.any { it.contains("ringHere") || it.contains("startTab") || it.contains("expanded") })
+        assertFalse("not changed: not sent", mine.containsKey("s:pauseSeconds"))
+    }
+
+    @Test
+    fun theLaterReorderWins() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta"), TestEnv.checkin("c", "Gamma")))
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        // Reordered here: sent.
+        store.reorder(listOf("c", "a", "b"))
+        val at = store.orderAt
+        devices.sync()
+        assertEquals(listOf("c", "a", "b"), ids(phoneHas(key).getValue("o:list")))
+        // An edit or a new one isn't a reorder.
+        store.updateCheckin("a") { it.copy(name = "Alpha 2") }
+        store.checkins = store.checkins + TestEnv.checkin("n", "New")
+        assertEquals(at, store.orderAt)
+        // An older order from the tablet: ignored.
+        tabletHas(key, mapOf("o:list" to order(listOf("a", "b", "c"), at - 1000)))
+        devices.sync()
+        assertEquals(listOf("c", "a", "b", "n"), store.checkins.map { it.id })
+        // A later one, with a check-in this phone hasn't heard of yet: taken; the rest keep their order after.
+        tabletHas(key, mapOf(
+            "o:list" to order(listOf("t", "b", "c", "a"), at + 1000),
+            "c:t" to json(TestEnv.checkin("t", "Tablet's").copy(updatedAt = at + 1000)),
+        ))
+        assertTrue(devices.sync())
+        assertEquals(listOf("t", "b", "c", "a", "n"), store.checkins.map { it.id })
+        assertEquals("theirs, not now", at + 1000, store.orderAt)
+        assertEquals("Alpha 2", store.checkins.first { it.id == "a" }.name)
+    }
+
+    @Test
+    fun theLaterChangeOfEachSettingWins() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        store.theme = Store.THEME_LIGHT
+        store.pauseSeconds = Store.PAUSE_CHOICES.last()
+        val now = System.currentTimeMillis()
+        // The tablet changed the theme earlier (loses) and the sort and folded groups later (win).
+        // Ring on this device, and anything not shared, is never taken.
+        tabletHas(key, mapOf(
+            "s:theme" to setting(Store.THEME_DARK.toString(), now - 60_000),
+            "s:sort" to setting(JSONObject.quote(Grouping.SORTS.last()), now + 60_000),
+            "s:collapsedGroups" to setting("[\"Work\",\"Home\"]", now + 60_000),
+            "s:ringHere" to setting("false", now + 60_000),
+            "s:startTab" to setting(JSONObject.quote(Store.TAB_BACKLOG), now + 60_000),
+        ))
+        assertTrue(devices.sync())
+        assertEquals(Store.THEME_LIGHT, store.theme)
+        assertEquals(Store.PAUSE_CHOICES.last(), store.pauseSeconds)
+        assertEquals(Grouping.SORTS.last(), store.sortFor(Store.TAB_CHECKINS))
+        assertEquals(setOf("Work", "Home"), store.collapsed)
+        assertTrue(store.ringHere)
+        assertEquals(Store.TAB_CHECKINS, store.startTab)
+        // Taken in, not changed here: sent on with the tablet's time, not a new one.
+        devices.sync()
+        assertEquals(now + 60_000, JSONObject(phoneHas(key).getValue("s:sort")).getLong("at"))
+        // Nothing new: nothing changes.
+        assertFalse(devices.sync())
+    }
+
+    @Test
+    fun aJoiningDeviceTakesTheOthersOrderAndSettings() {
+        TestEnv.reset(listOf(TestEnv.checkin("p", "Phone's own"), TestEnv.checkin("t", "Tablet's")))
+        store.theme = Store.THEME_DARK // set before joining: not sent, the others' wins
+        store.reorder(listOf("p", "t"))
+        val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        f.write(Devices.MARKER, JSONObject().put("format", Devices.FORMAT).put("group", "g1").toString().toByteArray())
+        LinkProtocol.writeHello(f, LinkHello(tab, "Tablet", tabKeys.first))
+        tabletHas(key, mapOf(
+            "o:list" to order(listOf("t", "p"), 5L),
+            "s:theme" to setting(Store.THEME_LIGHT.toString(), 5L),
+        ))
+        assertNull(devices.join(dir.path, LinkInvite('d', LinkInvites.fingerprint(tabKeys.first), LinkInvites.newToken())))
+        val phone = LinkProtocol.hello(f, devices.side)!!
+        val name = "from-$tab/key-${devices.side}.gist"
+        f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(tabKeys.second, phone.key, "g1"), "g1/$name", key))
+        assertTrue(devices.sync())
+        assertEquals(listOf("t", "p"), store.checkins.map { it.id })
+        assertEquals(Store.THEME_LIGHT, store.theme)
+    }
 }

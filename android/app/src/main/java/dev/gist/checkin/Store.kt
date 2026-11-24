@@ -325,8 +325,20 @@ class Store(context: Context) {
                 gone.forEach { d.putIfAbsent(it, now) }
                 deleted = d
             }
-            prefs.edit().putString(K_CHECKINS, arr.toString()).commit()
+            // Reordered (not just added to or deleted from): your other devices take the new order.
+            val edit = prefs.edit().putString(K_CHECKINS, arr.toString())
+            if (tracking) {
+                val newIds = v.map { it.id }
+                val kept = newIds.toSet()
+                if (was.keys.filter { it in kept } != newIds.filter { it in was }) edit.putLong(K_ORDER_AT, now)
+            }
+            edit.commit()
         }
+
+    /** When the order of your list last changed here (or on your other devices); 0 if never since syncing. */
+    var orderAt: Long
+        get() = prefs.getLong(K_ORDER_AT, 0)
+        set(v) { prefs.edit().putLong(K_ORDER_AT, v).commit() }
 
     /**
      * Keeping track of when things change and what's deleted, for syncing your own devices
@@ -607,7 +619,7 @@ class Store(context: Context) {
     /** THEME_SYSTEM, THEME_LIGHT or THEME_DARK. */
     var theme: Int
         get() = prefs.getInt(K_THEME, THEME_SYSTEM)
-        set(v) { prefs.edit().putInt(K_THEME, v).commit() }
+        set(v) = putSetting(K_THEME) { putInt(K_THEME, v) }
 
     /** Start page view on the current tab: Grouping.UNGROUPED or Grouping.BY_CATEGORY. */
     var view: String
@@ -620,13 +632,13 @@ class Store(context: Context) {
     fun viewFor(tab: String): String =
         prefs.getString(tabKey(K_VIEW, tab), Grouping.UNGROUPED) ?: Grouping.UNGROUPED
 
-    fun setViewFor(tab: String, v: String) { prefs.edit().putString(tabKey(K_VIEW, tab), v).commit() }
+    fun setViewFor(tab: String, v: String) = tabKey(K_VIEW, tab).let { k -> putSetting(k) { putString(k, v) } }
 
     /** The tab's sort: one of Grouping.SORTS (My order by default, so tasks keep your priority). */
     fun sortFor(tab: String): String =
         prefs.getString(tabKey(K_SORT, tab), null)?.takeIf { it in Grouping.SORTS } ?: Grouping.SORT_CUSTOM
 
-    fun setSortFor(tab: String, v: String) { prefs.edit().putString(tabKey(K_SORT, tab), v).commit() }
+    fun setSortFor(tab: String, v: String) = tabKey(K_SORT, tab).let { k -> putSetting(k) { putString(k, v) } }
 
     /**
      * The start page's tab: [TAB_CHECKINS] (everything that isn't a task), [TAB_TASKS] (active
@@ -661,12 +673,12 @@ class Store(context: Context) {
     /** The order of category groups (Grouping.key of each), as you've dragged them. */
     var groupOrder: List<String>
         get() = prefs.getString(K_GROUP_ORDER, "")!!.split('\n').filter { it.isNotEmpty() }
-        set(v) { prefs.edit().putString(K_GROUP_ORDER, v.joinToString("\n")).commit() }
+        set(v) = putSetting(K_GROUP_ORDER) { putString(K_GROUP_ORDER, v.joinToString("\n")) }
 
     /** Collapsed category groups (Grouping.key of each). */
     var collapsed: Set<String>
         get() = prefs.getStringSet(K_COLLAPSED, emptySet())!!.toSet()
-        set(v) { prefs.edit().putStringSet(K_COLLAPSED, v.toSet()).commit() }
+        set(v) = putSetting(K_COLLAPSED) { putStringSet(K_COLLAPSED, v.toSet()) }
 
     /** Puts the check-ins in the order of [ids] (any not listed keep their place at the end). */
     fun reorder(ids: List<String>) {
@@ -678,7 +690,76 @@ class Store(context: Context) {
     /** How long the alarm stays quiet after each tap while you work through a check-in. */
     var pauseSeconds: Int
         get() = prefs.getInt(K_PAUSE, DEFAULT_PAUSE).takeIf { it in PAUSE_CHOICES } ?: DEFAULT_PAUSE
-        set(v) { prefs.edit().putInt(K_PAUSE, v).commit() }
+        set(v) = putSetting(K_PAUSE) { putInt(K_PAUSE, v) }
+
+    // ------------------------------------------------------------ settings on your other devices
+
+    /**
+     * Writes setting [key]; when it changes while syncing, stamps it so your other devices
+     * take it (the later change of each setting wins, one setting at a time). Settings about
+     * this device or where you are on it (Ring on this device, the open tab and card) aren't
+     * shared: see [SYNCED_SETTINGS].
+     */
+    private fun putSetting(key: String, put: android.content.SharedPreferences.Editor.() -> Unit) {
+        val before = settingJson(key)
+        val e = prefs.edit().apply(put)
+        e.commit()
+        if (tracking && settingJson(key) != before) setSettingAt(key, System.currentTimeMillis())
+    }
+
+    private fun settingsAt(): Map<String, Long> = prefs.getString(K_SETTINGS_AT, null)?.let { s ->
+        try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } } catch (e: Exception) { null }
+    } ?: emptyMap()
+
+    private fun setSettingAt(key: String, at: Long) {
+        prefs.edit().putString(K_SETTINGS_AT, JSONObject((settingsAt() + (key to at)) as Map<*, *>).toString()).commit()
+    }
+
+    /** Setting [key]'s value as JSON (a number, text, or list for a set), or null when not set. */
+    private fun settingJson(key: String): String? {
+        if (!prefs.contains(key)) return null
+        return when (val v = prefs.all[key]) {
+            is Set<*> -> JSONArray(v.map { it.toString() }.sorted()).toString()
+            is String -> JSONObject.quote(v)
+            null -> null
+            else -> v.toString()
+        }
+    }
+
+    /** The shared settings that have changed since syncing: key → (value as JSON, when). */
+    fun syncedSettings(): Map<String, Pair<String, Long>> {
+        val at = settingsAt()
+        return SYNCED_SETTINGS.mapNotNull { k ->
+            val t = at[k] ?: return@mapNotNull null
+            val v = settingJson(k) ?: return@mapNotNull null
+            k to (v to t)
+        }.toMap()
+    }
+
+    /** Takes setting [key] from another device, if it changed there after here. True when it did. */
+    fun takeSetting(key: String, json: String, at: Long): Boolean {
+        if (key !in SYNCED_SETTINGS || at <= (settingsAt()[key] ?: 0)) return false
+        val e = prefs.edit()
+        try {
+            when (key) {
+                K_THEME, K_PAUSE -> e.putInt(key, json.toInt())
+                K_COLLAPSED -> e.putStringSet(key, JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() })
+                else -> e.putString(key, JSONArray("[$json]").getString(0))
+            }
+        } catch (ex: Exception) { return false }
+        e.commit()
+        setSettingAt(key, at)
+        return true
+    }
+
+    /**
+     * Starting to sync (as the first device): your list's order and the shared settings
+     * you've set count as changed now, so the devices that join take them.
+     */
+    fun stampForSync(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong(K_ORDER_AT, now).commit()
+        SYNCED_SETTINGS.filter { prefs.contains(it) }.forEach { setSettingAt(it, now) }
+    }
 
     // ------------------------------------------------------------ backup support
 
@@ -908,6 +989,14 @@ class Store(context: Context) {
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"
         private const val K_GROUP_ORDER = "groupOrder"
         private const val K_COLLAPSED = "collapsedGroups"
+        private const val K_ORDER_AT = "orderAt"
+        private const val K_SETTINGS_AT = "settingsAt"
+        /**
+         * Settings kept in step on your devices. Not these: Ring on this device, the open tab
+         * and card, and syncing itself.
+         */
+        val SYNCED_SETTINGS = listOf(K_THEME, K_PAUSE, K_GROUP_ORDER, K_COLLAPSED) +
+            TABS.flatMap { tab -> listOf(K_VIEW, K_SORT).map { if (tab == TAB_CHECKINS) it else "$it.$tab" } }
 
         const val DEFAULT_PAUSE = 45
 
