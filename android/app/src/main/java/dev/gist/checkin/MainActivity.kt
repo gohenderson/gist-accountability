@@ -43,6 +43,7 @@ class MainActivity : BaseActivity() {
         if (store.alarmPending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
         Connections.syncInBackground(this) { render() } // what connections share with you
+        Devices.syncInBackground(this) { render() } // your other devices
     }
 
     override fun onRequestPermissionsResult(
@@ -450,7 +451,7 @@ class MainActivity : BaseActivity() {
         setOnClickListener { toggleFolded(c) } // the "Next" line unfolds it too
         add(titleRow(c, handle, score, folded = true, size = TITLE_SIZE))
         // A "no alarm" check-in that came due says so even folded.
-        val waiting = if (c.quiet) store.pending.firstOrNull { it.checkinId == c.id && !it.practice } else null
+        val waiting = if (c.quiet || !store.ringHere) store.pending.firstOrNull { it.checkinId == c.id && !it.practice } else null
         val sub = when {
             waiting != null -> "Waiting · ${Days.timeOf(waiting.time).ifEmpty { "now" }} · tap to open"
             c.enabled -> "Next: ${CheckinText.next(c)}"
@@ -501,8 +502,9 @@ class MainActivity : BaseActivity() {
             card.add(muted(Stats.line(c, results, 7), 13f), dp(4))
         }
 
-        // A "no alarm" check-in that came due waits here (and in its notification).
-        if (c.quiet) {
+        // A "no alarm" check-in that came due waits here (and in its notification); so does any
+        // check-in when this device doesn't ring.
+        if (c.quiet || !store.ringHere) {
             for (p in store.pending.filter { it.checkinId == c.id && !it.practice }) {
                 val box = column().apply {
                     background = rounded(colorOf(R.color.primary_container), 14)
@@ -510,9 +512,9 @@ class MainActivity : BaseActivity() {
                 }
                 val r = row()
                 r.addWeighted(label("Waiting · ${Days.timeOf(p.time).ifEmpty { "now" }}", 15f).apply { tag = "waiting:${c.id}" })
-                if (c.soft) {
+                if (c.soft || !store.ringHere) {
                     r.addWrapped(textButton("Dismiss", colorMuted) {
-                        SoftAlarm.dismiss(this, p)
+                        SoftAlarm.dismiss(this, p, evenStrict = !store.ringHere)
                         render()
                         // Dismissing a soft task completes it: offer a follow-up.
                         store.checkin(c.id)?.takeIf { it.taskDone }?.let { FollowUp.offer(this, it) }

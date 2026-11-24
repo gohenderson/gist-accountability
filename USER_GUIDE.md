@@ -447,8 +447,28 @@ they see what you share, but only you can change it, and the other way round.
   do it", and can only add the ones they may do. When they finish one of yours, it's done
   on your side too, **by Jess** in Done tasks; when you finish one they added, it's done
   on theirs.
-- **Coming next:** tidying old changes out of the folder, your own other devices, and the
-  iPhone.
+- **Tidy folders:** each side notes how far it has read the other's changes, and changes
+  everyone has read are cleaned out of the folder (a snapshot covers anyone new).
+
+### Your devices
+
+**Settings → Connections → Your devices** keeps everything on your phone and tablet (say)
+in step: check-ins, tasks and answers. **Set up…** on one (pick an empty folder), then
+**Join…** on each of the others (the same folder, kept in step by Syncthing between
+devices). A joining device waits to be let in until Gist opens on one that's already in;
+each pair then shows the same code.
+
+- **Edit on any.** The later edit of a check-in wins, and a delete reaches them all (unless
+  it's been changed since).
+- **Answer once.** Answering (or dismissing or skipping) on one counts on all: once the
+  others hear, they stop waiting and ringing for it. An alarm screen checks every 20
+  seconds; other times, devices catch up when Gist is opened.
+- **Ring on this device** (on the same page) turns ringing off for one device: check-ins
+  then remind quietly there and wait on the start page, where you can still **Check in**
+  or **Dismiss** them.
+- **Not kept in step yet:** the order of your list, background photos and voice clips,
+  settings, and connections (they work from the device you set them up on).
+- **Coming next:** the iPhone.
 
 ## About
 

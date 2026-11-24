@@ -158,6 +158,9 @@ class Connections(
             LinkProtocol.publish(f, l.id, l.side, key, seq, if (l.sentSeq == 0) now else set, removed, now)
             update(l.id) { it.copy(sentSeq = seq, sent = now) }
         }
+        // Say how far you've read; clean out your changes they've read.
+        LinkProtocol.writeReceipts(f, l.side, mapOf(peer to gotSeq))
+        LinkProtocol.cleanUp(f, l.side, listOf(peer))
         return got != before
     }
 

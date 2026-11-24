@@ -97,7 +97,8 @@ class SettingsActivity : BaseActivity() {
         // Connections
         val conn = card()
         conn.add(sectionTitle("Connections"))
-        conn.add(label("Share check-ins and tasks with another copy of Gist, read-only, through a shared folder.", 15f), dp(6))
+        conn.add(label("Keep your own devices in step, choose whether this one rings, and share check-ins and tasks " +
+            "with other people (read-only), through shared folders.", 15f), dp(6))
         conn.add(outlineButton("Connections…") { startActivity(ConnectionsActivity.intent(this)) }.apply { tag = "connections" }, dp(12))
         col.add(conn, dp(12))
 

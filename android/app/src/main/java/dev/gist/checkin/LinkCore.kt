@@ -33,6 +33,10 @@ import javax.crypto.spec.SecretKeySpec
  *   from-<side>/hello.json    that side's name and public key (plain)
  *   from-<side>/000001.gist   numbered changes: items set or changed, and ids removed
  *   from-<side>/snapshot.gist everything that side shares now, with the last change's number
+ *   from-<side>/read.json     how far that side has read each other side: {"<side>": n} (plain)
+ *
+ * Read receipts let each side clean out its own changes every reader has read (the snapshot
+ * covers anyone new or far behind). Only a file's writer ever removes it.
  *
  * Each side writes only in its own from-<side>/ folder, so two writers never touch the same
  * file. Changes and snapshots are encrypted (AES-256-GCM: tampering or a wrong key fails to
@@ -44,8 +48,10 @@ import javax.crypto.spec.SecretKeySpec
 interface LinkFolder {
     fun read(path: String): ByteArray?
     fun write(path: String, bytes: ByteArray)
-    /** The names in the top folder. */
-    fun names(): List<String>
+    /** The names in the top folder, or in folder [dir]. */
+    fun names(dir: String = ""): List<String>
+    /** Removes a file (nothing if it isn't there). */
+    fun delete(path: String)
 
     companion object {
         /** A folder picked with the folder picker ("content://…"). */
@@ -87,8 +93,16 @@ class SafFolder(private val resolver: ContentResolver, private val tree: Uri) : 
         return null
     }
 
-    override fun names(): List<String> {
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
+    override fun delete(path: String) {
+        try {
+            find(path)?.let { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, it)) }
+        } catch (e: Exception) {
+        }
+    }
+
+    override fun names(dir: String): List<String> {
+        val parent = if (dir.isEmpty()) rootId else find(dir) ?: return emptyList()
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
         val out = mutableListOf<String>()
         try {
             resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
@@ -258,6 +272,41 @@ object LinkProtocol {
         folder.names().filter { it.startsWith("from-") && it != dir(mySide) }
             .map { it.removePrefix("from-") }.filter { validSide(it) }
             .firstNotNullOfOrNull { hello(folder, it) }
+
+    /** Says how far [side] has read the others ([read]: other side → change number). */
+    fun writeReceipts(folder: LinkFolder, side: String, read: Map<String, Int>) {
+        val o = JSONObject()
+        read.toSortedMap().forEach { (s, n) -> o.put(s, n) }
+        val name = "${dir(side)}/read.json"
+        val bytes = o.toString().toByteArray()
+        if (!(folder.read(name)?.contentEquals(bytes) ?: false)) folder.write(name, bytes)
+    }
+
+    /** How far [reader] has read [side]'s changes (0: not yet). */
+    fun readUpTo(folder: LinkFolder, reader: String, side: String): Int {
+        if (!validSide(reader)) return 0
+        return folder.read("${dir(reader)}/read.json")?.let {
+            try { JSONObject(String(it)).optInt(side, 0) } catch (e: Exception) { 0 }
+        } ?: 0
+    }
+
+    /**
+     * Removes [side]'s changes that all of [readers] have read (the snapshot stays). Returns
+     * how many went. With no readers yet, nothing goes.
+     */
+    fun cleanUp(folder: LinkFolder, side: String, readers: List<String>): Int {
+        if (readers.isEmpty()) return 0
+        val upTo = readers.minOf { readUpTo(folder, it, side) }
+        if (upTo <= 0) return 0
+        val old = folder.names(dir(side)).filter { Regex("\\d{6}\\.gist").matches(it) && it.take(6).toInt() <= upTo }
+        old.forEach { folder.delete("${dir(side)}/$it") }
+        return old.size
+    }
+
+    /** The other sides in the folder (from their from-<side>/ folders). */
+    fun sides(folder: LinkFolder, mySide: String): List<String> =
+        folder.names().filter { it.startsWith("from-") }.map { it.removePrefix("from-") }
+            .filter { validSide(it) && it != mySide }
 
     /** What changed from [before] to [now] (id → item JSON as text): set (new or different) and removed. */
     fun diff(before: Map<String, String>, now: Map<String, String>): Pair<Map<String, String>, List<String>> =
