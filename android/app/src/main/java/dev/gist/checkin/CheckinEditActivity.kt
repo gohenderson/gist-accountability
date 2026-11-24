@@ -98,6 +98,14 @@ class CheckinEditActivity : BaseActivity() {
             })
         }
         col.add(name, dp(2))
+        // Added from a connection: its name and description are theirs.
+        val from = c.linkId?.let { Connections(this).get(it)?.peerName?.ifEmpty { null } ?: "a connection" }
+        if (from != null) {
+            name.isEnabled = false
+            col.add(muted("From $from: its name and description are theirs (they change when $from changes them). " +
+                "Its alarms, times, steps and category are yours." +
+                (if (c.linkedGone) " $from has removed it." else ""), 13f).apply { tag = "linked-note" }, dp(4))
+        }
         // A follow-up's chain: the task it continues, and any that continue it (tap to open).
         store.checkin(c.followsUp ?: "")?.let { prev ->
             col.add(textButton("Follows: ${prev.name}") { startActivity(intent(this, prev.id)) }.apply {
@@ -121,6 +129,7 @@ class CheckinEditActivity : BaseActivity() {
             minLines = 2
             maxLines = 8
             gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            isEnabled = from == null
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -134,7 +143,13 @@ class CheckinEditActivity : BaseActivity() {
             pickTimeCommitment(c)
         }.apply { tag = "time-commitment" }, dp(8))
         col.add(button("Category: ${c.category.ifBlank { "none" }}") { pickCategory(c) }.apply { tag = "category" }, dp(8))
-        col.add(button(shareText(c)) { pickShares(c) }.apply { tag = "share-with" }, dp(8))
+        if (from == null) {
+            col.add(button(shareText(c)) { pickShares(c) }.apply { tag = "share-with" }, dp(8))
+            // A shared task: who may do it.
+            if (c.isTask && c.sharedWith.isNotEmpty()) {
+                col.add(button("Who can do it: ${assigneeText(c)}") { pickAssignee(c) }.apply { tag = "assignee" }, dp(8))
+            }
+        }
 
         // Schedule
         col = section(page, SECTION_SCHEDULE, "Schedule")
@@ -520,6 +535,26 @@ class CheckinEditActivity : BaseActivity() {
     private fun shareText(c: Checkin): String {
         val names = Connections(this).all.filter { it.connected && it.id in c.sharedWith }.map { it.peerName.ifEmpty { "someone" } }
         return "Shared with: " + (names.joinToString(", ").ifEmpty { "nobody" })
+    }
+
+    private fun assigneeText(c: Checkin): String = when (c.assignee) {
+        "" -> "anyone"
+        Store.ASSIGN_ME -> "only you"
+        else -> "only " + (Connections(this).get(c.assignee)?.peerName?.ifEmpty { null } ?: "them")
+    }
+
+    /** A shared task: anyone it's shared with (or you), only you, or only one of them. */
+    private fun pickAssignee(c: Checkin) {
+        val people = Connections(this).all.filter { it.connected && it.id in c.sharedWith }
+        val keys = listOf("", Store.ASSIGN_ME) + people.map { it.id }
+        val options = listOf(
+            DialogOption("Anyone", "You or anyone it's shared with; the first to finish it finishes it for everyone", "assign:anyone"),
+            DialogOption("Only you", "They see it, but only you can finish it", "assign:me"),
+        ) + people.map { DialogOption("Only ${it.peerName.ifEmpty { "them" }}", "Only they can finish it", "assign:${it.id}") }
+        pickDialog("Who can do it", options, keys.indexOf(c.assignee).coerceAtLeast(0)) { i ->
+            change { it.copy(assignee = keys[i]) }
+            Connections.syncInBackground(this)
+        }
     }
 
     /** Who sees it (read-only): any of your connections. */
