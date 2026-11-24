@@ -186,6 +186,8 @@ class Devices(
         if (list != before) {
             store.checkins = list
             changed = true
+            // Deleted elsewhere: no more alarms (or place watches) for them here.
+            (before.map { it.id } - list.map { it.id }.toSet()).forEach { AlarmScheduler.cancel(context, it) }
             AlarmScheduler.scheduleAll(context)
         }
         // Answers: an answer beats "rang"; between answers, the later wins.

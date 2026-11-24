@@ -139,6 +139,7 @@ class DevicesTest {
         devices.sync()
         assertNull(store.checkin("b"))
         // Deleted here: the tablet hears.
+        AlarmScheduler.cancel(TestEnv.ctx, "a")
         store.checkins = store.checkins.filter { it.id != "a" }
         devices.sync()
         assertNotNull(phoneHas(key)["d:a"])

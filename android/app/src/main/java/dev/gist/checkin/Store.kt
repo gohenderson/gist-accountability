@@ -377,7 +377,7 @@ class Store(context: Context) {
      * (Checkin.QUIET), which wait quietly on the start page and in their own notification.
      */
     val alarmPending: List<Pending>
-        get() = pending.filter { it.practice || checkin(it.checkinId)?.quiet != true }
+        get() = pending.filter { it.practice || (ringHere && checkin(it.checkinId)?.quiet != true) }
 
     var pending: List<Pending>
         get() {
