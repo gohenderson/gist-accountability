@@ -78,16 +78,13 @@ def read(path):
 def check_build_tools(findings, rows):
     root = read("android/build.gradle.kts")
     app = read("android/app/build.gradle.kts")
-    wf = "\n".join(read(f) for f in glob.glob(".github/workflows/*.yml"))
     wrapper = read("android/gradle/wrapper/gradle-wrapper.properties")
 
     items = []
-    m = re.search(r'GRADLE_VERSION:\s*"([^"]+)"', wf)
-    if m:
-        items.append(("Gradle", m.group(1), latest_gradle()))
+    # CI's Gradle comes from the wrapper too (each workflow reads it), so this one row covers both.
     m = re.search(r'gradle-([\d.]+)-bin\.zip', wrapper)
     if m:
-        items.append(("Gradle (wrapper)", m.group(1), latest_gradle()))
+        items.append(("Gradle (wrapper, also used by CI)", m.group(1), latest_gradle()))
     for plugin_id, (g, a) in {
         "com.android.application": ("com.android.tools.build", "gradle"),
         "org.jetbrains.kotlin.android": ("org.jetbrains.kotlin", "kotlin-gradle-plugin"),
