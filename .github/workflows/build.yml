@@ -19,9 +19,6 @@ concurrency:
   group: ${{ github.workflow }}-build-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GRADLE_VERSION: "9.9.1"
-
 jobs:
   changes:
     name: Android changes?
@@ -75,6 +72,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Gradle version (from the wrapper)
+        run: |
+          v=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-bin\.zip$/\1/p' android/gradle/wrapper/gradle-wrapper.properties)
+          if [ -z "$v" ]; then echo "::error::No Gradle version in gradle-wrapper.properties"; exit 1; fi
+          echo "GRADLE_VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
@@ -186,6 +189,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Gradle version (from the wrapper)
+        run: |
+          v=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-bin\.zip$/\1/p' android/gradle/wrapper/gradle-wrapper.properties)
+          if [ -z "$v" ]; then echo "::error::No Gradle version in gradle-wrapper.properties"; exit 1; fi
+          echo "GRADLE_VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
