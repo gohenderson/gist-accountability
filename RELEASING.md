@@ -12,8 +12,23 @@ touches the repository, and every release waits for the owner's approval.
 | **Screenshots** (`screenshots.yml`) | after each release, or on demand | the app on an emulator with demo data, captured page by page |
 | **CodeQL** (`codeql.yml`) | every push, every pull request, weekly | security scanning; see [SECURITY.md](SECURITY.md) |
 | **Security report** (`security-report.yml`) | Mondays, or on demand | outdated and vulnerable dependencies; see [SECURITY.md](SECURITY.md) |
+| **Combine Dependabot PRs** (`combine-dependabot.yml`) | on demand | merges the open Dependabot PRs you list (or all of them) into one PR, so they need one round of checks and one merge. Takes only PRs Dependabot opened whose commits are all its own; skips any that conflict or are already in `main`, and lists them in the PR. Needs a `COMBINE_TOKEN` secret, see below. |
 
 All third-party Actions are pinned to commit SHAs. Dependabot keeps those pins up to date.
+
+### Combining Dependabot PRs
+
+Several Dependabot PRs at once? Run **Actions → Combine Dependabot PRs → Run workflow**,
+with the PR numbers (say `59 60 61`) or nothing for all of them. It opens one PR with them
+all and comments on each one it took; merge that, and Dependabot closes the others on its
+next check.
+
+It needs a `COMBINE_TOKEN` secret, once: create a **fine-grained personal access token**
+(GitHub → Settings → Developer settings) for this repository only, with **Contents**,
+**Pull requests** and **Workflows** set to read and write, and add it under the repo's
+**Settings → Secrets and variables → Actions**. The workflow's built-in token can't push
+changes to workflow files (which Actions updates make), and checks don't run on PRs it
+opens.
 
 ## Making a release
 
