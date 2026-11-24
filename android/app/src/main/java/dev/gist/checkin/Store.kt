@@ -130,7 +130,34 @@ data class Checkin(
     val followsUp: String? = null,
     /** Connections (Links) it's shared with, read-only: they see it, you change it. */
     val sharedWith: Set<String> = emptySet(),
+    /**
+     * A shared task of yours: who can do it. "" anyone it's shared with (and you); Store.ASSIGN_ME
+     * only you; or a connection's id: only them.
+     */
+    val assignee: String = "",
+    /** A task someone else finished for you: their name. */
+    val doneBy: String? = null,
+    /**
+     * Added from a connection: "<link id>/<their id>". Its name and description stay theirs
+     * (updated when they change them); everything else (alarms, times, steps) is yours.
+     */
+    val linkedFrom: String? = null,
+    /** Who can do it, as they shared it: Store.LINK_ANYONE, LINK_YOU, LINK_OWNER or LINK_OTHER. */
+    val linkedAssignee: String = "",
+    /** They removed it (or stopped sharing it): it stays in your list, marked. */
+    val linkedGone: Boolean = false,
+    /** When it was last seen done on their side (to notice when that changes). */
+    val linkedDoneAt: Long? = null,
 ) {
+    /** Added from a connection. */
+    val isLinked: Boolean get() = linkedFrom != null
+    val linkId: String? get() = linkedFrom?.substringBefore('/')
+    val sourceId: String? get() = linkedFrom?.substringAfter('/')
+
+    /** Something shared with you that you may do (tasks: anyone's, or assigned to you; check-ins: always). */
+    val youCanDo: Boolean get() = !isTask || linkedAssignee == Store.LINK_ANYONE || linkedAssignee == Store.LINK_YOU ||
+        linkedAssignee.isEmpty()
+
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
     /** A task that's off (and not done) waits in the backlog; on, it's active. */
@@ -467,7 +494,7 @@ class Store(context: Context) {
     fun followUpsOf(id: String): List<Checkin> = checkins.filter { it.followsUp == id }
 
     /** Puts done task [id] back on the list (on again; change its date if it has passed). */
-    fun reopenTask(id: String) = updateCheckin(id) { if (it.isTask) it.copy(enabled = true, doneAt = null) else it }
+    fun reopenTask(id: String) = updateCheckin(id) { if (it.isTask) it.copy(enabled = true, doneAt = null, doneBy = null) else it }
 
     /** Every answer on [day], all check-ins and times merged. Handy for tests. */
     fun entry(day: String): Answers? {
@@ -730,6 +757,12 @@ class Store(context: Context) {
             timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
             followsUp = o.optString("followsUp", "").ifEmpty { null },
             sharedWith = o.optJSONArray("sharedWith")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
+            assignee = o.optString("assignee", ""),
+            doneBy = o.optString("doneBy", "").ifEmpty { null },
+            linkedFrom = o.optString("linkedFrom", "").ifEmpty { null },
+            linkedAssignee = o.optString("linkedAssignee", ""),
+            linkedGone = o.optBoolean("linkedGone", false),
+            linkedDoneAt = if (o.has("linkedDoneAt")) o.optLong("linkedDoneAt") else null,
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
             backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
@@ -787,6 +820,12 @@ class Store(context: Context) {
                 if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
                 c.followsUp?.let { put("followsUp", it) }
                 if (c.sharedWith.isNotEmpty()) put("sharedWith", JSONArray(c.sharedWith.sorted()))
+                if (c.assignee.isNotEmpty()) put("assignee", c.assignee)
+                c.doneBy?.let { put("doneBy", it) }
+                c.linkedFrom?.let { put("linkedFrom", it) }
+                if (c.linkedAssignee.isNotEmpty()) put("linkedAssignee", c.linkedAssignee)
+                if (c.linkedGone) put("linkedGone", true)
+                c.linkedDoneAt?.let { put("linkedDoneAt", it) }
             }
             .apply {
                 if (c.task) put("task", true)
@@ -798,6 +837,13 @@ class Store(context: Context) {
     companion object {
         private const val DAY_MS = 24L * 60 * 60 * 1000
         const val FOLLOW_UP_PREFIX = "(Follow-Up) "
+        /** Checkin.assignee: only you. */
+        const val ASSIGN_ME = "me"
+        /** Checkin.linkedAssignee, as the other side sees a shared task. */
+        const val LINK_ANYONE = "anyone"
+        const val LINK_YOU = "you"
+        const val LINK_OWNER = "owner"
+        const val LINK_OTHER = "other"
         /** Results that complete a task: done, answered, or (soft) dismissed. */
         private val TASK_DONE_STATUSES = setOf(SlotResult.DONE, SlotResult.ANSWERED, SlotResult.DISMISSED)
         private const val K_CHECKINS = "checkins"

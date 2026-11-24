@@ -437,9 +437,18 @@ they see what you share, but only you can change it, and the other way round.
 - **Encrypted:** everything shared is encrypted with a key only the two phones can work
   out (it's never written down), and a file that's been changed or swapped is ignored.
   The folder also holds each side's name and public key, which aren't secret.
-- **Coming next:** adding something they share to your own list with your own alarms,
-  tasks anyone can finish (or only the one it's assigned to), tidying old changes out of
-  the folder, and the iPhone.
+- **Add to my list** (on something they share) puts it on your own list: its alarms,
+  times, steps, commitment and category are yours to set, while its **name and
+  description stay theirs** (they change when they change them, and can't be edited
+  here). It's marked **From Jess**; if they stop sharing it, it stays, marked as removed.
+- **Who can do a shared task:** on your task's page, **Who can do it** is **Anyone** (you
+  or anyone it's shared with: the first to finish it finishes it for everyone), **Only
+  you**, or **Only Jess**. They see "anyone can do it", "assigned to you" or "only Alex can
+  do it", and can only add the ones they may do. When they finish one of yours, it's done
+  on your side too, **by Jess** in Done tasks; when you finish one they added, it's done
+  on theirs.
+- **Coming next:** tidying old changes out of the folder, your own other devices, and the
+  iPhone.
 
 ## About
 

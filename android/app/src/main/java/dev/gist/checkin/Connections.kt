@@ -136,24 +136,101 @@ class Connections(
         // Your name changed: say so.
         if (LinkProtocol.hello(f, l.side)?.name != myName) LinkProtocol.writeHello(f, LinkHello(l.side, myName, l.publicKey))
         val key = l.key() ?: return false
-        // Publish: what you share with them now, compared with what you last sent.
-        val now = items.filter { l.id in it.sharedWith }.associate { it.id to shareJson(it) }
+        val peer = l.peer ?: return false
+        // Read: their changes since last time; then bring yours up to date with them (tasks
+        // they finished for you, and what you added from them).
+        val before = received(l.id)
+        val (gotSeq, got) = LinkProtocol.receive(f, l.id, peer, key, l.gotSeq, before)
+        if (gotSeq != l.gotSeq) {
+            synchronized(LOCK) { prefs.edit().putString(K_GOT + l.id, JSONObject(got.mapValues { JSONObject(it.value) }).toString()).commit() }
+            update(l.id) { it.copy(gotSeq = gotSeq) }
+        }
+        val mine = apply(l, got) ?: items
+        // Publish: what you share with them now (and the tasks of theirs you've done), compared
+        // with what you last sent.
+        val now = mine.filter { l.id in it.sharedWith && !it.isLinked }.associate { it.id to shareJson(it, l) }.toMutableMap()
+        doneForThem(l, mine).takeIf { it.isNotEmpty() }?.let { done ->
+            now[DONE_KEY] = JSONObject().apply { done.forEach { (id, at) -> put(id, at) } }.toString()
+        }
         val (set, removed) = LinkProtocol.diff(l.sent, now)
         if (set.isNotEmpty() || removed.isNotEmpty() || l.sentSeq == 0) {
             val seq = l.sentSeq + 1
             LinkProtocol.publish(f, l.id, l.side, key, seq, if (l.sentSeq == 0) now else set, removed, now)
             update(l.id) { it.copy(sentSeq = seq, sent = now) }
         }
-        // Read: their changes since last time.
-        val before = received(l.id)
-        val peer = l.peer ?: return false
-        val (seq, got) = LinkProtocol.receive(f, l.id, peer, key, l.gotSeq, before)
-        if (seq != l.gotSeq) {
-            synchronized(LOCK) { prefs.edit().putString(K_GOT + l.id, JSONObject(got.mapValues { JSONObject(it.value) }).toString()).commit() }
-            update(l.id) { it.copy(gotSeq = seq) }
-        }
         return got != before
     }
+
+    /**
+     * Brings your check-ins up to date with what [l] shares ([got]): tasks of yours they
+     * finished (if they may: anyone's, or assigned to them), and what you added from them
+     * (their name and description, who may do it, done on their side, or gone). Returns your
+     * check-ins when anything changed.
+     */
+    private fun apply(l: Link, got: Map<String, String>): List<Checkin>? {
+        val store = Store(context)
+        val theirs = got.filterKeys { it != DONE_KEY }.mapValues { (_, json) ->
+            try { store.checkinFromJson(JSONObject(json)) } catch (e: Exception) { null }
+        }
+        val done = got[DONE_KEY]?.let { s ->
+            try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } } catch (e: Exception) { null }
+        } ?: emptyMap()
+        val before = store.checkins
+        val after = before.map { c ->
+            when {
+                // Yours, shared with them, done by them.
+                !c.isLinked && c.isTask && !c.taskDone && l.id in c.sharedWith && c.id in done &&
+                    (c.assignee.isEmpty() || c.assignee == l.id) ->
+                    c.copy(enabled = false, doneAt = done[c.id], doneBy = l.peerName.ifEmpty { "them" })
+                // Added from them: keep up with their side.
+                c.linkId == l.id -> {
+                    val src = theirs[c.sourceId]
+                    if (src == null) {
+                        c.copy(linkedGone = true)
+                    } else {
+                        var u = c.copy(name = src.name, description = src.description, linkedAssignee = src.linkedAssignee,
+                            linkedGone = false, linkedDoneAt = src.doneAt)
+                        // Done (or put back) on their side since last time: the same here.
+                        if (c.isTask && src.doneAt != c.linkedDoneAt) {
+                            u = if (src.doneAt != null) {
+                                if (u.taskDone) u else u.copy(enabled = false, doneAt = src.doneAt, doneBy = src.doneBy ?: l.peerName)
+                            } else if (u.taskDone) u.copy(enabled = true, doneAt = null, doneBy = null) else u
+                        }
+                        u
+                    }
+                }
+                else -> c
+            }
+        }
+        if (after == before) return null
+        store.checkins = after
+        after.zip(before).filter { (a, b) -> a != b }.forEach { (a, _) -> AlarmScheduler.schedule(context, a) }
+        return after
+    }
+
+    /** Tasks of [l]'s you've done that they let you do: their id → when. */
+    private fun doneForThem(l: Link, mine: List<Checkin>): Map<String, Long> =
+        mine.filter { it.linkId == l.id && it.isTask && it.youCanDo && it.taskDone && it.doneBy == null }
+            .associate { it.sourceId!! to it.doneAt!! }
+
+    /**
+     * Adds [item] (shared by [l]) to your own list: yours to set alarms, times and steps for;
+     * its name and description stay theirs. Null if it's already there.
+     */
+    fun addToMyList(l: Link, item: Checkin): Checkin? {
+        val store = Store(context)
+        val key = "${l.id}/${item.id}"
+        if (store.checkins.any { it.linkedFrom == key }) return null
+        val c = item.copy(id = Store.newId(), sharedWith = emptySet(), assignee = "", followsUp = null,
+            linkedFrom = key, linkedGone = false, linkedDoneAt = item.doneAt, backlogAt = null)
+        store.checkins = store.checkins + c
+        AlarmScheduler.schedule(context, c)
+        return c
+    }
+
+    /** What you've added from [l] (their id → yours). */
+    fun added(l: Link): Map<String, Checkin> =
+        Store(context).checkins.filter { it.linkId == l.id }.associateBy { it.sourceId!! }
 
     /** What [linkId] shares with you: id → item JSON. */
     private fun received(linkId: String): Map<String, String> = prefs.getString(K_GOT + linkId, null)?.let { s ->
@@ -168,13 +245,25 @@ class Connections(
     /** What [link] shares with you, read-only, in their order. */
     fun shared(link: Link): List<Checkin> {
         val store = Store(context)
-        return received(link.id).values.mapNotNull {
+        return received(link.id).filterKeys { it != DONE_KEY }.values.mapNotNull {
             try { store.checkinFromJson(JSONObject(it)) } catch (e: Exception) { null }
         }
     }
 
-    /** An item as the other side sees it: without who else it's shared with. */
-    private fun shareJson(c: Checkin): String = Store(context).checkinToJson(c.copy(sharedWith = emptySet())).toString()
+    /**
+     * An item as [l] sees it: without who else it's shared with, and who may do it as they see
+     * it (anyone, them, you only, or someone else).
+     */
+    private fun shareJson(c: Checkin, l: Link): String {
+        val who = when (c.assignee) {
+            "" -> Store.LINK_ANYONE
+            Store.ASSIGN_ME -> Store.LINK_OWNER
+            l.id -> Store.LINK_YOU
+            else -> Store.LINK_OTHER
+        }
+        return Store(context).checkinToJson(c.copy(sharedWith = emptySet(), assignee = "",
+            linkedAssignee = if (c.isTask) who else "")).toString()
+    }
 
     private fun toJson(l: Link) = JSONObject()
         .put("id", l.id).put("folder", l.folder).put("side", l.side)
@@ -201,6 +290,8 @@ class Connections(
         private const val K_LINKS = "links"
         private const val K_NAME = "myName"
         private const val K_GOT = "got."
+        /** Among the items a side publishes: the tasks of the other side's it has done (id → when). */
+        const val DONE_KEY = "~done"
         private val LOCK = Any()
 
         /** Runs [sync] off the main thread, then [then] on it when what's shared with you changed. */

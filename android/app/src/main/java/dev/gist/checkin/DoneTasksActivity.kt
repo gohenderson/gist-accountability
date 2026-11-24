@@ -38,7 +38,8 @@ class DoneTasksActivity : BaseActivity() {
     private fun taskCard(c: Checkin): LinearLayout {
         val card = card().apply { tag = "done-task:${c.id}" }
         card.add(label(c.name, 19f, bold = true))
-        card.add(label("✓ Done ${CheckinText.doneText(c.doneAt!!)}", 15f, color = colorGood), dp(4))
+        card.add(label("✓ Done ${CheckinText.doneText(c.doneAt!!)}" + (c.doneBy?.let { " by $it" } ?: ""), 15f,
+            color = colorGood).apply { tag = "done-when:${c.id}" }, dp(4))
         c.repeat.date?.let { card.add(muted("Was set for ${Repeat.dateText(it)}", 13f), dp(2)) }
         store.checkin(c.followsUp ?: "")?.let { card.add(muted("Follows: ${it.name}", 13f).apply { tag = "follows:${c.id}" }, dp(2)) }
         store.followUpsOf(c.id).forEach {

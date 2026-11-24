@@ -187,8 +187,10 @@ class MainActivity : BaseActivity() {
         }
 
         // What your connections share with you (read-only), on the same tab.
-        for (l in Connections(this).all.filter { it.connected && it.shown }) {
-            val theirs = Connections(this).shared(l).filter {
+        val connections = Connections(this)
+        for (l in connections.all.filter { it.connected && it.shown }) {
+            val added = connections.added(l)
+            val theirs = connections.shared(l).filter { it.id !in added }.filter { // what you added is in your list
                 when (tab) {
                     Store.TAB_TASKS -> it.isTask && !it.inBacklog && !it.taskDone
                     Store.TAB_BACKLOG -> it.inBacklog
@@ -224,7 +226,17 @@ class MainActivity : BaseActivity() {
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }, dp(8))
         }
-        add(muted("From ${l.peerName.ifEmpty { "someone" }}" + (if (c.category.isNotBlank()) " · ${c.category}" else ""), 13f), dp(6))
+        val who = l.peerName.ifEmpty { "someone" }
+        add(muted("From $who" + (if (c.category.isNotBlank()) " · ${c.category}" else ""), 13f), dp(6))
+        if (c.isTask) add(muted(CheckinText.assigned(c, who), 13f).apply { tag = "assigned:${l.id}:${c.id}" }, dp(2))
+        if (c.youCanDo) {
+            add(outlineButton("Add to my list") {
+                Connections(this@MainActivity).addToMyList(l, c)?.let {
+                    toast("Added. Its alarms are yours to set; its name and description stay $who's.")
+                }
+                render()
+            }.apply { tag = "add-shared:${l.id}:${c.id}" }, dp(8))
+        }
     }
 
     /**
@@ -456,6 +468,16 @@ class MainActivity : BaseActivity() {
 
         card.add(titleRow(c, handle, score, folded = false, size = TITLE_SIZE))
         card.add(muted(CheckinText.oneLine(c)).apply { tag = "summary:${c.id}" }, dp(2))
+        // Added from a connection: whose it is.
+        c.linkId?.let { id ->
+            val who = Connections(this).get(id)?.peerName?.ifEmpty { null } ?: "a connection"
+            val note = when {
+                c.linkedGone -> "From $who · they removed it"
+                c.isTask -> "From $who · ${CheckinText.assigned(c, who)}"
+                else -> "From $who"
+            }
+            card.add(muted(note, 13f).apply { tag = "linked:${c.id}" }, dp(2))
+        }
         // Its description: the first few lines (all of it is on its page).
         if (c.description.isNotBlank()) {
             card.add(label(c.description, 15f).apply {

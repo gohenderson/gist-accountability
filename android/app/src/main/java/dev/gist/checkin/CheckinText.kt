@@ -76,6 +76,14 @@ object CheckinText {
         return "$day ${Days.time(at.hour, at.minute)}"
     }
 
+    /** Who may do a task shared with you ([who]: the person who shared it). */
+    fun assigned(c: Checkin, who: String): String = when (c.linkedAssignee) {
+        Store.LINK_YOU -> "assigned to you"
+        Store.LINK_OWNER -> "only $who can do it"
+        Store.LINK_OTHER -> "assigned to someone else"
+        else -> "anyone can do it"
+    }
+
     fun oneLine(c: Checkin): String =
         if (c.taskDone) "Done ${doneText(c.doneAt!!)} · ${steps(c)}"
         else if (!c.enabled) "Off · ${steps(c)}" else "${whenText(c).replaceFirstChar { it.uppercase() }} · ${steps(c)}"
