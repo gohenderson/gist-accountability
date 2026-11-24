@@ -65,14 +65,41 @@ class Devices(
         LinkProtocol.writeHello(f, LinkHello(side, name, pub))
     }
 
-    /** Joins your devices in [folder]; false when it isn't a devices folder. Ready once a device that's in lets this one in. */
-    fun join(folder: String): Boolean {
+    /**
+     * An invite (QR code or text code) for another device to join with, from this one (it has
+     * to be ready): a new one if there's none or it ran out. Used once, within 15 minutes.
+     */
+    fun invitation(now: Long = System.currentTimeMillis()): Pair<LinkInvite, Long>? {
+        val pub = publicKey ?: return null
+        if (!ready) return null
+        var token = prefs.getString(K_INV_TOKEN, null)
+        var expires = prefs.getLong(K_INV_EXPIRES, 0)
+        if (token == null || expires < now) {
+            token = b64.encodeToString(LinkInvites.newToken())
+            expires = now + LinkInvites.VALID_MS
+            prefs.edit().putString(K_INV_TOKEN, token).putLong(K_INV_EXPIRES, expires).commit()
+        }
+        return LinkInvite('d', LinkInvites.fingerprint(pub), unb64.decode(token)) to expires
+    }
+
+    /** Why a join didn't work. */
+    enum class JoinProblem { NOT_DEVICES, NOT_THEIR_INVITE }
+
+    /**
+     * Joins your devices in [folder] with [invite] from one of them; ready once that device
+     * lets this one in (only it is trusted to hand over the key).
+     */
+    fun join(folder: String, invite: LinkInvite, now: Long = System.currentTimeMillis()): JoinProblem? {
         val f = openFolder(folder)
-        val id = groupOf(f) ?: return false
+        val id = groupOf(f) ?: return JoinProblem.NOT_DEVICES
+        val inviter = LinkProtocol.sides(f, side).mapNotNull { LinkProtocol.hello(f, it) }
+            .firstOrNull { LinkInvites.fingerprint(it.key).contentEquals(invite.fingerprint) }
+            ?: return JoinProblem.NOT_THEIR_INVITE
         val (pub, priv) = LinkCrypto.newKeyPair()
         start(folder, id, pub, priv, null)
-        LinkProtocol.writeHello(f, LinkHello(side, name, pub))
-        return true
+        prefs.edit().putString(K_INVITER, inviter.side).commit()
+        LinkProtocol.writeHello(f, LinkHello(side, name, pub, LinkInvites.proof(invite.token, id, side, pub, now), now))
+        return null
     }
 
     private fun start(folder: String, id: String, pub: String, priv: String, key: ByteArray?) {
@@ -97,24 +124,29 @@ class Devices(
         val id = groupId ?: return false
         val pub = publicKey ?: return false
         val priv = privateKey ?: return false
-        if (LinkProtocol.hello(f, side)?.name != name) LinkProtocol.writeHello(f, LinkHello(side, name, pub))
+        LinkProtocol.rename(f, side, name, pub)
         val others = LinkProtocol.sides(f, side)
-        // Not let in yet: look for the key, sealed for this device by one that's in.
+        // Not let in yet: look for the key, sealed for this device by the one whose invite it used.
         var key = groupKey
         if (key == null) {
-            key = others.firstNotNullOfOrNull { s ->
+            val inviter = prefs.getString(K_INVITER, null) ?: return false
+            key = others.filter { it == inviter }.firstNotNullOfOrNull { s ->
                 val h = LinkProtocol.hello(f, s) ?: return@firstNotNullOfOrNull null
                 val name = "${LinkProtocol.dir(s)}/key-$side.gist"
                 f.read(name)?.let { LinkCrypto.open(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", it) }
             } ?: return false
             prefs.edit().putString(K_KEY, b64.encodeToString(key)).commit()
         }
-        // Let in any device that's joined but has no key yet.
-        for (s in others) {
+        // Let in the device that joined with this one's invite (proving it had the token), once.
+        val token = prefs.getString(K_INV_TOKEN, null)?.let { unb64.decode(it) }
+        if (token != null) for (s in others) {
             val name = "${LinkProtocol.dir(side)}/key-$s.gist"
             if (f.read(name) != null) continue
             val h = LinkProtocol.hello(f, s) ?: continue
+            if (!LinkInvites.proves(h, token, id, prefs.getLong(K_INV_EXPIRES, 0))) continue
             f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", key))
+            prefs.edit().remove(K_INV_TOKEN).remove(K_INV_EXPIRES).commit()
+            break
         }
         // Take in theirs.
         val got = gotSeqs().toMutableMap()
@@ -244,6 +276,9 @@ class Devices(
         private const val K_SENT_SEQ = "sentSeq"
         private const val K_SENT = "sent"
         private const val K_GOT = "got"
+        private const val K_INV_TOKEN = "inviteToken"
+        private const val K_INV_EXPIRES = "inviteExpires"
+        private const val K_INVITER = "inviter"
         private val SYNC = Any()
 
         /** The group id of a devices folder, or null. */

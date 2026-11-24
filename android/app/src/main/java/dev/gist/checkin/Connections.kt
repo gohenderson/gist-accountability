@@ -25,6 +25,15 @@ data class Link(
     val sent: Map<String, String> = emptyMap(),
     /** The last of their changes read. */
     val gotSeq: Int = 0,
+    /**
+     * An invite not yet used: its one-time token (base64) and until when it can be used. Only
+     * a joiner that proves it has the token is let in. Null on older connections (which let in
+     * whoever joined first) and once used.
+     */
+    val inviteToken: String? = null,
+    val inviteExpires: Long = 0,
+    /** Made with an invite (so a joiner must prove it has the token). */
+    val needsProof: Boolean = false,
 ) {
     val connected: Boolean get() = peer != null && peerKey != null
 
@@ -83,27 +92,55 @@ class Connections(
         }
     }
 
-    /** Starts a connection in [folder] (empty, or not yet a connection): others join it from the same folder. */
-    fun invite(folder: String): Link {
+    /**
+     * Starts a connection in [folder] (empty, or not yet a connection), with an invite (a QR
+     * code or text code, see [invitation]) to pass to the other person outside the folder.
+     */
+    fun invite(folder: String, now: Long = System.currentTimeMillis()): Link {
         val f = openFolder(folder)
         val (pub, priv) = LinkCrypto.newKeyPair()
-        val link = Link(id = Store.newId() + Store.newId(), folder = folder, side = Store.newId(), publicKey = pub, privateKey = priv)
+        val link = Link(id = Store.newId() + Store.newId(), folder = folder, side = Store.newId(), publicKey = pub, privateKey = priv,
+            inviteToken = java.util.Base64.getEncoder().encodeToString(LinkInvites.newToken()),
+            inviteExpires = now + LinkInvites.VALID_MS, needsProof = true)
         LinkProtocol.invite(f, link.id, LinkHello(link.side, myName, pub))
         synchronized(LOCK) { save(all + link) }
         return link
     }
 
-    /** Joins the connection waiting in [folder]; null when there's none there (or it's already one of yours). */
-    fun join(folder: String): Link? {
+    /** [l]'s invite to show (a new one if it ran out), or null once someone's joined. */
+    fun invitation(l: Link, now: Long = System.currentTimeMillis()): Pair<LinkInvite, Long>? {
+        if (l.connected) return null
+        var cur = get(l.id) ?: l
+        if (cur.inviteToken == null || cur.inviteExpires < now) {
+            val token = java.util.Base64.getEncoder().encodeToString(LinkInvites.newToken())
+            update(l.id) { it.copy(inviteToken = token, inviteExpires = now + LinkInvites.VALID_MS, needsProof = true) }
+            cur = get(l.id)!!
+        }
+        val token = java.util.Base64.getDecoder().decode(cur.inviteToken)
+        return LinkInvite('c', LinkInvites.fingerprint(cur.publicKey), token) to cur.inviteExpires
+    }
+
+    /** Why a join didn't work. */
+    enum class JoinProblem { NOT_A_CONNECTION, ALREADY_YOURS, NOT_THEIR_INVITE }
+
+    /**
+     * Joins the connection waiting in [folder] with [invite] (scanned or typed): only if the
+     * inviting side's key there is the one the invite names. Proves to them it had the invite.
+     */
+    fun join(folder: String, invite: LinkInvite, now: Long = System.currentTimeMillis()): Pair<Link?, JoinProblem?> {
         val f = openFolder(folder)
-        val id = LinkProtocol.linkId(f) ?: return null
-        if (all.any { it.id == id }) return null
+        val id = LinkProtocol.linkId(f) ?: return null to JoinProblem.NOT_A_CONNECTION
+        if (all.any { it.id == id }) return null to JoinProblem.ALREADY_YOURS
+        val inviter = LinkProtocol.sides(f, "").mapNotNull { LinkProtocol.hello(f, it) }
+            .firstOrNull { LinkInvites.fingerprint(it.key).contentEquals(invite.fingerprint) }
+            ?: return null to JoinProblem.NOT_THEIR_INVITE
         val (pub, priv) = LinkCrypto.newKeyPair()
-        var link = Link(id = id, folder = folder, side = Store.newId(), publicKey = pub, privateKey = priv)
-        LinkProtocol.writeHello(f, LinkHello(link.side, myName, pub))
-        LinkProtocol.otherHello(f, link.side)?.let { link = link.copy(peer = it.side, peerName = it.name, peerKey = it.key) }
+        val side = Store.newId()
+        val link = Link(id = id, folder = folder, side = side, publicKey = pub, privateKey = priv,
+            peer = inviter.side, peerName = inviter.name, peerKey = inviter.key)
+        LinkProtocol.writeHello(f, LinkHello(side, myName, pub, LinkInvites.proof(invite.token, id, side, pub, now), now))
         synchronized(LOCK) { save(all + link) }
-        return link
+        return link to null
     }
 
     /**
@@ -126,15 +163,25 @@ class Connections(
     private fun syncOne(start: Link, items: List<Checkin>): Boolean {
         val f = openFolder(start.folder)
         var l = start
-        // The other side joined (or changed its name).
-        if (!l.connected || l.peerName.isEmpty()) {
-            LinkProtocol.otherHello(f, l.side)?.let { h ->
-                l = l.copy(peer = h.side, peerName = h.name, peerKey = h.key)
-                update(l.id) { it.copy(peer = h.side, peerName = h.name, peerKey = h.key) }
+        if (!l.connected) {
+            // Someone joined: with an invite, only the one that proves it had the token.
+            val token = l.inviteToken?.let { java.util.Base64.getDecoder().decode(it) }
+            val h = LinkProtocol.sides(f, l.side).mapNotNull { LinkProtocol.hello(f, it) }.firstOrNull { h ->
+                if (l.needsProof) token != null && LinkInvites.proves(h, token, l.id, l.inviteExpires) else true
+            }
+            if (h != null) {
+                l = l.copy(peer = h.side, peerName = h.name, peerKey = h.key, inviteToken = null)
+                update(l.id) { it.copy(peer = h.side, peerName = h.name, peerKey = h.key, inviteToken = null) }
+            }
+        } else {
+            // Their name changed (their key never does).
+            LinkProtocol.hello(f, l.peer!!)?.takeIf { it.key == l.peerKey && it.name != l.peerName }?.let { h ->
+                l = l.copy(peerName = h.name)
+                update(l.id) { it.copy(peerName = h.name) }
             }
         }
         // Your name changed: say so.
-        if (LinkProtocol.hello(f, l.side)?.name != myName) LinkProtocol.writeHello(f, LinkHello(l.side, myName, l.publicKey))
+        LinkProtocol.rename(f, l.side, myName, l.publicKey)
         val key = l.key() ?: return false
         val peer = l.peer ?: return false
         // Read: their changes since last time; then bring yours up to date with them (tasks
@@ -274,6 +321,7 @@ class Connections(
         .put("peer", l.peer ?: JSONObject.NULL).put("peerName", l.peerName).put("peerKey", l.peerKey ?: JSONObject.NULL)
         .put("shown", l.shown).put("sentSeq", l.sentSeq).put("gotSeq", l.gotSeq)
         .put("sent", JSONObject(l.sent.mapValues { JSONObject(it.value) }))
+        .put("inviteToken", l.inviteToken ?: JSONObject.NULL).put("inviteExpires", l.inviteExpires).put("needsProof", l.needsProof)
 
     private fun fromJson(o: JSONObject): Link {
         val sent = o.optJSONObject("sent")
@@ -285,6 +333,8 @@ class Connections(
             peerKey = o.optString("peerKey").takeIf { o.has("peerKey") && !o.isNull("peerKey") && it.isNotEmpty() },
             shown = o.optBoolean("shown", true), sentSeq = o.optInt("sentSeq"), gotSeq = o.optInt("gotSeq"),
             sent = sent?.keys()?.asSequence()?.associateWith { sent.getJSONObject(it).toString() } ?: emptyMap(),
+            inviteToken = o.optString("inviteToken").takeIf { o.has("inviteToken") && !o.isNull("inviteToken") && it.isNotEmpty() },
+            inviteExpires = o.optLong("inviteExpires"), needsProof = o.optBoolean("needsProof", false),
         )
     }
 

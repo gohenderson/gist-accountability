@@ -16,11 +16,11 @@ class ScanActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val col = column()
-        col.add(label("Register a code", 26f, bold = true))
+        col.add(label(intent.getStringExtra(EXTRA_TITLE) ?: "Register a code", 26f, bold = true))
         col.add(
             label(
-                "Scan something that stays put where you want to be when the alarm rings: " +
-                    "a printed QR sticker by the sink, the barcode on your toothpaste, the scale…",
+                intent.getStringExtra(EXTRA_TEXT) ?: ("Scan something that stays put where you want to be when the alarm rings: " +
+                    "a printed QR sticker by the sink, the barcode on your toothpaste, the scale…"),
                 14f
             ),
             dp(6)
@@ -74,6 +74,9 @@ class ScanActivity : BaseActivity() {
 
     companion object {
         const val EXTRA_CODE = "code"
+        /** Optional title and explanation (default: registering a code for a step). */
+        const val EXTRA_TITLE = "title"
+        const val EXTRA_TEXT = "text"
         private const val REQ_CAMERA = 3
     }
 }
