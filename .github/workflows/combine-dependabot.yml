@@ -1,0 +1,151 @@
+name: Combine Dependabot PRs
+
+# Run by hand: Actions → Combine Dependabot PRs → Run workflow. Merges the open Dependabot
+# PRs you list (or all of them) into one branch off main and opens one PR for it, so they
+# get one round of checks and one merge instead of a rebase-wait-merge for each.
+#
+# - Only PRs opened by Dependabot, from a branch in this repo, whose commits are all
+#   Dependabot's own (GitHub-signed), are taken. Anything else is skipped.
+# - A PR that conflicts with main or with ones already taken is skipped; so is one whose
+#   changes are already in main. The combined PR lists what was skipped and why.
+# - Each PR taken gets a comment pointing at the combined one. Once that merges, Dependabot
+#   closes them itself on its next check (or close them yourself).
+#
+# Needs a COMBINE_TOKEN secret (Settings → Secrets and variables → Actions): a fine-grained
+# personal access token for this repo only, with Contents, Pull requests and Workflows set to
+# read & write. The built-in token can't push changes to workflow files (which Actions
+# updates make), and checks don't run on a PR the built-in token opens.
+
+on:
+  workflow_dispatch:
+    inputs:
+      prs:
+        description: "PR numbers to combine, e.g. 59 60 61 (leave empty for all open Dependabot PRs)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: combine-dependabot
+  cancel-in-progress: false
+
+jobs:
+  combine:
+    name: Combine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check the token is set
+        env:
+          TOKEN: ${{ secrets.COMBINE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Add a COMBINE_TOKEN secret first (see the top of combine-dependabot.yml)."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Combine
+        env:
+          GH_TOKEN: ${{ secrets.COMBINE_TOKEN }}
+          PRS: ${{ inputs.prs }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Which PRs: the ones listed (commas, spaces, # all fine), else every open Dependabot PR.
+          list="${PRS//,/ }"
+          list="${list//#/}"
+          if [ -z "${list// /}" ]; then
+            list=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
+              -q '.[] | select(.user.login == "dependabot[bot]") | .number' | sort -n | tr '\n' ' ')
+          fi
+          read -ra nums <<< "$list"
+          if [ ${#nums[@]} -eq 0 ]; then
+            echo "No open Dependabot PRs." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          branch="combined-dependabot/$RUN"
+          git switch -c "$branch"
+          taken=()      # PR numbers merged in
+          included=""   # markdown lines
+          skipped=""
+          skip() { skipped+="- #$1: $2"$'\n'; echo "::warning::#$1 skipped: $2"; }
+
+          for n in "${nums[@]}"; do
+            if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+              skipped+="- \`$n\`: not a PR number"$'\n'; continue
+            fi
+            if ! pr=$(gh api "repos/$REPO/pulls/$n" 2>/dev/null); then skip "$n" "not found"; continue; fi
+            if [ "$(jq -r .user.login <<< "$pr")" != "dependabot[bot]" ]; then skip "$n" "not opened by Dependabot"; continue; fi
+            if [ "$(jq -r .state <<< "$pr")" != "open" ]; then skip "$n" "not open"; continue; fi
+            if [ "$(jq -r .head.repo.full_name <<< "$pr")" != "$REPO" ]; then skip "$n" "not from a branch in this repo"; continue; fi
+            sha=$(jq -r .head.sha <<< "$pr")
+            title=$(jq -r .title <<< "$pr")
+
+            # Every commit must be Dependabot's own: its author, committed and signed by GitHub.
+            # (A commit anyone else pushed to the branch would show up here.)
+            foreign=$(gh api --paginate "repos/$REPO/pulls/$n/commits?per_page=100" \
+              -q '.[] | select(.author.login != "dependabot[bot]" or .committer.login != "web-flow"
+                            or .commit.verification.verified != true) | .sha')
+            if [ -n "$foreign" ]; then skip "$n" "has commits that aren't Dependabot's"; continue; fi
+
+            git fetch -q origin "+refs/pull/$n/head:refs/remotes/pr/$n"
+            if [ "$(git rev-parse "pr/$n")" != "$sha" ]; then skip "$n" "changed while combining; run again"; continue; fi
+            if git merge-base --is-ancestor "$sha" HEAD; then skip "$n" "already in main"; continue; fi
+
+            before=$(git rev-parse HEAD)
+            if ! git merge -q --no-ff --no-edit -m "Combine #$n: $title" "$sha"; then
+              git merge --abort
+              skip "$n" "merge conflict (with main or a PR taken before it)"
+              continue
+            fi
+            if git diff --quiet "$before" HEAD; then
+              git reset -q --hard "$before"
+              skip "$n" "no changes left once merged (already in main?)"
+              continue
+            fi
+            taken+=("$n")
+            included+="- #$n $title"$'\n'
+          done
+
+          if [ ${#taken[@]} -eq 0 ]; then
+            { echo "Nothing to combine."; echo; echo "$skipped"; } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/$REPO.git" "HEAD:refs/heads/$branch"
+
+          refs=$(printf '#%s, ' "${taken[@]}"); refs="${refs%, }"
+          body="Dependabot updates combined into one PR by the **Combine Dependabot PRs** workflow."$'\n\n'
+          body+="**Included**"$'\n'"$included"
+          if [ -n "$skipped" ]; then body+=$'\n'"**Skipped**"$'\n'"$skipped"; fi
+          body+=$'\n'"Once this merges, Dependabot closes the included PRs on its next check (or close them yourself)."
+          url=$(jq -n --arg t "Combined Dependabot updates: $refs" --arg h "$branch" --arg b "$body" \
+              '{title: $t, head: $h, base: "main", body: $b}' \
+            | gh api "repos/$REPO/pulls" --input - -q .html_url)
+          number="${url##*/}"
+
+          for n in "${taken[@]}"; do
+            gh api "repos/$REPO/issues/$n/comments" -f body="Included in #$number." > /dev/null
+          done
+
+          {
+            echo "Opened $url"
+            echo
+            echo "**Included**"; echo "$included"
+            if [ -n "$skipped" ]; then echo "**Skipped**"; echo "$skipped"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
