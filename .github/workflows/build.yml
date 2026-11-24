@@ -90,6 +90,15 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
           ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" || echo "::warning::Android SDK listing failed"
 
+      # Gist B (-Ppeer=true): the second copy for trying connections on one phone builds too.
+      - name: Build Gist B debug APK
+        run: |
+          set -euo pipefail
+          bash .github/scripts/run-gradle.sh assembleDebug -Ppeer=true
+          aapt="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)aapt2"
+          "$aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk | grep -E "^package:|application-label:" | tee /dev/stderr \
+            | grep -q "dev.gist.checkin.peer" || { echo "::error title=Gist B::Not built as dev.gist.checkin.peer"; exit 1; }
+
       - name: Build debug APK
         run: bash .github/scripts/run-gradle.sh assembleDebug
 

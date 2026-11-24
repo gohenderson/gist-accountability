@@ -94,6 +94,13 @@ class SettingsActivity : BaseActivity() {
         backup.add(b, dp(12))
         col.add(backup, dp(12))
 
+        // Connections
+        val conn = card()
+        conn.add(sectionTitle("Connections"))
+        conn.add(label("Share check-ins and tasks with another copy of Gist, read-only, through a shared folder.", 15f), dp(6))
+        conn.add(outlineButton("Connections…") { startActivity(ConnectionsActivity.intent(this)) }.apply { tag = "connections" }, dp(12))
+        col.add(conn, dp(12))
+
         // CSV
         val csv = card()
         csv.add(sectionTitle("Spreadsheet"))

@@ -415,6 +415,32 @@ apps read them); backups without them stay version 4.
 - **Export answers (CSV)…:** one row per day, check-in and time, with its status, for
   spreadsheets. Soft and voice check-ins aren't included.
 
+## Connections (Android, early)
+
+Share check-ins and tasks with another copy of Gist, your partner's say, **read-only**:
+they see what you share, but only you can change it, and the other way round.
+
+- **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
+  and picks an empty folder; the other taps **Join…** and picks the same folder. Each
+  connection has its own folder. Both phones then show the same **code** (like
+  `4F7A-91C2`): compare it once, and if it matches, nobody swapped in a key of their own.
+- **Between phones** the folder has to be kept in step by
+  [Syncthing](https://syncthing.net) (on Android, Syncthing-Fork). Gist never goes online
+  itself. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
+  page): a second copy with its own data. Both can pick the same folder, say
+  Documents/GistLink.
+- **Share with…** on a check-in's or task's page (Details) picks which connections see
+  it. Changes go out the next time Gist is opened or you leave the page.
+- **What they share** shows on your start page under **From Jess**, on the tab it belongs
+  to (check-ins, active tasks, or the backlog), read-only. Turn **Show on the start page**
+  off on the Connections page to hide a connection for a while.
+- **Encrypted:** everything shared is encrypted with a key only the two phones can work
+  out (it's never written down), and a file that's been changed or swapped is ignored.
+  The folder also holds each side's name and public key, which aren't secret.
+- **Coming next:** adding something they share to your own list with your own alarms,
+  tasks anyone can finish (or only the one it's assigned to), tidying old changes out of
+  the folder, and the iPhone.
+
 ## About
 
 **About** (Settings → About) shows:

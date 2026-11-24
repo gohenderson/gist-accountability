@@ -8,6 +8,10 @@ plugins {
 // repository secrets). Without them, release builds are simply left unsigned.
 val signingStoreFile: String? = System.getenv("SIGNING_STORE_FILE")
 
+// -Ppeer=true builds "Gist B": a second copy with its own app id and data, installed beside
+// Gist, so two copies on one phone can try out connections through a shared folder.
+val peer = findProperty("peer") == "true"
+
 android {
     namespace = "dev.gist.checkin"
     compileSdk = 36
@@ -17,7 +21,8 @@ android {
     sourceSets["androidTest"].assets.srcDir("../../shared/backups")
 
     defaultConfig {
-        applicationId = "dev.gist.checkin"
+        applicationId = if (peer) "dev.gist.checkin.peer" else "dev.gist.checkin"
+        manifestPlaceholders["appLabel"] = if (peer) "Gist B" else "Gist"
         minSdk = 29          // Android 10+
         targetSdk = 35
         // CI passes these (-PversionCode=… -PversionName=…); local builds use the defaults.

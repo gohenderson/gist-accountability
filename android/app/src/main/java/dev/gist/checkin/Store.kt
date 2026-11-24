@@ -128,6 +128,8 @@ data class Checkin(
     val timeCommitment: String = "",
     /** A follow-up task: the id of the task it continues ("Sand the patch" → "Replace the liner"). */
     val followsUp: String? = null,
+    /** Connections (Links) it's shared with, read-only: they see it, you change it. */
+    val sharedWith: Set<String> = emptySet(),
 ) {
     val isTask: Boolean get() = task
     val taskDone: Boolean get() = task && doneAt != null
@@ -727,6 +729,7 @@ class Store(context: Context) {
             description = o.optString("description", ""),
             timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
             followsUp = o.optString("followsUp", "").ifEmpty { null },
+            sharedWith = o.optJSONArray("sharedWith")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
             backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
@@ -783,6 +786,7 @@ class Store(context: Context) {
                 if (c.description.isNotEmpty()) put("description", c.description)
                 if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
                 c.followsUp?.let { put("followsUp", it) }
+                if (c.sharedWith.isNotEmpty()) put("sharedWith", JSONArray(c.sharedWith.sorted()))
             }
             .apply {
                 if (c.task) put("task", true)
