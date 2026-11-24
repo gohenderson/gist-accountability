@@ -49,10 +49,17 @@ interface LinkFolder {
     fun names(): List<String>
 
     companion object {
-        /** "content://…" is a folder picked with the folder picker; anything else is a file path (tests). */
-        fun open(context: Context, location: String): LinkFolder =
-            if (location.startsWith("content://")) SafFolder(context.contentResolver, Uri.parse(location))
-            else FileFolder(File(location))
+        /**
+         * "content://…" is a folder picked with the folder picker. Anything else is a plain folder,
+         * allowed only inside Gist's own cache (where the tests make theirs).
+         */
+        fun open(context: Context, location: String): LinkFolder {
+            if (location.startsWith("content://")) return SafFolder(context.contentResolver, Uri.parse(location))
+            val cache = context.cacheDir.canonicalFile
+            val dir = File(location).canonicalFile
+            require(dir.path.startsWith(cache.path + File.separator)) { "Not a folder picked for a connection" }
+            return FileFolder(dir)
+        }
     }
 }
 
