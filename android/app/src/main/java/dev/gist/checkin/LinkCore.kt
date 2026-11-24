@@ -56,14 +56,40 @@ interface LinkFolder {
     }
 }
 
+/**
+ * Paths inside a connection's folder: plain names joined by "/", nothing that could reach
+ * outside it ("..", ".", empty parts, backslashes). Names come partly from the other side
+ * (their side id), so they're checked before use.
+ */
+object LinkPath {
+    private val part = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+    fun parts(path: String): List<String> {
+        val parts = path.split('/')
+        require(parts.isNotEmpty() && parts.all { part.matches(it) && it != "." && it != ".." && !it.contains("..") }) {
+            "Not a path in a connection folder: $path"
+        }
+        return parts
+    }
+}
+
 /** A plain folder on disk (tests). */
 class FileFolder(private val root: File) : LinkFolder {
-    override fun read(path: String): ByteArray? = File(root, path).takeIf { it.isFile }?.readBytes()
+    private val base = root.canonicalFile
+
+    /** [path] inside the folder, or an error if it would be anywhere else. */
+    private fun inside(path: String): File {
+        val f = File(base, LinkPath.parts(path).joinToString(File.separator)).canonicalFile
+        require(f.path.startsWith(base.path + File.separator)) { "Outside the connection folder: $path" }
+        return f
+    }
+
+    override fun read(path: String): ByteArray? = inside(path).takeIf { it.isFile }?.readBytes()
 
     override fun names(): List<String> = root.list()?.toList() ?: emptyList()
 
     override fun write(path: String, bytes: ByteArray) {
-        val f = File(root, path)
+        val f = inside(path)
         f.parentFile?.mkdirs()
         val tmp = File(f.parentFile, ".${f.name}.tmp")
         tmp.writeBytes(bytes)
@@ -99,7 +125,7 @@ class SafFolder(private val resolver: ContentResolver, private val tree: Uri) : 
 
     private fun find(path: String): String? {
         var id = rootId
-        for (part in path.split('/').filter { it.isNotEmpty() }) id = child(id, part) ?: return null
+        for (part in LinkPath.parts(path)) id = child(id, part) ?: return null
         return id
     }
 
@@ -112,7 +138,7 @@ class SafFolder(private val resolver: ContentResolver, private val tree: Uri) : 
     }
 
     override fun write(path: String, bytes: ByteArray) {
-        val parts = path.split('/').filter { it.isNotEmpty() }
+        val parts = LinkPath.parts(path)
         var parent = rootId
         for (dir in parts.dropLast(1)) {
             parent = child(parent, dir) ?: DocumentsContract.createDocument(resolver,
@@ -234,20 +260,28 @@ object LinkProtocol {
             .put("key", hello.key).toString(2).toByteArray())
     }
 
-    /** [side]'s hello, if it's there. */
-    fun hello(folder: LinkFolder, side: String): LinkHello? = folder.read("${dir(side)}/hello.json")?.let {
-        try {
-            val o = JSONObject(String(it))
-            LinkHello(o.getString("side"), o.optString("name"), o.getString("key"))
-        } catch (e: Exception) {
-            null
+    /** A side id: letters and digits only (it's part of file paths). */
+    fun validSide(side: String) = side.matches(Regex("[A-Za-z0-9]{1,32}"))
+
+    /** [side]'s hello, if it's there (and says it's [side]). */
+    fun hello(folder: LinkFolder, side: String): LinkHello? {
+        if (!validSide(side)) return null
+        return folder.read("${dir(side)}/hello.json")?.let {
+            try {
+                val o = JSONObject(String(it))
+                LinkHello(o.getString("side"), o.optString("name").take(60), o.getString("key"))
+                    .takeIf { h -> h.side == side }
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 
     /** The other side's hello: from any from-<side>/ folder that isn't [mySide]'s. */
     fun otherHello(folder: LinkFolder, mySide: String): LinkHello? =
         folder.names().filter { it.startsWith("from-") && it != dir(mySide) }
-            .firstNotNullOfOrNull { hello(folder, it.removePrefix("from-")) }
+            .map { it.removePrefix("from-") }.filter { validSide(it) }
+            .firstNotNullOfOrNull { hello(folder, it) }
 
     /** What changed from [before] to [now] (id → item JSON as text): set (new or different) and removed. */
     fun diff(before: Map<String, String>, now: Map<String, String>): Pair<Map<String, String>, List<String>> =
@@ -281,6 +315,7 @@ object LinkProtocol {
      */
     fun receive(folder: LinkFolder, linkId: String, side: String, key: ByteArray, seq: Int,
                 have: Map<String, String>): Pair<Int, Map<String, String>> {
+        if (!validSide(side)) return seq to have
         var n = seq
         val items = have.toMutableMap()
         fun next() = openJson(folder, linkId, key, "${dir(side)}/${changeName(n + 1)}")

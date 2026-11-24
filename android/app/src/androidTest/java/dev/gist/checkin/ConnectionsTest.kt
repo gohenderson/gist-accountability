@@ -195,6 +195,20 @@ class ConnectionsTest {
     }
 
     @Test
+    fun pathsCantLeaveTheFolder() {
+        val f = FileFolder(dir)
+        for (bad in listOf("../x", "from-a/../../x", "a//b", "/abs", "a\\b", "..")) {
+            assertTrue(bad, runCatching { f.read(bad) }.isFailure)
+            assertTrue(bad, runCatching { f.write(bad, ByteArray(1)) }.isFailure)
+        }
+        // A hello claiming a side that isn't a plain id is ignored.
+        File(dir, "from-x").mkdirs()
+        File(dir, "from-x/hello.json").writeText("""{"side":"../../evil","name":"E","key":"k"}""")
+        assertNull(LinkProtocol.otherHello(f, "me"))
+        assertNull(LinkProtocol.hello(f, "../evil"))
+    }
+
+    @Test
     fun removingAConnectionStopsSharing() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
         val link = links.invite(dir.path)
