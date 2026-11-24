@@ -57,6 +57,7 @@ class DevicesTest {
         TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).edit().clear().commit()
         store.tracking = false
         store.ringHere = true
+        Backgrounds.deleteAll(TestEnv.ctx)
     }
 
     private val f get() = FileFolder(dir)
@@ -322,5 +323,130 @@ class DevicesTest {
         assertTrue(devices.sync())
         assertEquals(listOf("t", "p"), store.checkins.map { it.id })
         assertEquals(Store.THEME_LIGHT, store.theme)
+    }
+
+    // ------------------------------------------------------------ photos, videos and clips
+
+    private val ctx get() = TestEnv.ctx
+    private fun sha(b: ByteArray) = DeviceMedia.sha256(b)
+    private fun media(files: Map<String, ByteArray>, at: Long) =
+        JSONObject().put("files", JSONObject(files.mapValues { sha(it.value) } as Map<*, *>)).put("at", at).toString()
+
+    /** The tablet puts [bytes] in the folder, as the devices share files. */
+    private fun tabletUploads(key: ByteArray, bytes: ByteArray) {
+        val blob = DeviceMedia.blobName(sha(bytes))
+        f.write("from-$tab/$blob", LinkCrypto.seal(key, "${group()}/$blob", bytes))
+    }
+
+    @Test
+    fun photosVideosAndClipsGoToOtherDevices() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        val photo = "photo bytes".toByteArray()
+        val voice = "voice bytes".toByteArray()
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes(photo)
+        Backgrounds.voiceFile(ctx, "a").writeBytes(voice)
+        File(Backgrounds.dir(ctx, "a"), "video.tmp").writeBytes("half copied".toByteArray())
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        devices.sync()
+        val m = JSONObject(phoneHas(key).getValue("m:a"))
+        val files = m.getJSONObject("files")
+        assertEquals(setOf("photo-0.jpg", "voice.m4a"), files.keys().asSequence().toSet())
+        assertEquals(sha(photo), files.getString("photo-0.jpg"))
+        // The files are in the folder once each, encrypted.
+        for (b in listOf(photo, voice)) {
+            val blob = DeviceMedia.blobName(sha(b))
+            val sealed = f.read("from-${devices.side}/$blob")!!
+            assertFalse(String(sealed, Charsets.ISO_8859_1).contains(String(b)))
+            assertEquals(String(b), String(LinkCrypto.open(key, "${group()}/$blob", sealed)!!))
+        }
+        // Nothing changed: not stamped again or sent twice.
+        val at = m.getLong("at")
+        devices.sync()
+        assertEquals(at, JSONObject(phoneHas(key).getValue("m:a")).getLong("at"))
+    }
+
+    @Test
+    fun mediaFromAnotherDeviceWaitsForItsFiles() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        val video = ByteArray(200_000) { (it % 251).toByte() }
+        val now = System.currentTimeMillis()
+        tabletHas(key, mapOf("m:a" to media(mapOf("video.mp4" to video), now + 1000)))
+        devices.sync()
+        assertFalse("not in the folder yet", Backgrounds.hasVideo(ctx, "a"))
+        // A file that doesn't match its hash: not taken.
+        val blob = DeviceMedia.blobName(sha(video))
+        f.write("from-$tab/$blob", LinkCrypto.seal(key, "${group()}/$blob", "not it".toByteArray()))
+        devices.sync()
+        assertFalse(Backgrounds.hasVideo(ctx, "a"))
+        // The real one arrives.
+        tabletUploads(key, video)
+        assertTrue(devices.sync())
+        assertTrue(video.contentEquals(Backgrounds.videoFile(ctx, "a").readBytes()))
+        assertEquals("taken in, sent on with the tablet's time", now + 1000, JSONObject(phoneHas(key).getValue("m:a")).getLong("at"))
+        // Removed on the tablet later: removed here.
+        tabletHas(key, mapOf("m:a" to media(emptyMap(), now + 2000)))
+        assertTrue(devices.sync())
+        assertFalse(Backgrounds.hasVideo(ctx, "a"))
+    }
+
+    @Test
+    fun theLaterMediaChangeWins() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        val mine = "mine".toByteArray()
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes(mine)
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        devices.sync()
+        val at = JSONObject(phoneHas(key).getValue("m:a")).getLong("at")
+        // Older on the tablet: ignored.
+        val older = "older".toByteArray()
+        tabletUploads(key, older)
+        tabletHas(key, mapOf("m:a" to media(mapOf("photo-0.jpg" to older, "photo-1.jpg" to older), at - 1000)))
+        devices.sync()
+        assertEquals(listOf("mine"), Backgrounds.photos(ctx, "a").map { String(it.readBytes()) })
+        // Changed here: stamped, and the new file goes up.
+        val newer = "newer".toByteArray()
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes(newer)
+        devices.sync()
+        val m = JSONObject(phoneHas(key).getValue("m:a"))
+        assertTrue(m.getLong("at") > at)
+        assertEquals(sha(newer), m.getJSONObject("files").getString("photo-0.jpg"))
+        assertNotNull(f.read("from-${devices.side}/${DeviceMedia.blobName(sha(newer))}"))
+    }
+
+    @Test
+    fun filesNothingUsesAreCleanedUpOnceRead() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        val first = "first".toByteArray()
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes(first)
+        devices.setUp(dir.path)
+        tabletJoins()
+        devices.sync()
+        val oldBlob = "from-${devices.side}/${DeviceMedia.blobName(sha(first))}"
+        assertNotNull(f.read(oldBlob))
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes("second".toByteArray())
+        devices.sync()
+        assertNotNull("the tablet hasn't read the change yet", f.read(oldBlob))
+        val seq = TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).getInt("sentSeq", 0)
+        LinkProtocol.writeReceipts(f, tab, mapOf(devices.side to seq))
+        devices.sync()
+        assertNull(f.read(oldBlob))
+        assertNotNull(f.read("from-${devices.side}/${DeviceMedia.blobName(sha("second".toByteArray()))}"))
+    }
+
+    @Test
+    fun aCheckinDeletedElsewhereTakesItsMediaWithIt() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
+        Backgrounds.photoFile(ctx, "a", 0).writeBytes("photo".toByteArray())
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        devices.sync()
+        tabletHas(key, mapOf("d:a" to JSONObject().put("at", System.currentTimeMillis() + 1000).toString()))
+        assertTrue(devices.sync())
+        assertTrue(Backgrounds.photos(ctx, "a").isEmpty())
+        assertFalse(phoneHas(key).containsKey("m:a"))
     }
 }

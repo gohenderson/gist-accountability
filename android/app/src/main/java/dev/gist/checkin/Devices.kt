@@ -19,8 +19,9 @@ import java.util.Base64
  * changes plus a snapshot. The later reorder wins, and the later change of each setting
  * (Store.SYNCED_SETTINGS; Ring on this device and the like stay per device).
  *
- * Not kept in step (yet): background photos and voice clips, and connections (those work
- * from the device you set them up on).
+ * Background photos, videos and voice clips: see [DeviceMedia] ("m:<id>", files sent once each).
+ *
+ * Not kept in step (yet): connections (those work from the device you set them up on).
  */
 class Devices(
     private val context: Context,
@@ -107,7 +108,8 @@ class Devices(
 
     private fun start(folder: String, id: String, pub: String, priv: String, key: ByteArray?) {
         prefs.edit().putString(K_FOLDER, folder).putString(K_GROUP, id).putString(K_PUB, pub).putString(K_PRIV, priv)
-            .putString(K_KEY, key?.let { b64.encodeToString(it) }).putInt(K_SENT_SEQ, 0).remove(K_SENT).remove(K_GOT).commit()
+            .putString(K_KEY, key?.let { b64.encodeToString(it) }).putInt(K_SENT_SEQ, 0).remove(K_SENT).remove(K_GOT)
+            .apply { DeviceMedia.KEYS.forEach { remove(it) } }.commit()
         Store(context).tracking = true
     }
 
@@ -152,15 +154,21 @@ class Devices(
             break
         }
         // Take in theirs.
+        val media = DeviceMedia(context, prefs)
         val got = gotSeqs().toMutableMap()
         var changed = false
         for (s in others) {
             val (seq, items) = LinkProtocol.receive(f, id, s, key, got[s] ?: 0, emptyMap())
             if (seq == (got[s] ?: 0)) continue
             changed = merge(items) || changed
+            media.want(items)
             got[s] = seq
         }
         prefs.edit().putString(K_GOT, JSONObject(got as Map<*, *>).toString()).commit()
+        // Their photos, videos and clips (once the files are there); then put up any of ours.
+        if (media.takeWaiting(f, id, key)) changed = true
+        media.refresh(Store(context).checkins.map { it.id })
+        media.upload(f, side, id, key)
         // Publish everything here (only what changed since last time).
         val now = everything()
         val sent = sentItems()
@@ -174,6 +182,7 @@ class Devices(
         }
         LinkProtocol.writeReceipts(f, side, got)
         LinkProtocol.cleanUp(f, side, others)
+        media.cleanUp(f, side, others, prefs.getInt(K_SENT_SEQ, 0))
         return changed
     }
 
@@ -197,6 +206,7 @@ class Devices(
             out[ORDER] = JSONObject().put("ids", org.json.JSONArray(store.checkins.map { it.id })).put("at", store.orderAt).toString()
         }
         store.syncedSettings().forEach { (k, v) -> out["s:$k"] = JSONObject().put("v", v.first).put("at", v.second).toString() }
+        out.putAll(DeviceMedia(context, prefs).items())
         return out
     }
 
@@ -239,8 +249,11 @@ class Devices(
         if (list != before) {
             store.checkins = list
             changed = true
-            // Deleted elsewhere: no more alarms (or place watches) for them here.
-            (before.map { it.id } - list.map { it.id }.toSet()).forEach { AlarmScheduler.cancel(context, it) }
+            // Deleted elsewhere: no more alarms (or place watches), photos or clips for them here.
+            (before.map { it.id } - list.map { it.id }.toSet()).forEach {
+                AlarmScheduler.cancel(context, it)
+                Backgrounds.delete(context, it)
+            }
             AlarmScheduler.scheduleAll(context)
         }
         if (takeOrder) store.orderAt = orderAt // theirs, not the time it was taken in here
@@ -303,8 +316,9 @@ class Devices(
         private const val K_INVITER = "inviter"
         private val SYNC = Any()
 
-        /** The group id of a devices folder, or null. */
         private const val ORDER = "o:list"
+
+        /** The group id of a devices folder, or null. */
 
         fun groupOf(folder: LinkFolder): String? = folder.read(MARKER)?.let {
             try {

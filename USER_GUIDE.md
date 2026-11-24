@@ -481,8 +481,12 @@ the same code.
   changing the theme on one and the sort on another keeps both. Joining takes the
   others' order and settings. **Ring on this device**, the tab you're on and the card
   that's open stay per device.
-- **Not kept in step yet:** background photos and voice clips, and connections (they work
-  from the device you set them up on).
+- **Photos, videos and voice clips.** A check-in's background photos or video and its
+  voice clip reach your other devices too (the later change wins). Each file goes in the
+  folder once, encrypted, so Syncthing copies it once; a device that gets the change
+  before the file waits for it. They're as big as Gist lets them be anywhere: photos are
+  shrunk when you pick them, and videos and clips have a size limit.
+- **Not kept in step yet:** connections (they work from the device you set them up on).
 - **Coming next:** the iPhone.
 
 ## About
