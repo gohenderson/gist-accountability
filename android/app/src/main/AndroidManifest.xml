@@ -60,7 +60,7 @@
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${appLabel}"
         android:theme="@style/Theme.Gist">
 
         <activity
@@ -83,7 +83,7 @@
             android:name=".CheckinActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:taskAffinity="dev.gist.checkin.alarm"
+            android:taskAffinity="${applicationId}.alarm"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:showWhenLocked="true"
@@ -107,6 +107,10 @@
 
         <activity
             android:name=".DoneTasksActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ConnectionsActivity"
             android:exported="false" />
 
         <activity

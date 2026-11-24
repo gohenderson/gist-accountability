@@ -42,6 +42,7 @@ class MainActivity : BaseActivity() {
         store.prunePending()
         if (store.alarmPending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
         render()
+        Connections.syncInBackground(this) { render() } // what connections share with you
     }
 
     override fun onRequestPermissionsResult(
@@ -185,6 +186,21 @@ class MainActivity : BaseActivity() {
             col.add(card().apply { add(muted(empty, 15f)) }, dp(12))
         }
 
+        // What your connections share with you (read-only), on the same tab.
+        for (l in Connections(this).all.filter { it.connected && it.shown }) {
+            val theirs = Connections(this).shared(l).filter {
+                when (tab) {
+                    Store.TAB_TASKS -> it.isTask && !it.inBacklog && !it.taskDone
+                    Store.TAB_BACKLOG -> it.inBacklog
+                    else -> !it.isTask
+                }
+            }
+            if (theirs.isEmpty()) continue
+            col.add(label("From ${l.peerName.ifEmpty { "someone" }}", 20f, bold = true).apply { tag = "from:${l.id}" }, dp(24))
+            col.add(muted("Shared with you · read-only", 13f), dp(2))
+            theirs.forEach { col.add(sharedCard(l, it), dp(10)) }
+        }
+
         if (doneTasks > 0) {
             col.add(outlineButton("Done tasks ($doneTasks)") {
                 startActivity(DoneTasksActivity.intent(this))
@@ -195,6 +211,20 @@ class MainActivity : BaseActivity() {
         setContentView(sv)
         scroll = sv
         sv.restoreScroll(oldY)
+    }
+
+    /** Something a connection shares with you: its name, description and when it's set for. Read-only. */
+    private fun sharedCard(l: Link, c: Checkin) = card().apply {
+        tag = "shared:${l.id}:${c.id}"
+        add(label(c.name, TITLE_SIZE, bold = true))
+        add(muted(CheckinText.oneLine(c)), dp(2))
+        if (c.description.isNotBlank()) {
+            add(label(c.description, 15f).apply {
+                maxLines = DESCRIPTION_LINES
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }, dp(8))
+        }
+        add(muted("From ${l.peerName.ifEmpty { "someone" }}" + (if (c.category.isNotBlank()) " · ${c.category}" else ""), 13f), dp(6))
     }
 
     /**

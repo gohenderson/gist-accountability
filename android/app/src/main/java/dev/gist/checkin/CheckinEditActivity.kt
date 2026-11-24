@@ -134,6 +134,7 @@ class CheckinEditActivity : BaseActivity() {
             pickTimeCommitment(c)
         }.apply { tag = "time-commitment" }, dp(8))
         col.add(button("Category: ${c.category.ifBlank { "none" }}") { pickCategory(c) }.apply { tag = "category" }, dp(8))
+        col.add(button(shareText(c)) { pickShares(c) }.apply { tag = "share-with" }, dp(8))
 
         // Schedule
         col = section(page, SECTION_SCHEDULE, "Schedule")
@@ -511,7 +512,40 @@ class CheckinEditActivity : BaseActivity() {
 
     override fun onPause() {
         stopRecording(keep = true)
+        Connections.syncInBackground(this) // publish changes to what's shared
         super.onPause()
+    }
+
+    /** "Shared with: Jess" (read-only for them), or nobody. */
+    private fun shareText(c: Checkin): String {
+        val names = Connections(this).all.filter { it.connected && it.id in c.sharedWith }.map { it.peerName.ifEmpty { "someone" } }
+        return "Shared with: " + (names.joinToString(", ").ifEmpty { "nobody" })
+    }
+
+    /** Who sees it (read-only): any of your connections. */
+    private fun pickShares(c: Checkin) {
+        val links = Connections(this).all.filter { it.connected }
+        if (links.isEmpty()) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Share with…")
+                .setMessage("You have no connections yet. Connect with another copy of Gist in Settings → Connections; then you can share this with them (read-only).")
+                .setPositiveButton("Connections…") { _, _ -> startActivity(ConnectionsActivity.intent(this)) }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        val checked = links.map { it.id in c.sharedWith }.toBooleanArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Share with…")
+            .setMultiChoiceItems(links.map { it.peerName.ifEmpty { "Someone" } }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
+            .setPositiveButton("Done") { _, _ ->
+                val chosen = links.filterIndexed { i, _ -> checked[i] }.map { it.id }.toSet()
+                val others = c.sharedWith - links.map { it.id }.toSet() // ones not listed here stay as they are
+                change { it.copy(sharedWith = others + chosen) }
+                Connections.syncInBackground(this)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun audioPicked(data: Intent) {
