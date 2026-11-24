@@ -37,7 +37,7 @@ class ConnectionsTest {
     val failureScreenshot = FailureScreenshot()
 
     private lateinit var dir: File
-    private val links get() = Connections(TestEnv.ctx)
+    private val links get() = Connections(TestEnv.ctx) { FileFolder(File(it)) }
 
     @Before
     fun setUp() {

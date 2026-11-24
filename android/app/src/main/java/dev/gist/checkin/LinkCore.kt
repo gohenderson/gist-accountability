@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
@@ -41,7 +40,7 @@ import javax.crypto.spec.SecretKeySpec
  * (ECDH on P-256, then HKDF-SHA256): the key itself is never written anywhere.
  */
 
-/** A folder both copies of Gist can read and write: a picked folder (Android's folder picker), or a plain one in tests. */
+/** A folder both copies of Gist can read and write: one picked with Android's folder picker (tests use a plain one). */
 interface LinkFolder {
     fun read(path: String): ByteArray?
     fun write(path: String, bytes: ByteArray)
@@ -49,16 +48,10 @@ interface LinkFolder {
     fun names(): List<String>
 
     companion object {
-        /**
-         * "content://…" is a folder picked with the folder picker. Anything else is a plain folder,
-         * allowed only inside Gist's own cache (where the tests make theirs).
-         */
+        /** A folder picked with the folder picker ("content://…"). */
         fun open(context: Context, location: String): LinkFolder {
-            if (location.startsWith("content://")) return SafFolder(context.contentResolver, Uri.parse(location))
-            val cache = context.cacheDir.canonicalFile
-            val dir = File(location).canonicalFile
-            require(dir.path.startsWith(cache.path + File.separator)) { "Not a folder picked for a connection" }
-            return FileFolder(dir)
+            require(location.startsWith("content://")) { "Not a folder picked for a connection" }
+            return SafFolder(context.contentResolver, Uri.parse(location))
         }
     }
 }
@@ -77,30 +70,6 @@ object LinkPath {
             "Not a path in a connection folder: $path"
         }
         return parts
-    }
-}
-
-/** A plain folder on disk (tests). */
-class FileFolder(private val root: File) : LinkFolder {
-    private val base = root.canonicalFile
-
-    /** [path] inside the folder, or an error if it would be anywhere else. */
-    private fun inside(path: String): File {
-        val f = File(base, LinkPath.parts(path).joinToString(File.separator)).canonicalFile
-        require(f.path.startsWith(base.path + File.separator)) { "Outside the connection folder: $path" }
-        return f
-    }
-
-    override fun read(path: String): ByteArray? = inside(path).takeIf { it.isFile }?.readBytes()
-
-    override fun names(): List<String> = root.list()?.toList() ?: emptyList()
-
-    override fun write(path: String, bytes: ByteArray) {
-        val f = inside(path)
-        f.parentFile?.mkdirs()
-        val tmp = File(f.parentFile, ".${f.name}.tmp")
-        tmp.writeBytes(bytes)
-        if (!tmp.renameTo(f)) { f.writeBytes(bytes); tmp.delete() }
     }
 }
 

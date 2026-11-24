@@ -39,7 +39,11 @@ data class Link(
  * whose "Share with" includes it), and reading what each shares with you (read-only). Kept in
  * their own preferences file, apart from the check-ins.
  */
-class Connections(private val context: Context) {
+class Connections(
+    private val context: Context,
+    /** Opens a connection's folder (tests use plain folders). */
+    private val openFolder: (String) -> LinkFolder = { LinkFolder.open(context, it) },
+) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     /** Your name, as the other side sees it. */
@@ -81,7 +85,7 @@ class Connections(private val context: Context) {
 
     /** Starts a connection in [folder] (empty, or not yet a connection): others join it from the same folder. */
     fun invite(folder: String): Link {
-        val f = LinkFolder.open(context, folder)
+        val f = openFolder(folder)
         val (pub, priv) = LinkCrypto.newKeyPair()
         val link = Link(id = Store.newId() + Store.newId(), folder = folder, side = Store.newId(), publicKey = pub, privateKey = priv)
         LinkProtocol.invite(f, link.id, LinkHello(link.side, myName, pub))
@@ -91,7 +95,7 @@ class Connections(private val context: Context) {
 
     /** Joins the connection waiting in [folder]; null when there's none there (or it's already one of yours). */
     fun join(folder: String): Link? {
-        val f = LinkFolder.open(context, folder)
+        val f = openFolder(folder)
         val id = LinkProtocol.linkId(f) ?: return null
         if (all.any { it.id == id }) return null
         val (pub, priv) = LinkCrypto.newKeyPair()
@@ -120,7 +124,7 @@ class Connections(private val context: Context) {
     }
 
     private fun syncOne(start: Link, items: List<Checkin>): Boolean {
-        val f = LinkFolder.open(context, start.folder)
+        val f = openFolder(start.folder)
         var l = start
         // The other side joined (or changed its name).
         if (!l.connected || l.peerName.isEmpty()) {
