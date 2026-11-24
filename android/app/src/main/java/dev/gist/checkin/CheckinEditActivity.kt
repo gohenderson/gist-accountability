@@ -528,6 +528,7 @@ class CheckinEditActivity : BaseActivity() {
     override fun onPause() {
         stopRecording(keep = true)
         Connections.syncInBackground(this) // publish changes to what's shared
+        Devices.syncInBackground(this) // and to your other devices
         super.onPause()
     }
 

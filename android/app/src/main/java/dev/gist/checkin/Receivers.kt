@@ -64,8 +64,9 @@ class AlarmReceiver : BroadcastReceiver() {
         // A test ring logs nothing: no "missed" mark, and its answers aren't saved.
         if (!test) store.markRang(day, c.id, time)
         store.addPending(Pending(c.id, day, time, practice = test))
-        if (c.quiet && !test) {
-            // No alarm: a silent notification; it waits on the start page until done.
+        if ((c.quiet || !store.ringHere) && !test) {
+            // No alarm (or this device doesn't ring): a silent notification; it waits on the
+            // start page until done.
             Notif.showQuiet(context, Pending(c.id, day, time))
             AlarmScheduler.schedule(context, c)
             return

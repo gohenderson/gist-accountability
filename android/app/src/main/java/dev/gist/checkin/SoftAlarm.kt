@@ -14,10 +14,13 @@ object SoftAlarm {
     var changes = 0
         private set
 
-    /** Stop [p] without doing its steps. Logged as dismissed (a soft result, so no stats). */
-    fun dismiss(context: Context, p: Pending) {
+    /**
+     * Stop [p] without doing its steps. Logged as dismissed (a soft result, so no stats).
+     * [evenStrict]: a strict one too (this device doesn't ring, so it's dismissed from its card).
+     */
+    fun dismiss(context: Context, p: Pending, evenStrict: Boolean = false) {
         val store = Store(context)
-        if (!store.isSoft(p)) return
+        if (!store.isSoft(p) && !evenStrict) return
         val c = store.checkin(p.checkinId) ?: return
         if (!p.practice) store.markDismissed(p.day, c.id, p.time.ifEmpty { AlarmScheduler.nearestTime(c).toString() })
         store.removePending(p)
@@ -37,6 +40,20 @@ object SoftAlarm {
         val at = AlarmScheduler.snooze(context, p, c.snoozeMinutes)
         settle(context)
         return at
+    }
+
+    /**
+     * [done] were answered (or dismissed or skipped) on another of your devices: stop waiting
+     * and ringing for them here.
+     */
+    fun closedElsewhere(context: Context, done: List<Pending>) {
+        if (done.isEmpty()) return
+        val store = Store(context)
+        done.forEach {
+            store.removePending(it)
+            Notif.clearQuiet(context, it.checkinId)
+        }
+        settle(context)
     }
 
     /** After a snooze or dismiss: stop ringing if nothing else is waiting, else show the next. */

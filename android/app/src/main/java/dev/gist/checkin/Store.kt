@@ -148,6 +148,8 @@ data class Checkin(
     val linkedGone: Boolean = false,
     /** When it was last seen done on their side (to notice when that changes). */
     val linkedDoneAt: Long? = null,
+    /** When it was last changed (epoch ms), stamped by Store.checkins: the later edit wins between your devices. */
+    val updatedAt: Long? = null,
 ) {
     /** Added from a connection. */
     val isLinked: Boolean get() = linkedFrom != null
@@ -306,13 +308,49 @@ class Store(context: Context) {
             val was = if (prefs.contains(K_CHECKINS)) checkins.associateBy { it.id } else emptyMap()
             val now = System.currentTimeMillis()
             val arr = JSONArray()
-            v.forEach { c ->
-                val old = was[c.id]
-                val entered = c.inBacklog && old?.inBacklog != true && c.backlogAt == old?.backlogAt
-                arr.put(checkinToJson(if (entered) c.copy(backlogAt = now) else c))
+            v.forEach { c0 ->
+                val old = was[c0.id]
+                val entered = c0.inBacklog && old?.inBacklog != true && c0.backlogAt == old?.backlogAt
+                var c = if (entered) c0.copy(backlogAt = now) else c0
+                // Changed here (not arriving from another device with its own time): stamp it.
+                if (tracking && c.updatedAt == old?.updatedAt && (old == null || c.copy(updatedAt = null) != old.copy(updatedAt = null))) {
+                    c = c.copy(updatedAt = now)
+                }
+                arr.put(checkinToJson(c))
+            }
+            // Deleted: remembered, so your other devices delete it too.
+            val gone = was.keys - v.map { it.id }.toSet()
+            if (tracking && gone.isNotEmpty()) {
+                val d = deleted.toMutableMap()
+                gone.forEach { d.putIfAbsent(it, now) }
+                deleted = d
             }
             prefs.edit().putString(K_CHECKINS, arr.toString()).commit()
         }
+
+    /**
+     * Keeping track of when things change and what's deleted, for syncing your own devices
+     * (on once they're set up: see Devices).
+     */
+    var tracking: Boolean
+        get() = prefs.getBoolean(K_TRACKING, false)
+        set(v) { prefs.edit().putBoolean(K_TRACKING, v).commit() }
+
+    /** Check-ins deleted here or on your other devices: id → when (so they stay deleted everywhere). */
+    var deleted: Map<String, Long>
+        get() = prefs.getString(K_DELETED, null)?.let { s ->
+            try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } } catch (e: Exception) { null }
+        } ?: emptyMap()
+        set(v) { prefs.edit().putString(K_DELETED, JSONObject(v as Map<*, *>).toString()).commit() }
+
+    /**
+     * This device rings for check-ins (on by default). Off: they remind quietly here, like No
+     * alarm, and wait on the start page, where you can still check in or dismiss them. Not
+     * shared with your other devices.
+     */
+    var ringHere: Boolean
+        get() = prefs.getBoolean(K_RING_HERE, true)
+        set(v) { prefs.edit().putBoolean(K_RING_HERE, v).commit() }
 
     /** Tasks done in the last [days] days. */
     fun tasksDoneSince(days: Int): Int {
@@ -339,7 +377,7 @@ class Store(context: Context) {
      * (Checkin.QUIET), which wait quietly on the start page and in their own notification.
      */
     val alarmPending: List<Pending>
-        get() = pending.filter { it.practice || checkin(it.checkinId)?.quiet != true }
+        get() = pending.filter { it.practice || (ringHere && checkin(it.checkinId)?.quiet != true) }
 
     var pending: List<Pending>
         get() {
@@ -513,6 +551,7 @@ class Store(context: Context) {
         val a = JSONObject()
         r.answers.forEach { (k, v) -> a.put(k, v) }
         c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply {
+            if (tracking) put("w", System.currentTimeMillis()) // when: the later answer wins between your devices
             if (soft) put("soft", true)
             if (r.values.isNotEmpty()) put("v", valuesToJson(r.values))
             r.rangAt?.let { put("rangAt", it) }
@@ -763,6 +802,7 @@ class Store(context: Context) {
             linkedAssignee = o.optString("linkedAssignee", ""),
             linkedGone = o.optBoolean("linkedGone", false),
             linkedDoneAt = if (o.has("linkedDoneAt")) o.optLong("linkedDoneAt") else null,
+            updatedAt = if (o.has("updatedAt")) o.optLong("updatedAt") else null,
             task = o.optBoolean("task", false),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
             backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
@@ -826,6 +866,7 @@ class Store(context: Context) {
                 if (c.linkedAssignee.isNotEmpty()) put("linkedAssignee", c.linkedAssignee)
                 if (c.linkedGone) put("linkedGone", true)
                 c.linkedDoneAt?.let { put("linkedDoneAt", it) }
+                c.updatedAt?.let { put("updatedAt", it) }
             }
             .apply {
                 if (c.task) put("task", true)
@@ -860,6 +901,9 @@ class Store(context: Context) {
         val TABS = listOf(TAB_CHECKINS, TAB_TASKS, TAB_BACKLOG)
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
+        private const val K_DELETED = "deleted"
+        private const val K_RING_HERE = "ringHere"
+        private const val K_TRACKING = "trackChanges"
         private const val K_EXPANDED_CHECKIN = "expandedCheckin"
         private const val K_COLLAPSED_CHECKINS = "collapsedCheckins"
         private const val K_GROUP_ORDER = "groupOrder"

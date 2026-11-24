@@ -27,6 +27,7 @@ class ConnectionsActivity : BaseActivity() {
         super.onResume()
         render()
         Connections.syncInBackground(this) { render() }
+        Devices.syncInBackground(this) { render() }
     }
 
     private fun render() {
@@ -46,6 +47,7 @@ class ConnectionsActivity : BaseActivity() {
             setOnFocusChangeListener { _, has -> if (!has) links.myName = text.toString() }
         }, dp(4))
         col.add(me, dp(20))
+        col.add(devicesCard(), dp(12))
 
         // New
         val add = card()
@@ -74,6 +76,58 @@ class ConnectionsActivity : BaseActivity() {
             }.apply { tag = "sync-now" }, dp(8))
         }
         setContentView(screen(col))
+    }
+
+    /** Your own devices: everything kept in step between them; whether this one rings. */
+    private fun devicesCard() = card().apply {
+        val devices = Devices(this@ConnectionsActivity)
+        val store = Store(this@ConnectionsActivity)
+        add(sectionTitle("Your devices"))
+        if (devices.folder == null) {
+            add(label("Keep all your check-ins, tasks and answers in step on your phone and tablet (say). Set up on " +
+                "one (pick an empty folder), then Join on the others (the same folder, kept in step by Syncthing).", 15f), dp(6))
+            val r = row()
+            r.addWeighted(primaryButton("Set up…") { pick(REQ_DEVICES_SETUP) }.apply { tag = "devices-setup" })
+            r.addWeighted(outlineButton("Join…") { pick(REQ_DEVICES_JOIN) }.apply { tag = "devices-join" }, startMargin = dp(8))
+            add(r, dp(12))
+        } else {
+            add(EditText(context).apply {
+                setText(devices.name)
+                hint = "This device's name"
+                tag = "device-name"
+                isSingleLine = true
+                setOnFocusChangeListener { _, has -> if (!has) devices.name = text.toString() }
+            }, dp(4))
+            if (!devices.ready) {
+                add(label("Waiting to be let in: open Gist on one of your devices that's already in.", 15f, color = colorWarn)
+                    .apply { tag = "devices-waiting" }, dp(6))
+            }
+            val others = devices.others()
+            if (others.isEmpty()) add(muted("No other devices yet: tap Join on another device and pick the same folder.", 14f), dp(6))
+            others.forEach { (side, name, code) ->
+                add(label("$name · code $code", 15f).apply { tag = "device:$side" }, dp(6))
+            }
+            add(muted("Each pair shows the same code on both devices when nobody swapped a key.", 13f), dp(2))
+            add(textButton("Stop syncing on this device", colorOf(R.color.bad)) {
+                AlertDialog.Builder(this@ConnectionsActivity)
+                    .setTitle("Stop syncing here?")
+                    .setMessage("Everything stays on this device; it just stops keeping in step with your others.")
+                    .setPositiveButton("Stop") { _, _ -> devices.leave(); render() }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }.apply { tag = "devices-leave" }, dp(4))
+        }
+        add(styledSwitch("Ring on this device").apply {
+            isChecked = store.ringHere
+            tag = "ring-here"
+            setOnCheckedChangeListener { _, on ->
+                store.ringHere = on
+                render()
+            }
+        }, dp(10))
+        if (!store.ringHere) {
+            add(muted("Check-ins don't ring here: they remind quietly and wait on the start page, where you can still check in or dismiss them.", 13f), dp(2))
+        }
     }
 
     private fun linkCard(l: Link) = card().apply {
@@ -115,7 +169,7 @@ class ConnectionsActivity : BaseActivity() {
 
     @Suppress("DEPRECATION")
     private fun pick(request: Int) {
-        if (links.myName.isBlank()) {
+        if (links.myName.isBlank() && request in setOf(REQ_INVITE, REQ_JOIN)) {
             toast("Add your name first, so they know it's you.")
             return
         }
@@ -136,6 +190,22 @@ class ConnectionsActivity : BaseActivity() {
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         try {
             when (requestCode) {
+                REQ_DEVICES_SETUP -> {
+                    val f = LinkFolder.open(this, uri.toString())
+                    if (Devices.groupOf(f) != null) {
+                        toast("Your devices are already set up in that folder: tap Join instead.")
+                        return
+                    }
+                    Devices(this).setUp(uri.toString())
+                    toast("Set up. Now tap Join on your other devices and pick the same folder.")
+                }
+                REQ_DEVICES_JOIN -> {
+                    if (!Devices(this).join(uri.toString())) {
+                        toast("That folder isn't set up for your devices: tap Set up on one of them first.")
+                        return
+                    }
+                    toast("Joined. Open Gist on a device that's already in to let this one in.")
+                }
                 REQ_INVITE -> {
                     if (LinkProtocol.linkId(LinkFolder.open(this, uri.toString())) != null) {
                         toast("That folder already has a connection: tap Join to join it, or pick an empty folder.")
@@ -158,6 +228,7 @@ class ConnectionsActivity : BaseActivity() {
         }
         render()
         Connections.syncInBackground(this) { render() }
+        Devices.syncInBackground(this) { render() }
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
@@ -165,6 +236,8 @@ class ConnectionsActivity : BaseActivity() {
     companion object {
         private const val REQ_INVITE = 21
         private const val REQ_JOIN = 22
+        private const val REQ_DEVICES_SETUP = 23
+        private const val REQ_DEVICES_JOIN = 24
 
         fun intent(context: Context) = Intent(context, ConnectionsActivity::class.java)
     }

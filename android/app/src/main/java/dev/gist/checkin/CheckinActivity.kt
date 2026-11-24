@@ -158,6 +158,18 @@ class CheckinActivity : BaseActivity() {
         if (forced) Notif.clearWaiting(this)
         showStep()
         if (forced) ticks.post(ticker)
+        if (forced) ticks.post(devicesTick)
+    }
+
+    /**
+     * While an alarm is up, check your other devices now and then: answered on one of them,
+     * it stops here (SoftAlarm.closedElsewhere; the ticker then moves on).
+     */
+    private val devicesTick = object : Runnable {
+        override fun run() {
+            Devices.syncInBackground(this@CheckinActivity)
+            ticks.postDelayed(this, DEVICES_EVERY_MS)
+        }
     }
 
     override fun onPause() {
@@ -165,6 +177,7 @@ class CheckinActivity : BaseActivity() {
         stopScanner()
         ui.removeCallbacksAndMessages(null)
         ticks.removeCallbacksAndMessages(null)
+        Devices.syncInBackground(this) // what you answered, to your other devices
         super.onPause()
     }
 
@@ -998,6 +1011,9 @@ class CheckinActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     companion object {
+        /** How often an alarm screen checks your other devices. */
+        private const val DEVICES_EVERY_MS = 20_000L
+
         /** True while an alarm/check-in screen is in front (the waiting reminder is then suppressed). */
         @Volatile
         var visible = false

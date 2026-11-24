@@ -15,7 +15,12 @@ class FileFolder(private val root: File) : LinkFolder {
 
     override fun read(path: String): ByteArray? = inside(path).takeIf { it.isFile }?.readBytes()
 
-    override fun names(): List<String> = root.list()?.toList() ?: emptyList()
+    override fun names(dir: String): List<String> =
+        (if (dir.isEmpty()) base else inside(dir)).list()?.toList() ?: emptyList()
+
+    override fun delete(path: String) {
+        inside(path).delete()
+    }
 
     override fun write(path: String, bytes: ByteArray) {
         val f = inside(path)
