@@ -173,7 +173,17 @@ class Devices(
             f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", body.toString().toByteArray()))
         }
         gone.forEach { try { removeFiles(f, it) } catch (e: Exception) { } }
+        forgetKeysFor(f, gone)
         useKey(key, next, side, gone)
+    }
+
+    /** Removes the keys this device sealed for removed devices (theirs to open no more). */
+    private fun forgetKeysFor(f: LinkFolder, gone: kotlin.collections.Set<String>) {
+        val dir = LinkProtocol.dir(side)
+        for (x in gone) {
+            f.delete("$dir/key-$x.gist")
+            f.delete("$dir/rekey-$x.gist")
+        }
     }
 
     /**
@@ -212,6 +222,7 @@ class Devices(
         val cur = epoch to (prefs.getString(K_KEY_FROM, null) ?: "")
         val newer = b != null && (b.first > cur.first || (b.first == cur.first && cur.second.isNotEmpty() && b.second < cur.second))
         prefs.edit().putStringSet(K_REMOVED, gone).commit()
+        forgetKeysFor(f, gone)
         if (b != null && newer) useKey(b.third, b.first, b.second, bestRemoved)
         // The key in use was made before one of the removals (two removed at once): make
         // another without them.
