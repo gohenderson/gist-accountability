@@ -70,7 +70,10 @@ class Connections(
     /** Your name, as the other side sees it (the same on all your devices). */
     var myName: String
         get() = Store(context).linkName.ifEmpty { prefs.getString(K_NAME, "") ?: "" }
-        set(v) { Store(context).linkName = v.trim() }
+        set(v) {
+            prefs.edit().putString(K_NAME, v.trim()).commit()
+            Store(context).linkName = v.trim() // for your other devices
+        }
 
     /** Every connection: those kept here, then those kept on your other devices. */
     val all: List<Link>
