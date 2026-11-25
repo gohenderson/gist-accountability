@@ -15,10 +15,12 @@ import java.util.Base64
  * they share one key: the first device makes it; each device that joins gets it from any
  * device already in, sealed with a key only the two of them can work out (ECDH). Each device
  * publishes everything it has (check-ins "c:<id>", deletions "d:<id>", each day's answers
- * "r:<day>") as numbered changes plus a snapshot.
+ * "r:<day>", the order of your list "o:list", each shared setting "s:<key>") as numbered
+ * changes plus a snapshot. The later reorder wins, and the later change of each setting
+ * (Store.SYNCED_SETTINGS; Ring on this device and the like stay per device).
  *
- * Not kept in step (yet): the order of your list, background photos and voice clips, settings,
- * and connections (those work from the device you set them up on).
+ * Not kept in step (yet): background photos and voice clips, and connections (those work
+ * from the device you set them up on).
  */
 class Devices(
     private val context: Context,
@@ -62,6 +64,7 @@ class Devices(
         val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         f.write(MARKER, JSONObject().put("format", FORMAT).put("version", 1).put("group", id).toString(2).toByteArray())
         start(folder, id, pub, priv, key)
+        Store(context).stampForSync() // the devices that join take this one's order and settings
         LinkProtocol.writeHello(f, LinkHello(side, name, pub))
     }
 
@@ -190,6 +193,10 @@ class Devices(
         store.deleted.forEach { (id, at) -> out["d:$id"] = JSONObject().put("at", at).toString() }
         val entries = store.entriesJson()
         entries.keys().forEach { day -> entries.optJSONObject(day)?.let { out["r:$day"] = it.toString() } }
+        if (store.orderAt > 0) {
+            out[ORDER] = JSONObject().put("ids", org.json.JSONArray(store.checkins.map { it.id })).put("at", store.orderAt).toString()
+        }
+        store.syncedSettings().forEach { (k, v) -> out["s:$k"] = JSONObject().put("v", v.first).put("at", v.second).toString() }
         return out
     }
 
@@ -213,7 +220,21 @@ class Devices(
             val i = list.indexOfFirst { it.id == c.id }
             if (i < 0) list.add(c) else if ((c.updatedAt ?: 0) > (list[i].updatedAt ?: 0)) list[i] = c
         }
+        // Order: the later reorder wins (any not in it keep their order, after).
+        val order = items[ORDER]?.let { try { JSONObject(it) } catch (e: Exception) { null } }
+        val orderAt = order?.optLong("at", 0) ?: 0
+        val takeOrder = orderAt > store.orderAt
+        if (takeOrder) {
+            val ids = order!!.optJSONArray("ids")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+            val pos = ids.withIndex().associate { it.value to it.index }
+            list = (list.filter { it.id in pos }.sortedBy { pos[it.id] } + list.filter { it.id !in pos }).toMutableList()
+        }
         var changed = false
+        // Settings: the later change of each wins.
+        items.filterKeys { it.startsWith("s:") }.forEach { (k, json) ->
+            val o = try { JSONObject(json) } catch (e: Exception) { return@forEach }
+            if (store.takeSetting(k.removePrefix("s:"), o.optString("v"), o.optLong("at", 0))) changed = true
+        }
         if (deleted != store.deleted) store.deleted = deleted
         if (list != before) {
             store.checkins = list
@@ -222,6 +243,7 @@ class Devices(
             (before.map { it.id } - list.map { it.id }.toSet()).forEach { AlarmScheduler.cancel(context, it) }
             AlarmScheduler.scheduleAll(context)
         }
+        if (takeOrder) store.orderAt = orderAt // theirs, not the time it was taken in here
         // Answers: an answer beats "rang"; between answers, the later wins.
         val entries = store.entriesJson()
         val closed = mutableListOf<Pending>()
@@ -282,6 +304,8 @@ class Devices(
         private val SYNC = Any()
 
         /** The group id of a devices folder, or null. */
+        private const val ORDER = "o:list"
+
         fun groupOf(folder: LinkFolder): String? = folder.read(MARKER)?.let {
             try {
                 JSONObject(String(it)).takeIf { o -> o.optString("format") == FORMAT }?.optString("group")?.ifEmpty { null }

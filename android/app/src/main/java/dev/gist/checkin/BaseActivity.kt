@@ -33,4 +33,11 @@ open class BaseActivity : Activity() {
         // The theme was changed on another screen: redraw this one with it.
         if (Store(this).theme != appliedTheme) recreate()
     }
+
+    /** Redraws with the theme if it changed meanwhile (say on another of your devices); true if so. */
+    protected fun recreateForTheme(): Boolean {
+        if (Store(this).theme == appliedTheme) return false
+        recreate()
+        return true
+    }
 }

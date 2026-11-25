@@ -475,8 +475,14 @@ the same code.
 - **Ring on this device** (on the same page) turns ringing off for one device: check-ins
   then remind quietly there and wait on the start page, where you can still **Check in**
   or **Dismiss** them.
-- **Not kept in step yet:** the order of your list, background photos and voice clips,
-  settings, and connections (they work from the device you set them up on).
+- **Your list and settings.** Dragging check-ins or groups into a new order, folding a
+  group, and the settings for each tab's view and sort, the theme and the pause after a
+  tap all reach your other devices. The later change wins, one setting at a time, so
+  changing the theme on one and the sort on another keeps both. Joining takes the
+  others' order and settings. **Ring on this device**, the tab you're on and the card
+  that's open stay per device.
+- **Not kept in step yet:** background photos and voice clips, and connections (they work
+  from the device you set them up on).
 - **Coming next:** the iPhone.
 
 ## About
