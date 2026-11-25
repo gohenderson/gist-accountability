@@ -7,7 +7,12 @@ import org.json.JSONObject
 /**
  * A connection with another copy of Gist (see LinkCore.kt for the folder and the encryption; Connections keeps them).
  * [side]: this copy's id in the folder; [peer]: the other side's, once it has joined.
- * [privateKey] stays on this phone (in Gist's own storage, never in the folder or backups).
+ * [privateKey] stays on your devices (in Gist's own storage, never in the folder or backups).
+ *
+ * With your devices kept in step, each connection has one **home**: the device that reads
+ * and publishes for it (two would clash). The others see it through device sync ([home] is
+ * then that device's side, [homeName] its name) and can take it over ([homeAt]: when the
+ * current home took it; the later wins).
  */
 data class Link(
     val id: String,
@@ -34,8 +39,15 @@ data class Link(
     val inviteExpires: Long = 0,
     /** Made with an invite (so a joiner must prove it has the token). */
     val needsProof: Boolean = false,
+    /** The device that's its home, when it isn't this one (null: this one). */
+    val home: String? = null,
+    val homeName: String = "",
+    val homeAt: Long = 0,
 ) {
     val connected: Boolean get() = peer != null && peerKey != null
+
+    /** This device reads and publishes for it. */
+    val isHere: Boolean get() = home == null
 
     /** The code both phones show (compare once). */
     val code: String? get() = peerKey?.let { LinkCrypto.code(publicKey, it) }
@@ -55,12 +67,20 @@ class Connections(
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Your name, as the other side sees it. */
+    /** Your name, as the other side sees it (the same on all your devices). */
     var myName: String
-        get() = prefs.getString(K_NAME, "") ?: ""
-        set(v) { prefs.edit().putString(K_NAME, v.trim()).commit() }
+        get() = Store(context).linkName.ifEmpty { prefs.getString(K_NAME, "") ?: "" }
+        set(v) {
+            prefs.edit().putString(K_NAME, v.trim()).commit()
+            Store(context).linkName = v.trim() // for your other devices
+        }
 
+    /** Every connection: those kept here, then those kept on your other devices. */
     val all: List<Link>
+        get() = here.let { h -> h + remote().filter { r -> h.none { it.id == r.id } } }
+
+    /** The connections this device is home for (it reads and publishes for them). */
+    val here: List<Link>
         get() = prefs.getString(K_LINKS, null)?.let { s ->
             try {
                 val a = JSONArray(s)
@@ -76,15 +96,25 @@ class Connections(
         prefs.edit().putString(K_LINKS, JSONArray().apply { list.forEach { put(toJson(it)) } }.toString()).commit()
     }
 
-    private fun update(id: String, change: (Link) -> Link) = synchronized(LOCK) { save(all.map { if (it.id == id) change(it) else it }) }
+    private fun update(id: String, change: (Link) -> Link) = synchronized(LOCK) { save(here.map { if (it.id == id) change(it) else it }) }
 
-    fun setShown(id: String, shown: Boolean) = update(id) { it.copy(shown = shown) }
+    fun setShown(id: String, shown: Boolean) {
+        if (here.any { it.id == id }) return update(id) { it.copy(shown = shown) }
+        val hidden = hiddenRemote()
+        prefs.edit().putStringSet(K_HIDDEN, if (shown) hidden - id else hidden + id).commit()
+    }
 
-    /** Forgets connection [id] here (and what it shared), and stops sharing with it. The folder is left as it is. */
-    fun remove(id: String) {
+    private fun hiddenRemote(): Set<String> = prefs.getStringSet(K_HIDDEN, null)?.toSet() ?: emptySet()
+
+    /**
+     * Forgets connection [id] (and what it shared), and stops sharing with it; your other
+     * devices forget it too. Only on its home. The folder is left as it is.
+     */
+    fun remove(id: String, now: Long = System.currentTimeMillis()) {
         synchronized(LOCK) {
-            save(all.filter { it.id != id })
-            prefs.edit().remove(K_GOT + id).commit()
+            if (here.none { it.id == id }) return
+            save(here.filter { it.id != id })
+            prefs.edit().remove(K_GOT + id).putString(K_GONE, JSONObject((gone() + (id to now)) as Map<*, *>).toString()).commit()
         }
         val store = Store(context)
         store.checkins.filter { id in it.sharedWith }.forEach { c ->
@@ -101,15 +131,15 @@ class Connections(
         val (pub, priv) = LinkCrypto.newKeyPair()
         val link = Link(id = Store.newId() + Store.newId(), folder = folder, side = Store.newId(), publicKey = pub, privateKey = priv,
             inviteToken = java.util.Base64.getEncoder().encodeToString(LinkInvites.newToken()),
-            inviteExpires = now + LinkInvites.VALID_MS, needsProof = true)
+            inviteExpires = now + LinkInvites.VALID_MS, needsProof = true, homeAt = now)
         LinkProtocol.invite(f, link.id, LinkHello(link.side, myName, pub))
-        synchronized(LOCK) { save(all + link) }
+        synchronized(LOCK) { save(here + link) }
         return link
     }
 
     /** [l]'s invite to show (a new one if it ran out), or null once someone's joined. */
     fun invitation(l: Link, now: Long = System.currentTimeMillis()): Pair<LinkInvite, Long>? {
-        if (l.connected) return null
+        if (l.connected || !l.isHere) return null
         var cur = get(l.id) ?: l
         if (cur.inviteToken == null || cur.inviteExpires < now) {
             val token = java.util.Base64.getEncoder().encodeToString(LinkInvites.newToken())
@@ -137,9 +167,9 @@ class Connections(
         val (pub, priv) = LinkCrypto.newKeyPair()
         val side = Store.newId()
         val link = Link(id = id, folder = folder, side = side, publicKey = pub, privateKey = priv,
-            peer = inviter.side, peerName = inviter.name, peerKey = inviter.key)
+            peer = inviter.side, peerName = inviter.name, peerKey = inviter.key, homeAt = now)
         LinkProtocol.writeHello(f, LinkHello(side, myName, pub, LinkInvites.proof(invite.token, id, side, pub, now), now))
-        synchronized(LOCK) { save(all + link) }
+        synchronized(LOCK) { save(here + link) }
         return link to null
     }
 
@@ -150,7 +180,7 @@ class Connections(
     fun sync(): Boolean {
         val items = Store(context).checkins
         var changed = false
-        for (l in all) {
+        for (l in here) {
             try {
                 changed = syncOne(l, items) || changed
             } catch (e: Exception) {
@@ -315,6 +345,111 @@ class Connections(
             linkedAssignee = if (c.isTask) who else "")).toString()
     }
 
+    // ------------------------------------------------------------ on your other devices
+
+    private fun gone(): Map<String, Long> = prefs.getString(K_GONE, null)?.let { s ->
+        try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } } catch (e: Exception) { null }
+    } ?: emptyMap()
+
+    private fun remoteItems(): Map<String, JSONObject> = prefs.getString(K_REMOTE, null)?.let { s ->
+        try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getJSONObject(it) } } } catch (e: Exception) { null }
+    } ?: emptyMap()
+
+    private fun saveRemote(m: Map<String, JSONObject>) {
+        prefs.edit().putString(K_REMOTE, JSONObject().apply { m.forEach { (k, v) -> put(k, v) } }.toString()).commit()
+    }
+
+    /** The connections kept on your other devices. */
+    private fun remote(): List<Link> {
+        val hidden = hiddenRemote()
+        return remoteItems().values.mapNotNull { o ->
+            try {
+                fromJson(o.getJSONObject("link")).copy(folder = "", sent = emptyMap(), home = o.getString("home"),
+                    homeName = o.optString("homeName"), homeAt = o.optLong("at"), shown = o.getJSONObject("link").getString("id") !in hidden)
+            } catch (e: Exception) { null }
+        }
+    }
+
+    /**
+     * For your other devices (as device [side], named [deviceName]): each connection kept
+     * here, "l:<id>" (its keys, who it's with, and what they share), and each one removed.
+     */
+    fun deviceItems(side: String, deviceName: String): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        for (l in here) {
+            out["l:${l.id}"] = JSONObject().put("at", l.homeAt).put("home", side).put("homeName", deviceName)
+                .put("link", toJson(l.copy(folder = "", sent = emptyMap())))
+                .put("shared", JSONObject().apply { received(l.id).forEach { (k, v) -> put(k, JSONObject(v)) } })
+                .toString()
+        }
+        gone().forEach { (id, at) -> out["l:$id"] = JSONObject().put("gone", true).put("at", at).toString() }
+        return out
+    }
+
+    /**
+     * Takes in your other devices' connections ([items]; this device is [side]): ones they
+     * keep, one taken over from here (this device stops reading and publishing for it), and
+     * ones removed. True when anything changed.
+     */
+    fun takeDeviceItems(items: Map<String, String>, side: String): Boolean {
+        var changed = false
+        synchronized(LOCK) {
+            val remote = remoteItems().toMutableMap()
+            items.filterKeys { it.startsWith("l:") }.forEach { (k, text) ->
+                val id = k.removePrefix("l:")
+                val o = try { JSONObject(text) } catch (e: Exception) { return@forEach }
+                val at = o.optLong("at", 0)
+                val mine = here.firstOrNull { it.id == id }
+                if (o.optBoolean("gone")) {
+                    if (remote[id]?.let { it.optLong("at") <= at } == true) {
+                        remote.remove(id)
+                        prefs.edit().remove(K_GOT + id).commit()
+                        changed = true
+                    }
+                    return@forEach
+                }
+                if (o.optString("home") == side || !o.has("link") || (gone()[id] ?: -1) >= at) return@forEach
+                if (mine != null) {
+                    if (at <= mine.homeAt) return@forEach
+                    // Taken over by another of your devices: it reads and publishes now.
+                    save(here.filter { it.id != id })
+                }
+                val cur = remote[id]
+                if (cur != null && cur.optLong("at") > at) return@forEach
+                if (cur?.toString() == o.toString()) return@forEach
+                remote[id] = o
+                val shared = o.optJSONObject("shared") ?: JSONObject()
+                prefs.edit().putString(K_GOT + id, shared.toString()).commit()
+                changed = true
+            }
+            if (changed) saveRemote(remote)
+        }
+        return changed
+    }
+
+    /** Why taking a connection over didn't work. */
+    enum class AdoptProblem { NOT_KEPT_ELSEWHERE, NOT_ITS_FOLDER }
+
+    /**
+     * Makes this device the home of connection [id] (kept on another of your devices), using
+     * its [folder] as reached from here: carries on from what was last published there.
+     */
+    fun adopt(id: String, folder: String, now: Long = System.currentTimeMillis()): AdoptProblem? {
+        val r = remote().firstOrNull { it.id == id } ?: return AdoptProblem.NOT_KEPT_ELSEWHERE
+        val f = openFolder(folder)
+        if (LinkProtocol.linkId(f) != id) return AdoptProblem.NOT_ITS_FOLDER
+        // Carry on from this side's last change in the folder (and what it held).
+        val (seq, sent) = r.key()?.let { LinkProtocol.receive(f, id, r.side, it, 0, emptyMap()) } ?: (0 to emptyMap())
+        val link = r.copy(folder = folder, sentSeq = seq, sent = sent, home = null, homeName = "", homeAt = now,
+            shown = r.shown)
+        synchronized(LOCK) {
+            save(here.filter { it.id != id } + link)
+            saveRemote(remoteItems() - id)
+            prefs.edit().putStringSet(K_HIDDEN, hiddenRemote() - id).commit()
+        }
+        return null
+    }
+
     private fun toJson(l: Link) = JSONObject()
         .put("id", l.id).put("folder", l.folder).put("side", l.side)
         .put("publicKey", l.publicKey).put("privateKey", l.privateKey)
@@ -322,6 +457,7 @@ class Connections(
         .put("shown", l.shown).put("sentSeq", l.sentSeq).put("gotSeq", l.gotSeq)
         .put("sent", JSONObject(l.sent.mapValues { JSONObject(it.value) }))
         .put("inviteToken", l.inviteToken ?: JSONObject.NULL).put("inviteExpires", l.inviteExpires).put("needsProof", l.needsProof)
+        .put("homeAt", l.homeAt)
 
     private fun fromJson(o: JSONObject): Link {
         val sent = o.optJSONObject("sent")
@@ -335,6 +471,7 @@ class Connections(
             sent = sent?.keys()?.asSequence()?.associateWith { sent.getJSONObject(it).toString() } ?: emptyMap(),
             inviteToken = o.optString("inviteToken").takeIf { o.has("inviteToken") && !o.isNull("inviteToken") && it.isNotEmpty() },
             inviteExpires = o.optLong("inviteExpires"), needsProof = o.optBoolean("needsProof", false),
+            homeAt = o.optLong("homeAt"),
         )
     }
 
@@ -343,6 +480,9 @@ class Connections(
         private const val K_LINKS = "links"
         private const val K_NAME = "myName"
         private const val K_GOT = "got."
+        private const val K_REMOTE = "remote"
+        private const val K_HIDDEN = "hiddenRemote"
+        private const val K_GONE = "gone"
         /** Among the items a side publishes: the tasks of the other side's it has done (id → when). */
         const val DONE_KEY = "~done"
         private val LOCK = Any()
@@ -350,7 +490,7 @@ class Connections(
         /** Runs [sync] off the main thread, then [then] on it when what's shared with you changed. */
         fun syncInBackground(activity: android.app.Activity, then: () -> Unit = {}) {
             val links = Connections(activity.applicationContext)
-            if (links.all.isEmpty()) return
+            if (links.here.isEmpty()) return
             Thread {
                 val changed = synchronized(SYNC) { links.sync() }
                 if (changed) activity.runOnUiThread { if (!activity.isFinishing) then() }

@@ -692,6 +692,11 @@ class Store(context: Context) {
         get() = prefs.getInt(K_PAUSE, DEFAULT_PAUSE).takeIf { it in PAUSE_CHOICES } ?: DEFAULT_PAUSE
         set(v) = putSetting(K_PAUSE) { putInt(K_PAUSE, v) }
 
+    /** Your name as your connections see it (shared by your devices). */
+    var linkName: String
+        get() = prefs.getString(K_LINK_NAME, "") ?: ""
+        set(v) = putSetting(K_LINK_NAME) { putString(K_LINK_NAME, v) }
+
     // ------------------------------------------------------------ settings on your other devices
 
     /**
@@ -990,12 +995,13 @@ class Store(context: Context) {
         private const val K_GROUP_ORDER = "groupOrder"
         private const val K_COLLAPSED = "collapsedGroups"
         private const val K_ORDER_AT = "orderAt"
+        private const val K_LINK_NAME = "linkName"
         private const val K_SETTINGS_AT = "settingsAt"
         /**
          * Settings kept in step on your devices. Not these: Ring on this device, the open tab
          * and card, and syncing itself.
          */
-        val SYNCED_SETTINGS = listOf(K_THEME, K_PAUSE, K_GROUP_ORDER, K_COLLAPSED) +
+        val SYNCED_SETTINGS = listOf(K_THEME, K_PAUSE, K_GROUP_ORDER, K_COLLAPSED, K_LINK_NAME) +
             TABS.flatMap { tab -> listOf(K_VIEW, K_SORT).map { if (tab == TAB_CHECKINS) it else "$it.$tab" } }
 
         const val DEFAULT_PAUSE = 45
