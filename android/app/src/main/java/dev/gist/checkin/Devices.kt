@@ -51,13 +51,25 @@ class Devices(
         get() = prefs.getString(K_NAME, null) ?: android.os.Build.MODEL ?: "This device"
         set(v) { prefs.edit().putString(K_NAME, v.trim().ifEmpty { null }).commit() }
 
-    /** The other devices in the folder: side → (name, code to compare). */
+    /** The other devices in the folder: side → (name, code to compare). Not ones that left or were removed. */
     fun others(): List<Triple<String, String, String?>> {
         val f = folder?.let { openFolder(it) } ?: return emptyList()
         val pub = publicKey ?: return emptyList()
-        return LinkProtocol.sides(f, side).mapNotNull { s ->
+        return members(f).mapNotNull { s ->
             LinkProtocol.hello(f, s)?.let { h -> Triple(s, h.name, LinkCrypto.code(pub, h.key)) }
         }
+    }
+
+    /** The key's generation: a new one each time a device is removed. */
+    private val epoch: Int get() = prefs.getInt(K_EPOCH, 0)
+
+    /** Devices removed from the group (never read or let in again). */
+    private val removed: kotlin.collections.Set<String> get() = prefs.getStringSet(K_REMOVED, null)?.toSet() ?: emptySet()
+
+    /** The other devices that are in: in the folder (with a hello: one that left has none) and not removed. */
+    private fun members(f: LinkFolder): List<String> {
+        val gone = removed
+        return LinkProtocol.sides(f, side).filter { it !in gone && LinkProtocol.hello(f, it) != null }
     }
 
     /** Starts syncing in [folder] (empty): this device makes the key; others join. */
@@ -116,10 +128,95 @@ class Devices(
         Store(context).tracking = true
     }
 
-    /** Stops syncing here (your data stays; the folder is left as it is). */
+    /**
+     * Stops syncing here: your data stays on this device, and its files leave the folder, so
+     * your other devices stop listing it (and waiting for it to read their changes).
+     */
     fun leave() {
+        folder?.let { loc ->
+            try { removeFiles(openFolder(loc), side) } catch (e: Exception) { }
+        }
         prefs.edit().clear().commit()
         Store(context).tracking = false
+    }
+
+    private fun removeFiles(f: LinkFolder, s: String) {
+        val dir = LinkProtocol.dir(s)
+        f.names(dir).forEach { f.delete("$dir/$it") }
+        f.delete(dir)
+    }
+
+    /**
+     * Removes another device ([other]; say it's lost): your devices stop reading it, and switch
+     * to a new key it doesn't have, so it can't read what's synced from now on. Its files
+     * leave the folder.
+     */
+    fun remove(other: String) {
+        val loc = folder ?: return
+        if (!ready || other == side) return
+        val f = openFolder(loc)
+        rotate(f, removed + other)
+    }
+
+    /** A new key (one generation on), sealed for each device still in; [gone] left out for good. */
+    private fun rotate(f: LinkFolder, gone: kotlin.collections.Set<String>) {
+        val id = groupId ?: return
+        val priv = privateKey ?: return
+        val next = epoch + 1
+        val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        prefs.edit().putStringSet(K_REMOVED, gone).commit()
+        for (m in members(f)) {
+            val h = LinkProtocol.hello(f, m) ?: continue
+            val name = "${LinkProtocol.dir(side)}/rekey-$m.gist"
+            val body = JSONObject().put("epoch", next).put("key", b64.encodeToString(key))
+                .put("removed", org.json.JSONArray(gone.toList()))
+            f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", body.toString().toByteArray()))
+        }
+        gone.forEach { try { removeFiles(f, it) } catch (e: Exception) { } }
+        useKey(key, next, side, gone)
+    }
+
+    /**
+     * Switches to [key] (generation [gen], from device [from], made without the devices
+     * [leavesOut]); everything here is published again with it.
+     */
+    private fun useKey(key: ByteArray, gen: Int, from: String, leavesOut: kotlin.collections.Set<String>) {
+        prefs.edit().putString(K_KEY, b64.encodeToString(key)).putInt(K_EPOCH, gen).putString(K_KEY_FROM, from)
+            .putStringSet(K_KEY_REMOVED, leavesOut).putBoolean(K_REPUBLISH, true).commit()
+    }
+
+    /**
+     * A newer key another device sealed for this one (after it removed a device): taken, with
+     * who's removed. Of two made at once, the one from the lower side wins everywhere; if a
+     * device one of them removed is still in the winner's, it's removed again.
+     */
+    private fun takeNewKey(f: LinkFolder, id: String, priv: String) {
+        var best: Triple<Int, String, ByteArray>? = null
+        var bestRemoved = emptySet<String>()
+        val gone = removed.toMutableSet()
+        for (s in members(f)) {
+            val name = "${LinkProtocol.dir(s)}/rekey-$side.gist"
+            val sealed = f.read(name) ?: continue
+            val h = LinkProtocol.hello(f, s) ?: continue
+            val o = LinkCrypto.open(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", sealed)
+                ?.let { try { JSONObject(String(it)) } catch (e: Exception) { null } } ?: continue
+            val gen = o.optInt("epoch")
+            val key = try { unb64.decode(o.getString("key")) } catch (e: Exception) { continue }
+            val rm = o.optJSONArray("removed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            if (side in rm) continue
+            gone.addAll(rm)
+            val b = best
+            if (b == null || gen > b.first || (gen == b.first && s < b.second)) { best = Triple(gen, s, key); bestRemoved = rm }
+        }
+        val b = best
+        val cur = epoch to (prefs.getString(K_KEY_FROM, null) ?: "")
+        val newer = b != null && (b.first > cur.first || (b.first == cur.first && cur.second.isNotEmpty() && b.second < cur.second))
+        prefs.edit().putStringSet(K_REMOVED, gone).commit()
+        if (b != null && newer) useKey(b.third, b.first, b.second, bestRemoved)
+        // The key in use was made before one of the removals (two removed at once): make
+        // another without them.
+        val keyLeavesOut = prefs.getStringSet(K_KEY_REMOVED, null)?.toSet() ?: emptySet()
+        if (!keyLeavesOut.containsAll(gone)) rotate(f, gone)
     }
 
     /**
@@ -133,18 +230,23 @@ class Devices(
         val pub = publicKey ?: return false
         val priv = privateKey ?: return false
         LinkProtocol.rename(f, side, name, pub)
-        val others = LinkProtocol.sides(f, side)
         // Not let in yet: look for the key, sealed for this device by the one whose invite it used.
-        var key = groupKey
-        if (key == null) {
+        if (groupKey == null) {
             val inviter = prefs.getString(K_INVITER, null) ?: return false
-            key = others.filter { it == inviter }.firstNotNullOfOrNull { s ->
-                val h = LinkProtocol.hello(f, s) ?: return@firstNotNullOfOrNull null
-                val name = "${LinkProtocol.dir(s)}/key-$side.gist"
-                f.read(name)?.let { LinkCrypto.open(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", it) }
-            } ?: return false
-            prefs.edit().putString(K_KEY, b64.encodeToString(key)).commit()
+            val h = LinkProtocol.hello(f, inviter) ?: return false
+            val name = "${LinkProtocol.dir(inviter)}/key-$side.gist"
+            val bytes = f.read(name)?.let { LinkCrypto.open(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", it) } ?: return false
+            // The key, and its generation (just the key from older devices: the first).
+            val o = if (bytes.size == 32) null else try { JSONObject(String(bytes)) } catch (e: Exception) { return false }
+            val k = keyOf(bytes) ?: return false
+            val rm = o?.optJSONArray("removed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            prefs.edit().putString(K_KEY, b64.encodeToString(k)).putInt(K_EPOCH, o?.optInt("epoch") ?: 0)
+                .putString(K_KEY_FROM, inviter).putStringSet(K_REMOVED, rm).putStringSet(K_KEY_REMOVED, rm).commit()
         }
+        // A device removed elsewhere: a newer key.
+        takeNewKey(f, id, priv)
+        val key = groupKey ?: return false
+        val others = members(f)
         // Let in the device that joined with this one's invite (proving it had the token), once.
         val token = prefs.getString(K_INV_TOKEN, null)?.let { unb64.decode(it) }
         if (token != null) for (s in others) {
@@ -152,12 +254,14 @@ class Devices(
             if (f.read(name) != null) continue
             val h = LinkProtocol.hello(f, s) ?: continue
             if (!LinkInvites.proves(h, token, id, prefs.getLong(K_INV_EXPIRES, 0))) continue
-            f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", key))
+            val body = JSONObject().put("key", b64.encodeToString(key)).put("epoch", epoch)
+                .put("removed", org.json.JSONArray(removed.toList()))
+            f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(priv, h.key, id), "$id/$name", body.toString().toByteArray()))
             prefs.edit().remove(K_INV_TOKEN).remove(K_INV_EXPIRES).commit()
             break
         }
         // Take in theirs.
-        val media = DeviceMedia(context, prefs)
+        val media = DeviceMedia(context, prefs, epoch)
         val got = gotSeqs().toMutableMap()
         var changed = false
         for (s in others) {
@@ -177,11 +281,13 @@ class Devices(
         val sent = sentItems()
         val (set, removed) = LinkProtocol.diff(sent, now)
         val sentSeq = prefs.getInt(K_SENT_SEQ, 0)
-        if (set.isNotEmpty() || removed.isNotEmpty() || sentSeq == 0) {
+        // With a new key, everything again (the others can't read what came before with it).
+        val all = sentSeq == 0 || prefs.getBoolean(K_REPUBLISH, false)
+        if (set.isNotEmpty() || removed.isNotEmpty() || all) {
             val seq = sentSeq + 1
-            LinkProtocol.publish(f, id, side, key, seq, if (sentSeq == 0) now else set, removed, now)
+            LinkProtocol.publish(f, id, side, key, seq, if (all) now else set, if (all) emptyList() else removed, now)
             prefs.edit().putInt(K_SENT_SEQ, seq).putString(K_SENT, JSONObject(now.mapValues { JSONObject(it.value) }).toString())
-                .commit()
+                .putBoolean(K_REPUBLISH, false).commit()
         }
         LinkProtocol.writeReceipts(f, side, got)
         LinkProtocol.cleanUp(f, side, others)
@@ -209,7 +315,7 @@ class Devices(
             out[ORDER] = JSONObject().put("ids", org.json.JSONArray(store.checkins.map { it.id })).put("at", store.orderAt).toString()
         }
         store.syncedSettings().forEach { (k, v) -> out["s:$k"] = JSONObject().put("v", v.first).put("at", v.second).toString() }
-        out.putAll(DeviceMedia(context, prefs).items())
+        out.putAll(DeviceMedia(context, prefs, epoch).items())
         out.putAll(Connections(context).deviceItems(side, name))
         return out
     }
@@ -320,9 +426,19 @@ class Devices(
         private const val K_INV_TOKEN = "inviteToken"
         private const val K_INV_EXPIRES = "inviteExpires"
         private const val K_INVITER = "inviter"
+        private const val K_EPOCH = "epoch"
+        private const val K_KEY_FROM = "keyFrom"
+        private const val K_REMOVED = "removed"
+        private const val K_REPUBLISH = "republish"
+        private const val K_KEY_REMOVED = "keyRemoved"
         private val SYNC = Any()
 
         private const val ORDER = "o:list"
+
+        /** The key in a let-in file: just the key (older devices), or JSON with its generation. */
+        fun keyOf(bytes: ByteArray): ByteArray? = if (bytes.size == 32) bytes else try {
+            Base64.getDecoder().decode(JSONObject(String(bytes)).getString("key"))
+        } catch (e: Exception) { null }
 
         /** The group id of a devices folder, or null. */
 

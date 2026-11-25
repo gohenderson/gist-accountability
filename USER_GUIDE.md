@@ -486,6 +486,11 @@ the same code.
   folder once, encrypted, so Syncthing copies it once; a device that gets the change
   before the file waits for it. They're as big as Gist lets them be anywhere: photos are
   shrunk when you pick them, and videos and clips have a size limit.
+- **Stopping or removing a device.** **Stop syncing on this device** keeps everything on it
+  and takes its files out of the folder, so your other devices stop listing it. For a
+  device that's lost or that you can't open, tap **Remove** next to it on any of your
+  others: your devices switch to a new key it doesn't have, so it can't read anything
+  synced from then on (what's already on it stays on it).
 - **Connections with other people.** Each connection is **kept on** one of your devices,
   the one you invited or joined on: it reads what they share and shares for you. Your
   other devices show the connection and what they share, and anything you do there
