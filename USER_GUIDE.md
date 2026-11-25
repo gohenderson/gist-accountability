@@ -486,7 +486,15 @@ the same code.
   folder once, encrypted, so Syncthing copies it once; a device that gets the change
   before the file waits for it. They're as big as Gist lets them be anywhere: photos are
   shrunk when you pick them, and videos and clips have a size limit.
-- **Not kept in step yet:** connections (they work from the device you set them up on).
+- **Connections with other people.** Each connection is **kept on** one of your devices,
+  the one you invited or joined on: it reads what they share and shares for you. Your
+  other devices show the connection and what they share, and anything you do there
+  (share an item, add one of theirs, finish a task for them) reaches the home device
+  through your devices and goes out from there. Your name is the same on all of them. On
+  a connection kept elsewhere, **Keep it on this device instead…** takes it over (pick
+  its folder as this device reaches it): for when the old device is gone or won't be
+  opening Gist, since two sharing at once could clash. Remove a connection on the device
+  it's kept on; your others forget it too.
 - **Coming next:** the iPhone.
 
 ## About

@@ -21,7 +21,10 @@ import java.util.Base64
  *
  * Background photos, videos and voice clips: see [DeviceMedia] ("m:<id>", files sent once each).
  *
- * Not kept in step (yet): connections (those work from the device you set them up on).
+ * Connections with other people: each has one home device that reads and publishes for it
+ * ("l:<id>": its keys, who it's with and what they share; see [Connections.deviceItems]).
+ * What you share, add from them or finish for them is in your check-ins, so it reaches the
+ * home like any change; another device can take a connection over.
  */
 class Devices(
     private val context: Context,
@@ -207,6 +210,7 @@ class Devices(
         }
         store.syncedSettings().forEach { (k, v) -> out["s:$k"] = JSONObject().put("v", v.first).put("at", v.second).toString() }
         out.putAll(DeviceMedia(context, prefs).items())
+        out.putAll(Connections(context).deviceItems(side, name))
         return out
     }
 
@@ -240,6 +244,8 @@ class Devices(
             list = (list.filter { it.id in pos }.sortedBy { pos[it.id] } + list.filter { it.id !in pos }).toMutableList()
         }
         var changed = false
+        // Connections kept on your other devices (or taken over from this one).
+        if (Connections(context).takeDeviceItems(items, side)) changed = true
         // Settings: the later change of each wins.
         items.filterKeys { it.startsWith("s:") }.forEach { (k, json) ->
             val o = try { JSONObject(json) } catch (e: Exception) { return@forEach }

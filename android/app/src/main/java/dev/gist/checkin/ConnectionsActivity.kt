@@ -27,17 +27,21 @@ class ConnectionsActivity : BaseActivity() {
     private lateinit var links: Connections
     /** The invite scanned or typed, waiting for its folder to be picked. */
     private var pendingInvite: String? = null
+    /** The connection being taken over, waiting for its folder to be picked. */
+    private var pendingAdopt: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         links = Connections(this)
         pendingInvite = savedInstanceState?.getString(STATE_INVITE)
+        pendingAdopt = savedInstanceState?.getString(STATE_ADOPT)
         render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_INVITE, pendingInvite)
+        outState.putString(STATE_ADOPT, pendingAdopt)
     }
 
     override fun onResume() {
@@ -172,11 +176,40 @@ class ConnectionsActivity : BaseActivity() {
                 tag = "link-shown:${l.id}"
                 setOnCheckedChangeListener { _, on -> links.setShown(l.id, on) }
             }, dp(8))
-        } else {
+        } else if (l.isHere) {
             add(muted("Show them the invite: they tap Join, scan it (or type the code) and pick the same folder.", 14f), dp(4))
             add(outlineButton("Show the invite") { showLinkInvite(l) }.apply { tag = "link-invite:${l.id}" }, dp(8))
+        } else {
+            add(muted("The invite is on ${l.homeName.ifEmpty { "your other device" }}.", 14f), dp(4))
         }
-        add(textButton("Remove", colorOf(R.color.bad)) { confirmRemove(l) }.apply { tag = "link-remove:${l.id}" }, dp(4))
+        if (!l.isHere) {
+            val home = l.homeName.ifEmpty { "your other device" }
+            add(muted("Kept on $home: it reads and shares for this connection, and what you change here reaches it " +
+                "through your devices.", 13f).apply { tag = "link-home:${l.id}" }, dp(8))
+            add(textButton("Keep it on this device instead…") { confirmAdopt(l) }.apply { tag = "link-adopt:${l.id}" }, dp(4))
+        } else {
+            if (Devices(context).folder != null) {
+                add(muted("Kept on this device: it reads and shares for this connection for all your devices.", 13f)
+                    .apply { tag = "link-home:${l.id}" }, dp(8))
+            }
+            add(textButton("Remove", colorOf(R.color.bad)) { confirmRemove(l) }.apply { tag = "link-remove:${l.id}" }, dp(4))
+        }
+    }
+
+    private fun confirmAdopt(l: Link) {
+        val home = l.homeName.ifEmpty { "your other device" }
+        AlertDialog.Builder(this)
+            .setTitle("Keep it on this device?")
+            .setMessage("This device takes over reading and sharing for ${l.peerName.ifEmpty { "this connection" }}, " +
+                "and $home stops once it hears. Do this when $home is gone or won't be opening Gist: if both share " +
+                "at once before hearing, changes can clash.\n\nNext, pick the connection's folder as this device " +
+                "reaches it (the one Syncthing keeps in step).")
+            .setPositiveButton("Pick the folder") { _, _ ->
+                pendingAdopt = l.id
+                pick(REQ_ADOPT)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
@@ -341,6 +374,17 @@ class ConnectionsActivity : BaseActivity() {
                     render()
                     showLinkInvite(l)
                 }
+                REQ_ADOPT -> {
+                    val id = pendingAdopt ?: return
+                    when (links.adopt(id, uri.toString())) {
+                        Connections.AdoptProblem.NOT_ITS_FOLDER -> return toast("That isn't this connection's folder: pick the one Syncthing keeps in step with the other person.")
+                        Connections.AdoptProblem.NOT_KEPT_ELSEWHERE -> toast("It's already kept here.")
+                        null -> toast("Kept on this device now.")
+                    }
+                    pendingAdopt = null
+                    Devices.syncInBackground(this) { render() } // tell your other devices
+                    Connections.syncInBackground(this) { render() }
+                }
                 REQ_JOIN -> {
                     val inv = pendingInvite?.let { LinkInvite.parse(it) } ?: return toast("Scan or type the invite first.")
                     val (l, problem) = links.join(uri.toString(), inv)
@@ -371,6 +415,8 @@ class ConnectionsActivity : BaseActivity() {
         private const val REQ_SCAN_JOIN = 25
         private const val REQ_SCAN_DEVICES = 26
         private const val STATE_INVITE = "pendingInvite"
+        private const val STATE_ADOPT = "pendingAdopt"
+        private const val REQ_ADOPT = 27
 
         fun intent(context: Context) = Intent(context, ConnectionsActivity::class.java)
     }
