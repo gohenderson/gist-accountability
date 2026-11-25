@@ -150,6 +150,22 @@ class Connections(
         return LinkInvite('c', LinkInvites.fingerprint(cur.publicKey), token) to cur.inviteExpires
     }
 
+    /**
+     * Of the folders at [locations] (say each under People in your Gist folder), the one
+     * waiting to be joined with [invite]: a connection you're not in, started by the side
+     * the invite names. Null when none is (yet: Syncthing may still be bringing it).
+     */
+    fun findInvited(locations: Collection<String>, invite: LinkInvite): String? = locations.firstOrNull { loc ->
+        try {
+            val f = openFolder(loc)
+            val id = LinkProtocol.linkId(f)
+            id != null && all.none { it.id == id } && LinkProtocol.sides(f, "").mapNotNull { LinkProtocol.hello(f, it) }
+                .any { LinkInvites.fingerprint(it.key).contentEquals(invite.fingerprint) }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** Why a join didn't work. */
     enum class JoinProblem { NOT_A_CONNECTION, ALREADY_YOURS, NOT_THEIR_INVITE }
 

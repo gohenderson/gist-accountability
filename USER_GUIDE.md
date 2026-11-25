@@ -420,11 +420,24 @@ apps read them); backups without them stay version 4.
 Share check-ins and tasks with another copy of Gist, your partner's say, **read-only**:
 they see what you share, but only you can change it, and the other way round.
 
+- **Your Gist folder.** On each device, pick one folder once (say Documents/Gist) under
+  **Your Gist folder**. Gist keeps everything it syncs in there:
+
+  ```
+  Gist/
+    My devices/      shared in Syncthing with your own devices
+    People/
+      Jess/          shared with Jess only (one folder per connection)
+  ```
+
+  Don't share the Gist folder itself in Syncthing; share each folder in it.
 - **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
-  and picks an empty folder: Gist shows an **invite**, a QR code with a code under it
-  (like `AFYW-…`). The other taps **Join…**, **scans** the QR code (or taps **Type the
-  code**, for a device without a camera), then picks the same folder. Each connection has
-  its own folder.
+  and says who it's for: Gist makes People/Jess and shows an **invite**, a QR code with a
+  code under it (like `AFYW-…`). Share People/Jess with them in Syncthing. The other taps
+  **Join…** and **scans** the QR code (or taps **Type the code**, for a device without a
+  camera). Gist finds their folder under People once Syncthing has brought it; until then
+  it says it's waiting, and joins by itself as soon as it's there (or **Pick it myself…**
+  if Syncthing put it somewhere else).
 - **The invite is the key to the door.** It never goes in the folder, so someone who can
   see the folder but not your screen can't join. It works **once**, for **15 minutes**;
   **Show the invite** (on a connection still waiting) shows it again, or a new one if it
@@ -459,10 +472,12 @@ they see what you share, but only you can change it, and the other way round.
 ### Your devices
 
 **Settings → Connections → Your devices** keeps everything on your phone and tablet (say)
-in step: check-ins, tasks and answers. **Set up…** on one (pick an empty folder). Then, for
-each of the others: tap **Add a device…** on one that's in, which shows an invite (a QR
-code and a code to type, good once for 15 minutes); on the new one tap **Join…**, scan or
-type it, and pick the same folder (kept in step by Syncthing between devices). The new
+in step: check-ins, tasks and answers. **Set up…** on one: Gist makes **My devices** in your
+Gist folder; share it with your other devices in Syncthing (into their Gist folders, as My
+devices). Then, for each of the others: tap **Add a device…** on one that's in, which shows
+an invite (a QR code and a code to type, good once for 15 minutes); on the new one tap
+**Join…** and scan or type it; Gist finds My devices by itself (waiting for it if
+Syncthing hasn't brought it yet). The new
 device waits to be let in until Gist opens on the one that showed the invite; only that
 device lets it in, and the new one takes the shared key only from it. Each pair then shows
 the same code.
