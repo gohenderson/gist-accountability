@@ -73,7 +73,8 @@ class GistFolderTest {
         val first = gist.newPerson("Jess")!!
         assertEquals("${dir.path}/People/Jess", first)
         links.invite(first)
-        assertEquals("${dir.path}/People/Jess 2", gist.newPerson("jess"))
+        assertEquals("${dir.path}/People/Jess 2", gist.newPerson("Jess"))
+        assertEquals("taken whatever the case", "${dir.path}/People/jess 2", gist.newPerson("jess"))
         assertEquals("${dir.path}/People/Someone", gist.newPerson("///"))
         assertEquals(mapOf("Jess" to first), gist.people())
     }
