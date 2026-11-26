@@ -124,6 +124,7 @@ final class ConnectionsTests: XCTestCase {
         // Alex renames his; Jess's copy follows; he stops sharing it: hers is marked gone.
         alexData.update("mine") { $0.name = "Only me, really" }
         alex.sync(&alexData)
+        jess.sync(&jessData)
         let mine = try XCTUnwrap(jess.shared(j).first { $0.id == "mine" })
         let mineCopy = try XCTUnwrap(jess.addToMyList(j, mine, data: &jessData))
         XCTAssertFalse(mineCopy.youCanDo)
