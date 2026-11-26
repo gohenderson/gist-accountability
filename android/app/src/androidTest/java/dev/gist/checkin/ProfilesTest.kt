@@ -135,7 +135,7 @@ class ProfilesTest {
         assertTrue(Profiles.remove(ctx, work.id))
         assertEquals(listOf("Personal"), Profiles.all(ctx).map { it.name })
         assertFalse(File(ctx.filesDir, "profiles/${work.id}").exists())
-        assertTrue("its check-ins are gone", Store(Profiles.scoped(ctx, work.id)).checkins.isEmpty())
+        assertFalse("its check-ins are gone", File(ctx.applicationInfo.dataDir, "shared_prefs/gist@${work.id}.xml").exists())
         assertNull(PendingIntent.getBroadcast(
             workCtx, (Profiles.hash(workCtx, "job") and 0x3FFFFFFF) * 2,
             Profiles.distinct(Intent(workCtx, AlarmReceiver::class.java), workCtx, "ring/job/false"),

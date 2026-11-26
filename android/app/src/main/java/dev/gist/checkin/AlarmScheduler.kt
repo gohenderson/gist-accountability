@@ -101,9 +101,14 @@ object AlarmScheduler {
     /** Call when a check-in is deleted. */
     fun cancel(context: Context, checkinId: String) {
         val am = context.getSystemService(AlarmManager::class.java)
-        am.cancel(broadcast(context, checkinId, test = false))
-        am.cancel(broadcast(context, checkinId, test = true))
-        am.cancel(snoozeBroadcast(context, Pending(checkinId, "", "")))
+        listOf(
+            broadcast(context, checkinId, test = false),
+            broadcast(context, checkinId, test = true),
+            snoozeBroadcast(context, Pending(checkinId, "", "")),
+        ).forEach {
+            am.cancel(it)
+            it.cancel() // gone with the check-in
+        }
         LocationTriggers.remove(context, checkinId)
     }
 

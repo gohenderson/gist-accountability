@@ -70,6 +70,7 @@ object Profiles {
     /** A new, empty profile called [name]. */
     fun add(context: Context, name: String): Profile {
         val p = Profile(Store.newId() + Store.newId(), name.trim().ifEmpty { "Profile" })
+        Store(scoped(context, p.id)).checkins = emptyList() // empty: not the first-run examples
         save(context, all(context) + p)
         return p
     }
