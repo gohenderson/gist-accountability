@@ -425,7 +425,7 @@ final class GistUITests: XCTestCase {
         XCTAssertEqual((code.label as String).count, 44)
         XCTAssertTrue(element("invite-qr").exists)
         app.buttons["Done"].tap()
-        XCTAssertTrue(element("ring-here").exists)
+        scrollTo(element("ring-here"))
     }
 
     func testInvitingSomeoneMakesTheirFolderAndShowsAnInvite() {
