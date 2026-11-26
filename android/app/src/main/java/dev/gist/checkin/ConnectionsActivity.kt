@@ -222,6 +222,8 @@ class ConnectionsActivity : BaseActivity() {
                 isSingleLine = true
                 setOnFocusChangeListener { _, has -> if (!has) devices.name = text.toString() }
             }, dp(4))
+            add(muted("This device's files are in from-${devices.side} in the folder.", 13f)
+                .apply { tag = "device-folder" }, dp(2))
             if (!devices.ready) {
                 add(label("Waiting to be let in: open Gist on the device whose code you used.", 15f, color = colorWarn)
                     .apply { tag = "devices-waiting" }, dp(6))
@@ -230,7 +232,10 @@ class ConnectionsActivity : BaseActivity() {
             if (others.isEmpty()) add(muted("No other devices yet: tap Add a device, then Join on the other device.", 14f), dp(6))
             others.forEach { (side, name, code) ->
                 val r = row()
-                r.addWeighted(label("$name · code $code", 15f).apply { tag = "device:$side" })
+                r.addWeighted(column().apply {
+                    add(label("$name · code $code", 15f).apply { tag = "device:$side" })
+                    add(muted("from-$side", 13f).apply { tag = "device-folder:$side" })
+                })
                 if (devices.ready) r.addView(textButton("Remove") { confirmRemoveDevice(devices, side, name) }
                     .apply { tag = "device-remove:$side" })
                 add(r, dp(6))
@@ -240,7 +245,7 @@ class ConnectionsActivity : BaseActivity() {
                 add(outlineButton("Add a device…") {
                     devices.invitation()?.let { (inv, until) ->
                         showInvite("Add a device", "On the other device, open Connections, tap Join under Your devices, " +
-                            "scan this (or type the code), then pick the same folder.", inv, until)
+                            "and scan this (or type the code).", inv, until)
                     }
                 }.apply { tag = "devices-add" }, dp(8))
             }
@@ -289,6 +294,8 @@ class ConnectionsActivity : BaseActivity() {
         if (l.connected) {
             add(muted("Code ${l.code}: it's the same on their phone when nobody swapped a key. Compare it once.", 14f)
                 .apply { tag = "link-code:${l.id}" }, dp(4))
+            add(muted("In its folder: yours is from-${l.side}, theirs from-${l.peer}.", 13f)
+                .apply { tag = "link-folders:${l.id}" }, dp(2))
             val mine = Store(context).checkins.count { l.id in it.sharedWith }
             val theirs = links.shared(l).size
             add(muted("You share ${plural(mine, "item")} · they share ${plural(theirs, "item")}", 14f)
