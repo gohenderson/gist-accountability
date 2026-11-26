@@ -74,7 +74,7 @@ class ConnectionsOnDevicesTest {
         devices.sync()
         val phone = LinkProtocol.hello(dev, devices.side)!!
         val name = "from-${devices.side}/key-$tab.gist"
-        return LinkCrypto.open(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", dev.read(name)!!)!!
+        return Devices.keyOf(LinkCrypto.open(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", dev.read(name)!!)!!)!!
     }
 
     private fun tabletHas(key: ByteArray, items: Map<String, String>) {

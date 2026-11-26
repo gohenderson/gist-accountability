@@ -72,7 +72,7 @@ class DevicesTest {
         devices.sync()
         val phone = LinkProtocol.hello(f, devices.side)!!
         val name = "from-${devices.side}/key-$tab.gist"
-        return LinkCrypto.open(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", f.read(name)!!)!!
+        return Devices.keyOf(LinkCrypto.open(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", f.read(name)!!)!!)!!
     }
 
     /** The tablet publishes [items] (everything it has now). */
@@ -448,5 +448,146 @@ class DevicesTest {
         assertTrue(devices.sync())
         assertTrue(Backgrounds.photos(ctx, "a").isEmpty())
         assertFalse(phoneHas(key).containsKey("m:a"))
+    }
+
+    // ------------------------------------------------------------ leaving and removing
+
+    private val devPrefs get() = TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE)
+
+    /** Another device [s] joins with an invite from this phone and is let in: the key it gets. */
+    private fun deviceJoins(s: String, keys: Pair<String, String>): ByteArray {
+        val inv = devices.invitation()!!.first
+        val now = System.currentTimeMillis()
+        LinkProtocol.writeHello(f, LinkHello(s, s, keys.first, LinkInvites.proof(inv.token, group(), s, keys.first, now), now))
+        devices.sync()
+        val phone = LinkProtocol.hello(f, devices.side)!!
+        val name = "from-${devices.side}/key-$s.gist"
+        return Devices.keyOf(LinkCrypto.open(LinkCrypto.sharedKey(keys.second, phone.key, group()), "${group()}/$name", f.read(name)!!)!!)!!
+    }
+
+    /** This phone's latest snapshot, opened with [key] (null if it can't be). */
+    private fun snapshotWith(key: ByteArray): ByteArray? {
+        val name = "from-${devices.side}/snapshot.gist"
+        return LinkCrypto.open(key, "${group()}/$name", f.read(name)!!)
+    }
+
+    /** The new key sealed for [s] by [from], as [s] opens it: (generation, key, removed). */
+    private fun rekeyFor(s: String, keys: Pair<String, String>, from: String): Triple<Int, ByteArray, Set<String>>? {
+        val name = "from-$from/rekey-$s.gist"
+        val sealed = f.read(name) ?: return null
+        val h = LinkProtocol.hello(f, from)!!
+        val o = JSONObject(String(LinkCrypto.open(LinkCrypto.sharedKey(keys.second, h.key, group()), "${group()}/$name", sealed)!!))
+        val rm = o.getJSONArray("removed").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
+        return Triple(o.getInt("epoch"), java.util.Base64.getDecoder().decode(o.getString("key")), rm)
+    }
+
+    @Test
+    fun leavingTakesThisDevicesFilesOutOfTheFolder() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        tabletJoins()
+        devices.sync()
+        val me = devices.side
+        assertTrue(File(dir, "from-$me").exists())
+        devices.leave()
+        assertFalse(File(dir, "from-$me").exists())
+        assertNull(devices.folder)
+        assertFalse(store.tracking)
+        assertEquals("your data stays", listOf("a"), store.checkins.map { it.id })
+    }
+
+    @Test
+    fun aDeviceThatLeftIsNoLongerListedOrWaitedFor() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        assertEquals(listOf(tab), devices.others().map { it.first })
+        // The tablet left: its files are gone from the folder (an empty folder may linger).
+        File(dir, "from-$tab").listFiles()!!.forEach { it.delete() }
+        assertTrue(devices.others().isEmpty())
+        store.updateCheckin("a") { it.copy(name = "Alpha 2") }
+        devices.sync()
+        assertTrue("still syncing", JSONObject(phoneHas(key).getValue("c:a")).toString().contains("Alpha 2"))
+    }
+
+    @Test
+    fun removingADeviceSwitchesTheOthersToANewKey() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val old = tabletJoins()
+        val lostKeys = LinkCrypto.newKeyPair()
+        assertTrue(old.contentEquals(deviceJoins("lost", lostKeys)))
+        assertEquals(setOf(tab, "lost"), devices.others().map { it.first }.toSet())
+
+        devices.remove("lost")
+        assertFalse("its files leave the folder", File(dir, "from-lost").exists())
+        assertEquals(listOf(tab), devices.others().map { it.first })
+        val (gen, key, removed) = rekeyFor(tab, tabKeys, devices.side)!!
+        assertEquals(1, gen)
+        assertFalse(key.contentEquals(old))
+        assertEquals(setOf("lost"), removed)
+        assertNull("none for the removed one", f.read("from-${devices.side}/rekey-lost.gist"))
+
+        // Everything is published again with the new key; the old one can't read it.
+        devices.sync()
+        assertTrue(phoneHas(key).containsKey("c:a"))
+        assertNull(snapshotWith(old))
+
+        // It comes back (its copy of the folder syncs again): still not listed, let in or read.
+        val inv = devices.invitation()!!.first
+        val now = System.currentTimeMillis()
+        LinkProtocol.writeHello(f, LinkHello("lost", "lost", lostKeys.first, LinkInvites.proof(inv.token, group(), "lost", lostKeys.first, now), now))
+        LinkProtocol.publish(f, group(), "lost", old, 1, mapOf("c:z" to json(TestEnv.checkin("z", "Sneaky"))), emptyList(),
+            mapOf("c:z" to json(TestEnv.checkin("z", "Sneaky"))))
+        devices.sync()
+        assertEquals(listOf(tab), devices.others().map { it.first })
+        assertNull(f.read("from-${devices.side}/key-lost.gist"))
+        assertNull(store.checkins.firstOrNull { it.id == "z" })
+    }
+
+    @Test
+    fun aNewKeyFromAnotherDeviceIsTaken() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val old = tabletJoins()
+        deviceJoins("lost", LinkCrypto.newKeyPair())
+        devices.sync()
+        // The tablet removes "lost": a new key for this phone, and its own items with it.
+        val key = ByteArray(32) { 9 }
+        val phone = LinkProtocol.hello(f, devices.side)!!
+        val name = "from-$tab/rekey-${devices.side}.gist"
+        val body = JSONObject().put("epoch", 1).put("key", java.util.Base64.getEncoder().encodeToString(key))
+            .put("removed", org.json.JSONArray(listOf("lost")))
+        f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", body.toString().toByteArray()))
+        tabletHas(key, mapOf("c:t" to json(TestEnv.checkin("t", "From the tablet").copy(updatedAt = 5))))
+        assertTrue(devices.sync())
+        assertEquals("From the tablet", store.checkins.first { it.id == "t" }.name)
+        assertEquals(listOf(tab), devices.others().map { it.first })
+        assertEquals(1, devPrefs.getInt("epoch", 0))
+        assertTrue("published again with it", phoneHas(key).containsKey("c:a"))
+        assertNull(snapshotWith(old))
+    }
+
+    @Test
+    fun twoDevicesRemovingAtOnceEndWithAKeyWithoutEither() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        tabletJoins()
+        deviceJoins("lostone", LinkCrypto.newKeyPair())
+        deviceJoins("losttwo", LinkCrypto.newKeyPair())
+        // The tablet removes one (and seals its key for this phone); this phone removes the other.
+        val phone = LinkProtocol.hello(f, devices.side)!!
+        val name = "from-$tab/rekey-${devices.side}.gist"
+        val body = JSONObject().put("epoch", 1).put("key", java.util.Base64.getEncoder().encodeToString(ByteArray(32) { 3 }))
+            .put("removed", org.json.JSONArray(listOf("losttwo")))
+        f.write(name, LinkCrypto.seal(LinkCrypto.sharedKey(tabKeys.second, phone.key, group()), "${group()}/$name", body.toString().toByteArray()))
+        devices.remove("lostone")
+        devices.sync()
+        // Whichever key won, the one in use now leaves both out: the tablet gets it.
+        val (gen, _, removed) = rekeyFor(tab, tabKeys, devices.side)!!
+        assertEquals(2, gen)
+        assertEquals(setOf("lostone", "losttwo"), removed)
+        assertEquals(2, devPrefs.getInt("epoch", 0))
+        assertEquals(listOf(tab), devices.others().map { it.first })
     }
 }

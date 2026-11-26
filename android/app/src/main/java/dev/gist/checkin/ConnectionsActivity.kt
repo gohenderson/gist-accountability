@@ -127,7 +127,11 @@ class ConnectionsActivity : BaseActivity() {
             val others = devices.others()
             if (others.isEmpty()) add(muted("No other devices yet: tap Add a device, then Join on the other device.", 14f), dp(6))
             others.forEach { (side, name, code) ->
-                add(label("$name · code $code", 15f).apply { tag = "device:$side" }, dp(6))
+                val r = row()
+                r.addWeighted(label("$name · code $code", 15f).apply { tag = "device:$side" })
+                if (devices.ready) r.addView(textButton("Remove") { confirmRemoveDevice(devices, side, name) }
+                    .apply { tag = "device-remove:$side" })
+                add(r, dp(6))
             }
             add(muted("Each pair shows the same code on both devices when nobody swapped a key.", 13f), dp(2))
             if (devices.ready) {
@@ -141,7 +145,8 @@ class ConnectionsActivity : BaseActivity() {
             add(textButton("Stop syncing on this device", colorOf(R.color.bad)) {
                 AlertDialog.Builder(this@ConnectionsActivity)
                     .setTitle("Stop syncing here?")
-                    .setMessage("Everything stays on this device; it just stops keeping in step with your others.")
+                    .setMessage("Everything stays on this device; it stops keeping in step with your others, and they " +
+                        "stop listing it.")
                     .setPositiveButton("Stop") { _, _ -> devices.leave(); render() }
                     .setNegativeButton("Cancel", null)
                     .show()
@@ -158,6 +163,21 @@ class ConnectionsActivity : BaseActivity() {
         if (!store.ringHere) {
             add(muted("Check-ins don't ring here: they remind quietly and wait on the start page, where you can still check in or dismiss them.", 13f), dp(2))
         }
+    }
+
+    private fun confirmRemoveDevice(devices: Devices, side: String, name: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove $name?")
+            .setMessage("It stops getting your changes, and your devices switch to a new key it doesn't have, so it " +
+                "can't read anything synced from now on. Use this for a device that's lost or that you can't open; " +
+                "on one you have, tap Stop syncing there instead. What's already on it stays on it.")
+            .setPositiveButton("Remove") { _, _ ->
+                devices.remove(side)
+                render()
+                Devices.syncInBackground(this) { render() }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun linkCard(l: Link) = card().apply {

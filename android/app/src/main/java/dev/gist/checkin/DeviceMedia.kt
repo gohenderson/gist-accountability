@@ -22,7 +22,12 @@ import java.security.MessageDigest
  * Sizes are the app's own limits on what can be picked (see [Backgrounds]): photos are
  * downscaled, videos and clips capped.
  */
-class DeviceMedia(private val context: Context, private val prefs: SharedPreferences) {
+class DeviceMedia(
+    private val context: Context,
+    private val prefs: SharedPreferences,
+    /** The devices' key generation: files are named for it, so a new key means new copies. */
+    private val epoch: Int = 0,
+) {
     /** A check-in's media: file name → SHA-256 (hex), and when it last changed. */
     data class MediaSet(val files: Map<String, String>, val at: Long)
 
@@ -127,7 +132,7 @@ class DeviceMedia(private val context: Context, private val prefs: SharedPrefere
         val there = blobs.values.flatten().toHashSet()
         for ((id, s) in known()) {
             for ((name, hash) in s.files) {
-                val blob = blobName(hash)
+                val blob = blobName(hash, epoch)
                 if (blob in there) continue
                 val f = File(File(root(), id), name)
                 if (!f.exists()) continue
@@ -145,7 +150,7 @@ class DeviceMedia(private val context: Context, private val prefs: SharedPrefere
      */
     fun cleanUp(folder: LinkFolder, side: String, readers: List<String>, seq: Int) {
         if (readers.any { LinkProtocol.readUpTo(folder, it, side) < seq }) return
-        val used = (known().values + waiting().values).flatMap { it.files.values }.map { blobName(it) }.toSet()
+        val used = (known().values + waiting().values).flatMap { it.files.values }.map { blobName(it, epoch) }.toSet()
         folder.names(LinkProtocol.dir(side)).filter { BLOB.matches(it) && it !in used }
             .forEach { folder.delete("${LinkProtocol.dir(side)}/$it") }
     }
@@ -155,7 +160,7 @@ class DeviceMedia(private val context: Context, private val prefs: SharedPrefere
             .associateWith { d -> folder.names(d).filter { BLOB.matches(it) } }
 
     private fun fetch(folder: LinkFolder, blobs: Map<String, List<String>>, group: String, key: ByteArray, hash: String): ByteArray? {
-        val blob = blobName(hash)
+        val blob = blobName(hash, epoch)
         for ((dir, names) in blobs) {
             if (blob !in names) continue
             val sealed = folder.read("$dir/$blob") ?: continue
@@ -198,12 +203,13 @@ class DeviceMedia(private val context: Context, private val prefs: SharedPrefere
         /** Media file names a check-in can have (others, like half-copied files, are ignored). */
         val NAME = Regex("photo-\\d{1,3}\\.jpg|video\\.mp4|voice\\.m4a")
         private val HASH = Regex("[0-9a-f]{64}")
-        private val BLOB = Regex("m-[0-9a-f]{32}\\.gist")
+        private val BLOB = Regex("m-[0-9a-f]{32}(-\\d{1,9})?\\.gist")
         private val ID = Regex("[A-Za-z0-9_-]{1,64}")
 
         fun validId(id: String) = ID.matches(id)
 
-        fun blobName(hash: String) = "m-${hash.take(32)}.gist"
+        /** A file's name in the folder: by its hash, and the key's generation (none for the first). */
+        fun blobName(hash: String, epoch: Int = 0) = "m-${hash.take(32)}${if (epoch > 0) "-$epoch" else ""}.gist"
 
         fun sha256(bytes: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
