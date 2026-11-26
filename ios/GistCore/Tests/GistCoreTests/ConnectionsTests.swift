@@ -32,7 +32,7 @@ final class ConnectionsTests: XCTestCase {
     }
 
     /// Alex invites, Jess joins with the invite, Alex lets her in.
-    private func connect() throws -> (Link, Link) {
+    private func connect() throws -> (Connection, Connection) {
         let a = try alex.invite(folder: dir.path)
         let (inv, _) = try XCTUnwrap(alex.invitation(a))
         XCTAssertEqual(jess.findInvited([dir.path], inv), dir.path)
