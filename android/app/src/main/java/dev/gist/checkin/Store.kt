@@ -292,7 +292,7 @@ data class SlotResult(
  *  check-in that counts took: from ringing to Start check-in (none when done early), and doing it.)
  */
 class Store(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("gist", Context.MODE_PRIVATE)
+    private val prefs = Profiles.prefs(context, "gist")
 
     // ------------------------------------------------------------ check-ins
 

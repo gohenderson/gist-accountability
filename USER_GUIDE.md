@@ -15,6 +15,7 @@ Everything Gist does, in detail. For what Gist is and why it exists, see the
 - [Testing a check-in](#testing-a-check-in)
 - [History, scores and logging](#history-scores-and-logging)
 - [Settings, backups and export](#settings-backups-and-export)
+- [Profiles (Android)](#profiles-android)
 - [About](#about)
 - [Honest limits](#honest-limits)
 
@@ -516,6 +517,30 @@ the same code.
   opening Gist, since two sharing at once could clash. Remove a connection on the device
   it's kept on; your others forget it too.
 - **Coming next:** the iPhone.
+
+## Profiles (Android)
+
+A profile is a whole separate setup on the same phone, say **Personal** and **Work**. Each
+has its own check-ins and tasks, answers and history, settings (theme, pause length,
+whether this device rings), Gist folder, devices and connections, and photos and clips.
+Nothing is shared between them.
+
+- **Making one.** Settings → Profiles → **New profile…**. It starts empty, and Gist
+  switches to it. Your first profile is called Personal; rename any of them there.
+- **Switching.** Once you have more than one, the start page shows the profile you're on
+  under the date: tap it to switch (or to make a new one). Settings → Profiles has
+  **Switch** too.
+- **Every profile rings.** Alarms, place and running triggers, and quiet reminders keep
+  working for all your profiles, whichever one you're on. When another profile's alarm
+  rings, the alarm screen says which profile it's from, your answers are saved in that
+  profile, and you stay on the one you were on. Its notifications are titled with the
+  profile's name.
+- **Waiting elsewhere.** If another profile has check-ins waiting, the start page shows
+  it, with **Switch** to go there.
+- **Deleting one.** Settings → Profiles → **Delete**, on any profile but your first and
+  the one you're on. Its alarms stop and everything it kept on this phone is deleted;
+  what it already synced to its Gist folder stays there.
+- **Coming next:** profiles on the iPhone.
 
 ## About
 

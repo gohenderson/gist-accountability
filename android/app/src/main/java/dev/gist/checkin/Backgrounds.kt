@@ -21,7 +21,7 @@ object Backgrounds {
     const val MAX_PHOTOS = 20
     const val MAX_VIDEO_BYTES = 30L * 1024 * 1024
 
-    private fun root(context: Context) = File(context.filesDir, "backgrounds")
+    private fun root(context: Context) = File(Profiles.filesDir(context), "backgrounds")
 
     fun dir(context: Context, checkinId: String): File = File(root(context), checkinId).apply { mkdirs() }
 

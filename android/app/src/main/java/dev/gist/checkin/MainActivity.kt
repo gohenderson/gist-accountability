@@ -30,7 +30,7 @@ class MainActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         store = Store(this)
         Notif.ensureChannels(this)
-        AlarmScheduler.scheduleAll(this)
+        Profiles.scheduleAll(this) // every profile's alarms ring, whichever you're on
         if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
         }
@@ -38,9 +38,10 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        // An unanswered alarm always takes priority.
+        // An unanswered alarm always takes priority, whichever profile it's from (it's
+        // answered in its own profile; you stay on this one).
         store.prunePending()
-        if (store.alarmPending.isNotEmpty()) startActivity(CheckinActivity.alarmIntent(this))
+        if (Profiles.withAlarm(this, profileId) != null) startActivity(CheckinActivity.alarmIntent(this))
         render()
         Connections.syncInBackground(this) { render() } // what connections share with you
         Devices.syncInBackground(this) { if (!recreateForTheme()) render() } // your other devices
@@ -51,7 +52,7 @@ class MainActivity : BaseActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        if (requestCode == REQ_LOCATION || requestCode == REQ_ACTIVITY) AlarmScheduler.scheduleAll(this) // start watching
+        if (requestCode == REQ_LOCATION || requestCode == REQ_ACTIVITY) Profiles.scheduleAll(this) // start watching
         render()
     }
 
@@ -80,6 +81,15 @@ class MainActivity : BaseActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         })
         col.add(top)
+        if (Profiles.several(this)) {
+            // Which profile this is; tap to switch.
+            col.add(textButton("${Profiles.name(this, profileId)} ▾") { ProfileUi.pick(this) }.apply {
+                tag = "profile"
+                contentDescription = "Profile: ${Profiles.name(this@MainActivity, profileId)}. Switch profile"
+                setPadding(0, paddingTop, dp(8), paddingBottom)
+            })
+            otherProfilesWaiting(col)
+        }
 
         // Scores: each check-in's on-track share over the last week; groups and the page
         // average them (off check-ins aren't counted).
@@ -638,6 +648,20 @@ class MainActivity : BaseActivity() {
     /** Resolve the next ring now: same steps (a scan must really be scanned), no alarm. */
     private fun doItNow(c: Checkin, o: Occurrence) {
         startActivity(CheckinActivity.earlyIntent(this, c.id, o.day, o.timeKey))
+    }
+
+    /** Other profiles with check-ins waiting (their alarms ring here too): a way over to them. */
+    private fun otherProfilesWaiting(col: LinearLayout) {
+        for (p in Profiles.all(this)) {
+            if (p.id == profileId) continue
+            val waiting = ProfileUi.waitingText(this, p.id) ?: continue
+            val box = card(colorOf(R.color.warn_container)).apply { tag = "profile-waiting:${p.id.ifEmpty { "default" }}" }
+            val r = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            r.addWeighted(label("${p.name}: $waiting", 15f, bold = true, color = colorWarn))
+            r.addWrapped(textButton("Switch") { ProfileUi.switchTo(this, p.id) }.apply { tag = "profile-switch:${p.id.ifEmpty { "default" }}" })
+            box.add(r)
+            col.add(box, dp(12))
+        }
     }
 
     private fun setupWarnings(col: LinearLayout) {

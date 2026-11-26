@@ -52,6 +52,9 @@ object TestEnv {
         entries: Map<String, Map<String, Boolean>> = emptyMap(),
     ) {
         readyDevice()
+        // Only the first profile, and on it (ProfilesTest adds others).
+        Profiles.setCurrent(ctx, Profiles.DEFAULT)
+        Profiles.all(ctx).filter { it.id != Profiles.DEFAULT }.forEach { Profiles.remove(ctx, it.id) }
         Store(ctx).checkins.forEach { AlarmScheduler.cancel(ctx, it.id) }
         ctx.stopService(Intent(ctx, AlarmService::class.java))
         // Stopping is asynchronous: wait, or the next test could mistake this alarm for its own.

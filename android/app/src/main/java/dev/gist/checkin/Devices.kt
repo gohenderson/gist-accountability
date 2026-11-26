@@ -31,7 +31,7 @@ class Devices(
     /** Opens the folder (tests use plain folders). */
     private val openFolder: (String) -> LinkFolder = { LinkFolder.open(context, it) },
 ) {
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = Profiles.prefs(context, PREFS)
     private val b64 = Base64.getEncoder()
     private val unb64 = Base64.getDecoder()
 
@@ -443,7 +443,7 @@ class Devices(
     }
 
     companion object {
-        private const val PREFS = "gist-devices"
+        const val PREFS = "gist-devices"
         const val FORMAT = "gist-devices"
         const val MARKER = "gist-devices.json"
         private const val K_FOLDER = "folder"
@@ -486,7 +486,7 @@ class Devices(
 
         /** Syncs your devices off the main thread; then [then] on it when anything here changed. */
         fun syncInBackground(activity: android.app.Activity, then: () -> Unit = {}) {
-            val devices = Devices(activity.applicationContext)
+            val devices = Devices(Profiles.scoped(activity, Profiles.of(activity)))
             if (devices.folder == null) return
             Thread {
                 val changed = try { synchronized(SYNC) { devices.sync() } } catch (e: Exception) { false }

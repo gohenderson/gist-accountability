@@ -24,7 +24,7 @@ import java.time.format.DateTimeFormatter
  * reboot, an app update or a force stop.
  */
 object LocationTriggers {
-    private const val PREFS = "gist-geo"
+    const val PREFS = "gist-geo"
     /** Android may report "inside" right after registering; ignore events this soon after. */
     private const val SETTLE_MS = 90_000L
 
@@ -37,7 +37,9 @@ object LocationTriggers {
     fun hasBackground(context: Context): Boolean = hasLocation(context) &&
         context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    fun anyUseLocation(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.usesLocation }
+    /** Any check-in, in any profile (they all ring), uses where you are. */
+    fun anyUseLocation(context: Context): Boolean =
+        Profiles.contexts(context).any { p -> Store(p).checkins.any { it.enabled && it.usesLocation } }
 
     // ------------------------------------------------------------ arrive / leave
 
@@ -49,12 +51,13 @@ object LocationTriggers {
         val intent = Intent(context, ProximityReceiver::class.java)
             .putExtra(AlarmScheduler.EXTRA_CHECKIN, checkinId)
             .putExtra(EXTRA_INDEX, index)
+        Profiles.distinct(intent, context, "place/$checkinId/$index")
         // Mutable: Android adds KEY_PROXIMITY_ENTERING to it. The intent is explicit (this
         // app's own non-exported receiver), so nothing else can be substituted.
-        return PendingIntent.getBroadcast(context, requestCode(checkinId, index), intent, flags or PendingIntent.FLAG_MUTABLE)
+        return PendingIntent.getBroadcast(context, requestCode(context, checkinId, index), intent, flags or PendingIntent.FLAG_MUTABLE)
     }
 
-    private fun requestCode(id: String, index: Int = 0) = 0x40000000 + ((id.hashCode() * 31 + index) and 0x07FFFFFF)
+    private fun requestCode(context: Context, id: String, index: Int = 0) = 0x40000000 + ((Profiles.hash(context, id) * 31 + index) and 0x07FFFFFF)
 
     private fun signature(c: Checkin): String =
         c.placeEvents.joinToString("|") { t -> t.place?.let { "${t.kind}:${it.lat}:${it.lon}:${it.radiusM}" } ?: "-" }
@@ -69,7 +72,7 @@ object LocationTriggers {
      */
     @SuppressLint("MissingPermission")
     fun sync(context: Context, c: Checkin) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prefs = Profiles.prefs(context, PREFS)
         val places = c.placeEvents.take(MAX_PLACES)
         val want = c.enabled && places.any { it.place != null } && hasLocation(context)
         if (!want) {
@@ -103,12 +106,12 @@ object LocationTriggers {
             }
             pi.cancel()
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(checkinId).remove("$checkinId@").apply()
+        Profiles.prefs(context, PREFS).edit().remove(checkinId).remove("$checkinId@").apply()
     }
 
     /** Just registered (Android often reports "you're inside" straight away)? */
     fun settling(context: Context, checkinId: String, now: Long = System.currentTimeMillis()): Boolean {
-        val at = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("$checkinId@", 0L)
+        val at = Profiles.prefs(context, PREFS).getLong("$checkinId@", 0L)
         return at > 0 && now - at < SETTLE_MS && !ignoreSettling
     }
 
@@ -173,8 +176,9 @@ object LocationTriggers {
             .putExtra(AlarmScheduler.EXTRA_TIME, time)
             .putExtra(AlarmScheduler.EXTRA_DAY, day)
             .putExtra(AlarmReceiver.EXTRA_PLACE, true)
+        Profiles.distinct(intent, context, "place-ring/${c.id}")
         val pi = PendingIntent.getBroadcast(
-            context, 0x38000000 + (c.id.hashCode() and 0x07FFFFFF), intent,
+            context, 0x38000000 + (Profiles.hash(context, c.id) and 0x07FFFFFF), intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val am = context.getSystemService(AlarmManager::class.java)
@@ -189,7 +193,8 @@ object LocationTriggers {
 
 /** Android tells us the phone entered or left a check-in's place. */
 class ProximityReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(app: Context, intent: Intent) {
+        val context = Profiles.fromIntent(app, intent) // the profile this place is watched for
         val id = intent.getStringExtra(AlarmScheduler.EXTRA_CHECKIN) ?: return
         if (!intent.hasExtra(LocationManager.KEY_PROXIMITY_ENTERING)) return
         val entering = intent.getBooleanExtra(LocationManager.KEY_PROXIMITY_ENTERING, false)

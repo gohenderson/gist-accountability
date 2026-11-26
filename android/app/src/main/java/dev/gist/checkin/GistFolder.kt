@@ -20,7 +20,7 @@ class GistFolder(
     /** Opens a folder (tests use plain folders). */
     private val openFolder: (String) -> LinkFolder = { LinkFolder.open(context, it) },
 ) {
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = Profiles.prefs(context, PREFS)
 
     /** The Gist folder on this device, or null until picked. */
     var root: String?
@@ -59,7 +59,7 @@ class GistFolder(
     }
 
     companion object {
-        private const val PREFS = "gist-folder"
+        const val PREFS = "gist-folder"
         private const val K_ROOT = "root"
         private const val K_WAITING = "waiting"
         const val DEVICES = "My devices"

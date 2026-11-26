@@ -42,7 +42,9 @@ object MovementWatch {
         else -> ""
     }
 
-    fun anyUse(context: Context): Boolean = Store(context).checkins.any { it.enabled && it.runEvents.isNotEmpty() }
+    /** Any check-in, in any profile (they all ring), has a running trigger. */
+    fun anyUse(context: Context): Boolean =
+        Profiles.contexts(context).any { p -> Store(p).checkins.any { it.enabled && it.runEvents.isNotEmpty() } }
 
     /** Runs the watcher while any check-in needs it (and it can work), stops it otherwise. */
     fun sync(context: Context) {
@@ -68,7 +70,7 @@ object MovementWatch {
         for (c in store.checkins) {
             c.runEvents.forEachIndexed { i, t ->
                 if (t.kind != Trigger.RUN_FOR || minutes < t.minRunMinutes.coerceAtLeast(1)) return@forEachIndexed
-                val key = milestoneKey(c, i, t)
+                val key = Profiles.of(context) + "/" + milestoneKey(c, i, t)
                 if (!fired.add(key)) return@forEachIndexed // once per run
                 val day = Days.forAlarmNow(c.aboutYesterday, now)
                 val rangToday = store.results(day, c.id).values.any { it.status != SlotResult.SKIPPED } ||
@@ -108,7 +110,9 @@ class MovementService : Service(), SensorEventListener {
         override fun run() {
             val now = System.currentTimeMillis()
             handle(detector.tick(now))
-            detector.runStartedAt?.let { MovementWatch.onRunProgress(this@MovementService, ((now - it) / 60_000L).toInt(), milestones) }
+            detector.runStartedAt?.let { start ->
+                Profiles.contexts(this@MovementService).forEach { MovementWatch.onRunProgress(it, ((now - start) / 60_000L).toInt(), milestones) }
+            }
             handler.postDelayed(this, TICK_MS)
         }
     }
@@ -149,11 +153,11 @@ class MovementService : Service(), SensorEventListener {
             is RunDetector.Event.Started -> {
                 milestones.clear()
                 holdAwake(true)
-                MovementWatch.onRun(this, null)
+                Profiles.contexts(this).forEach { MovementWatch.onRun(it, null) } // every profile's
             }
             is RunDetector.Event.Finished -> {
                 holdAwake(false)
-                MovementWatch.onRun(this, e.minutes)
+                Profiles.contexts(this).forEach { MovementWatch.onRun(it, e.minutes) }
             }
             null -> {}
         }

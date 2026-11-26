@@ -58,6 +58,13 @@ class CheckinActivity : BaseActivity() {
     }
 
     private lateinit var store: Store
+
+    /**
+     * The profile whose check-in is on screen. An alarm from another profile is answered
+     * here, in its own profile, without switching the app to it.
+     */
+    private var profile: String? = null
+    override val profileId: String get() = profile ?: super.profileId
     private lateinit var target: Pending
     private lateinit var checkin: Checkin
     private var forced = false
@@ -99,10 +106,12 @@ class CheckinActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val editId = intent.getStringExtra(EXTRA_CHECKIN)
+        // Ringing: a profile with an alarm waiting (the one asked for, if it still has one).
+        profile = if (editId == null) Profiles.withAlarm(this, intent.getStringExtra(Profiles.EXTRA)) else null
         store = Store(this)
         store.prunePending()
 
-        val editId = intent.getStringExtra(EXTRA_CHECKIN)
         val editDay = intent.getStringExtra(EXTRA_DAY)
         val editTime = intent.getStringExtra(EXTRA_TIME) ?: ""
         earlyRequested = intent.getBooleanExtra(EXTRA_EARLY, false)
@@ -259,7 +268,7 @@ class CheckinActivity : BaseActivity() {
         if (!target.practice) return
         ticks.removeCallbacksAndMessages(null)
         store.removePending(target)
-        val next = store.alarmPending.firstOrNull()
+        val next = nextWaiting()
         if (next != null && load(next)) {
             answers.clear()
             AlarmService.refreshNotification(this)
@@ -320,7 +329,7 @@ class CheckinActivity : BaseActivity() {
      */
     private fun moveOn(): Boolean {
         store.prunePending()
-        val next = store.alarmPending.firstOrNull()
+        val next = nextWaiting()
         if (next != null && load(next)) {
             answers.clear()
             return true
@@ -466,8 +475,8 @@ class CheckinActivity : BaseActivity() {
         store.removePending(target)
         Notif.clearQuiet(this, checkin.id)
         store.prunePending()
-        val next = store.alarmPending.firstOrNull()
-        if (forced && next != null && load(next)) {
+        val next = if (forced) nextWaiting() else null
+        if (next != null && load(next)) {
             answers.clear()
             AlarmService.refreshNotification(this) // Snooze / Dismiss buttons if the next one is soft
             showStep()
@@ -478,8 +487,21 @@ class CheckinActivity : BaseActivity() {
         finish()
     }
 
+    /**
+     * The next alarm waiting: this profile's, else another profile's (the screen moves to
+     * that profile, so its answers are saved there).
+     */
+    private fun nextWaiting(): Pending? {
+        store.alarmPending.firstOrNull()?.let { return it }
+        val other = Profiles.withAlarm(this, profileId) ?: return null
+        profile = other
+        store = Store(this)
+        store.prunePending()
+        return store.alarmPending.firstOrNull()
+    }
+
     private fun stopIfNothingPending() {
-        if (store.alarmPending.isEmpty()) {
+        if (Profiles.withAlarm(this) == null) { // no profile has one waiting
             stopService(Intent(this, AlarmService::class.java))
             Notif.clearWaiting(this)
         }
@@ -571,6 +593,13 @@ class CheckinActivity : BaseActivity() {
         col.add(label(LocalTime.now().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)), 64f, bold = true, color = fg).apply {
             gravity = Gravity.CENTER
         }, dp(48))
+        if (Profiles.several(this)) {
+            // Which profile it's from: it may not be the one you're on.
+            col.add(label(Profiles.name(this, profileId), 15f, bold = true, color = soft).apply {
+                gravity = Gravity.CENTER
+                tag = "alarm-profile"
+            }, dp(4))
+        }
         col.add(label(checkin.name, 26f, bold = true, color = fg).apply { gravity = Gravity.CENTER }, dp(4))
         col.add(label("Alarm ringing · ${CheckinText.steps(checkin)}", 15f, color = soft).apply { gravity = Gravity.CENTER }, dp(6))
         if (checkin.background.caption.isNotBlank()) {
@@ -1043,6 +1072,7 @@ class CheckinActivity : BaseActivity() {
         /** Opens whichever check-in is waiting. */
         fun alarmIntent(context: Context): Intent =
             Intent(context, CheckinActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(Profiles.EXTRA, Profiles.withAlarm(context, Profiles.explicit(context)) ?: Profiles.current(context))
 
         /** Resolves an upcoming ring now (all steps, no alarm); that ring then stays quiet. */
         fun earlyIntent(context: Context, checkinId: String, day: String, time: String): Intent =
@@ -1050,7 +1080,7 @@ class CheckinActivity : BaseActivity() {
 
         /** Opens a check-in to fill in / fix a specific day's answers. */
         fun editIntent(context: Context, checkinId: String, day: String, time: String = ""): Intent =
-            Intent(context, CheckinActivity::class.java)
+            Profiles.distinct(Intent(context, CheckinActivity::class.java), context, "edit/$checkinId")
                 .putExtra(EXTRA_CHECKIN, checkinId)
                 .putExtra(EXTRA_DAY, day)
                 .putExtra(EXTRA_TIME, time)

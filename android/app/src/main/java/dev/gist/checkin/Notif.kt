@@ -46,8 +46,23 @@ object Notif {
      * buttons. Strict alarms get none (only their steps stop them).
      */
     private fun softPending(context: Context): Pending? {
-        val store = Store(context)
+        val store = Store(alarmContext(context))
         return store.alarmPending.firstOrNull()?.takeIf { store.isSoft(it) }
+    }
+
+    /**
+     * The profile whose alarm the alarm screen shows: [context]'s if it has one waiting, else
+     * the one you're on, else any (every profile's alarms ring, whichever you're on).
+     */
+    private fun alarmContext(context: Context): Context =
+        Profiles.withAlarm(context, Profiles.explicit(context))?.let { Profiles.scoped(context, it) } ?: context
+
+    /** The waiting alarm's title: its name, and its profile's when you have several. */
+    private fun alarmTitle(context: Context, fallback: String): String {
+        val ctx = alarmContext(context)
+        val store = Store(ctx)
+        val name = store.alarmPending.firstOrNull()?.let { store.checkin(it.checkinId)?.name } ?: fallback
+        return if (Profiles.several(ctx)) "${Profiles.name(ctx, Profiles.of(ctx))} · $name" else name
     }
 
     /** [codes]: request codes for Snooze and Dismiss (and +1); each notification needs its own. */
@@ -70,12 +85,11 @@ object Notif {
         ensureChannels(context)
         val pi = surveyIntent(context)
         val soft = softPending(context)
-        val name = soft?.let { Store(context).checkin(it.checkinId)?.name }
         val b = Notification.Builder(context, CH_ALARM)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(name ?: "Daily check-in")
+            .setContentTitle(alarmTitle(context, "Daily check-in"))
             .setContentText(if (soft != null) "Snooze, dismiss, or tap to check in." else "Answer the questions to silence the alarm.")
-            .softActions(context, soft)
+            .softActions(alarmContext(context), soft)
             .setCategory(Notification.CATEGORY_ALARM)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)
@@ -95,8 +109,8 @@ object Notif {
         val n = Notification.Builder(context, CH_WAITING)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Check-in still waiting")
-            .setContentText("Tap to answer your check-in.")
-            .softActions(context, softPending(context))
+            .setContentText(if (Profiles.several(context)) "${alarmTitle(context, "Check-in")}: tap to answer it." else "Tap to answer your check-in.")
+            .softActions(alarmContext(context), softPending(context))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)
@@ -165,27 +179,28 @@ object Notif {
             }
         )
         val open = CheckinActivity.editIntent(context, p.checkinId, p.day, p.time).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val title = if (Profiles.several(context)) "${c.name} · ${Profiles.name(context, Profiles.of(context))}" else c.name
         val pi = PendingIntent.getActivity(
-            context, quietId(c.id), open,
+            context, quietId(context, c.id), open,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val n = Notification.Builder(context, CH_QUIET)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(c.name)
+            .setContentTitle(title)
             .setContentText(if (c.soft) "Tap to do it, or snooze or dismiss." else "Tap to do it.")
-            .softActions(context, p.takeIf { c.soft }, codes = quietId(c.id) * 2)
+            .softActions(context, p.takeIf { c.soft }, codes = quietId(context, c.id) * 2)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
             .build()
-        nm.notify(quietId(c.id), n)
+        nm.notify(quietId(context, c.id), n)
     }
 
     fun clearQuiet(context: Context, checkinId: String) {
-        context.getSystemService(NotificationManager::class.java).cancel(quietId(checkinId))
+        context.getSystemService(NotificationManager::class.java).cancel(quietId(context, checkinId))
     }
 
-    private fun quietId(checkinId: String) = 1000 + (checkinId.hashCode() and 0xffff)
+    private fun quietId(context: Context, checkinId: String) = 1000 + (Profiles.hash(context, checkinId) and 0xffff)
 
     fun clearWaiting(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(ID_WAITING)

@@ -586,7 +586,7 @@ class CheckinEditActivity : BaseActivity() {
 
     private fun audioPicked(data: Intent) {
         val uri = SafeUri.picked(this, data.data) ?: return
-        val app = applicationContext
+        val app = Profiles.scoped(this, profileId)
         val id = checkinId
         toast("Preparing clip…")
         Thread {
@@ -1267,7 +1267,7 @@ class CheckinEditActivity : BaseActivity() {
         if (request == REQ_IMAGES && uris.size > Backgrounds.MAX_PHOTOS) {
             toast("Using the first ${Backgrounds.MAX_PHOTOS} photos.")
         }
-        val app = applicationContext
+        val app = Profiles.scoped(this, profileId)
         val id = checkinId
         Thread {
             try {

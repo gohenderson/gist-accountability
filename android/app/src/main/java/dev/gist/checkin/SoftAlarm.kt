@@ -59,9 +59,8 @@ object SoftAlarm {
     /** After a snooze or dismiss: stop ringing if nothing else is waiting, else show the next. */
     private fun settle(context: Context) {
         changes++
-        val store = Store(context)
-        store.prunePending()
-        if (store.alarmPending.isEmpty()) {
+        Store(context).prunePending()
+        if (Profiles.withAlarm(context) == null) { // no profile has one waiting
             context.stopService(Intent(context, AlarmService::class.java))
             Notif.clearWaiting(context)
         } else if (AlarmService.running) {
@@ -74,7 +73,8 @@ object SoftAlarm {
 
 /** The Snooze / Dismiss buttons on a soft alarm's notification. */
 class SoftAlarmReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(app: Context, intent: Intent) {
+        val context = Profiles.fromIntent(app, intent)
         val p = Pending(
             intent.getStringExtra(EXTRA_CHECKIN) ?: return,
             intent.getStringExtra(EXTRA_DAY) ?: return,
@@ -97,11 +97,14 @@ class SoftAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_PRACTICE = "practice"
 
         fun intent(context: Context, action: String, p: Pending): Intent =
-            Intent(context, SoftAlarmReceiver::class.java)
-                .setAction(action)
-                .putExtra(EXTRA_CHECKIN, p.checkinId)
-                .putExtra(EXTRA_DAY, p.day)
-                .putExtra(EXTRA_TIME, p.time)
-                .putExtra(EXTRA_PRACTICE, p.practice)
+            Profiles.distinct(
+                Intent(context, SoftAlarmReceiver::class.java)
+                    .setAction(action)
+                    .putExtra(EXTRA_CHECKIN, p.checkinId)
+                    .putExtra(EXTRA_DAY, p.day)
+                    .putExtra(EXTRA_TIME, p.time)
+                    .putExtra(EXTRA_PRACTICE, p.practice),
+                context, "soft/${p.checkinId}",
+            )
     }
 }
