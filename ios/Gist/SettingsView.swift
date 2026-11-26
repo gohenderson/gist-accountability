@@ -43,6 +43,19 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    ConnectionsView()
+                } label: {
+                    Text("Connections")
+                }
+                .accessibilityIdentifier("connections")
+            } header: {
+                Text("Sync")
+            } footer: {
+                Text("Keep your devices in step, and share check-ins and tasks with other people, through folders you share.")
+            }
+
+            Section {
                 Button("Export backup…") { choosingExport = true }
                 .accessibilityIdentifier("export")
                 Button("Import backup…") { importing = true }
