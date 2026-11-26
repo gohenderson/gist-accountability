@@ -12,20 +12,46 @@ public struct GistData: Equatable {
     public var checkins: [Checkin] {
         // A task that's just gone into the backlog (new, or turned off) gets stamped, unless its
         // time was set with it (a restored backup). Loading saved data doesn't count.
+        // While your devices are kept in step ([tracking]): a check-in changed here (not one
+        // arriving from another device with its own time) gets [Checkin.updatedAt], a deleted
+        // one is remembered in [deleted], and a reorder stamps [orderAt]. As on Android.
         didSet {
             let was = Dictionary(oldValue.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let now = GistData.nowMs
             var stamped = false
             var list = checkins
             for i in list.indices {
                 let c = list[i], old = was[c.id]
                 if c.inBacklog && old?.inBacklog != true && c.backlogAt == old?.backlogAt {
-                    list[i].backlogAt = GistData.nowMs
+                    list[i].backlogAt = now
                     stamped = true
                 }
+                if tracking, list[i].updatedAt == old?.updatedAt {
+                    var a = list[i], b = old
+                    a.updatedAt = nil
+                    b?.updatedAt = nil
+                    if b == nil || a != b {
+                        list[i].updatedAt = now
+                        stamped = true
+                    }
+                }
+            }
+            if tracking {
+                let ids = Set(list.map { $0.id })
+                for id in was.keys where !ids.contains(id) && deleted[id] == nil { deleted[id] = now }
+                let before = oldValue.map { $0.id }.filter { ids.contains($0) }
+                let after = list.map { $0.id }.filter { was[$0] != nil }
+                if before != after { orderAt = now }
             }
             if stamped { checkins = list }
         }
     }
+    /// Your devices are kept in step: stamp changes (see [checkins] and results' [SlotResult.w]).
+    public var tracking = false
+    /// Check-ins deleted while syncing: id → when (so your other devices delete them too).
+    public var deleted: [String: Int] = [:]
+    /// When your list's order last changed (here or on your other devices); 0 if never since syncing.
+    public var orderAt = 0
     /// day → check-in id → time → result
     public var results: [String: [String: DayResults]]
 
@@ -208,6 +234,7 @@ public struct GistData: Equatable {
     private mutating func put(_ day: String, _ checkinId: String, _ time: String, _ r: SlotResult) {
         var r = r
         if let c = checkin(checkinId), !c.counted { r.soft = true }
+        if tracking { r.w = GistData.nowMs } // the later answer wins between your devices
         results[day, default: [:]][checkinId, default: [:]][time] = r
         if GistData.taskDoneStatuses.contains(r.status), let c = checkin(checkinId), c.isTask, c.doneAt == nil {
             completeTask(c.id)
@@ -242,16 +269,29 @@ public struct GistData: Equatable {
 
     /// How the app saves this on the phone (the same shapes as a backup's checkins / entries).
     public var json: JSON {
-        .object(JSONObject([
+        var o = JSONObject([
             ("checkins", .array(checkins.map { c -> JSON in c.json })),
             ("entries", .object(GistData.entriesJSON(results))),
-        ]))
+        ])
+        // Kept for your devices (not part of backups).
+        if !deleted.isEmpty || orderAt > 0 {
+            o["sync"] = .object(JSONObject([
+                ("deleted", .object(JSONObject(deleted.keys.sorted().map { ($0, .int(deleted[$0]!)) }))),
+                ("orderAt", .int(orderAt)),
+            ]))
+        }
+        return .object(o)
     }
 
     public static func from(_ v: JSON) throws -> GistData {
         guard let o = v.objectValue else { throw BackupError("Saved data is damaged.") }
         let checkins = try (o.array("checkins") ?? []).compactMap { $0.objectValue }.map { try Checkin.from($0) }
-        return GistData(checkins: checkins, results: entries(from: o.object("entries") ?? JSONObject()))
+        var d = GistData(checkins: checkins, results: entries(from: o.object("entries") ?? JSONObject()))
+        if let s = o.object("sync") {
+            for (k, v) in (s.object("deleted") ?? JSONObject()).pairs { if let n = v.intValue { d.deleted[k] = n } }
+            d.orderAt = s.int("orderAt", 0)
+        }
+        return d
     }
 
     /// results → { day: { checkin: { time: {s, a, early} } } }, days in order.

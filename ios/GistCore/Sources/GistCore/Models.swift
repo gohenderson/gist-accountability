@@ -830,6 +830,8 @@ public struct SlotResult: Equatable {
     public var values: [String: String]
     public var rangAt: Int?
     public var took: Took?
+    /// When it was logged (epoch ms), while your devices are kept in step: the later answer wins.
+    public var w: Int?
 
     public init(_ status: String, answers: [String: Bool] = [:], early: Bool = false, soft: Bool = false,
                 values: [String: String] = [:], rangAt: Int? = nil, took: Took? = nil) {
@@ -864,6 +866,7 @@ public struct SlotResult: Equatable {
             }))
         }
         if let rangAt { o["rangAt"] = .int(rangAt) }
+        if let w { o["w"] = .int(w) }
         if let took {
             var t = JSONObject()
             if let s = took.start { t["start"] = .int(s) }
@@ -892,8 +895,10 @@ public struct SlotResult: Equatable {
             guard let steps = t.int("steps") else { return nil }
             return Took(start: t.int("start"), steps: steps)
         }
-        return SlotResult(o.string("s", answered), answers: answers, early: o.bool("early", false), soft: o.bool("soft", false),
-                          values: values, rangAt: o.int("rangAt"), took: took)
+        var r = SlotResult(o.string("s", answered), answers: answers, early: o.bool("early", false), soft: o.bool("soft", false),
+                           values: values, rangAt: o.int("rangAt"), took: took)
+        r.w = o.int("w")
+        return r
     }
 }
 
