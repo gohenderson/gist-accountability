@@ -598,6 +598,43 @@ public struct Checkin: Equatable, Identifiable {
     public var timeCommitment: String
     /// A follow-up task: the id of the task it continues ("Sand the patch" → "Replace the liner").
     public var followsUp: String?
+    /// Connections it's shared with, read-only: they see it, you change it.
+    public var sharedWith: Set<String> = []
+    /// A shared task of yours: who can do it. "" anyone it's shared with (and you);
+    /// Checkin.assignMe only you; or a connection's id: only them.
+    public var assignee: String = ""
+    /// A task someone else finished for you: their name.
+    public var doneBy: String?
+    /// Added from a connection: "<link id>/<their id>". Its name and description stay theirs;
+    /// everything else (alarms, times, steps) is yours.
+    public var linkedFrom: String?
+    /// Who can do it, as they shared it: Checkin.linkAnyone, linkYou, linkOwner or linkOther.
+    public var linkedAssignee: String = ""
+    /// They removed it (or stopped sharing it): it stays in your list, marked.
+    public var linkedGone: Bool = false
+    /// When it was last seen done on their side (to notice when that changes).
+    public var linkedDoneAt: Int?
+    /// When it was last changed (epoch ms): the later edit wins between your devices.
+    public var updatedAt: Int?
+
+    public static let assignMe = "me"
+    public static let linkAnyone = "anyone"
+    public static let linkYou = "you"
+    public static let linkOwner = "owner"
+    public static let linkOther = "other"
+
+    /// Added from a connection.
+    public var isLinked: Bool { linkedFrom != nil }
+    public var linkId: String? { linkedFrom.map { String($0.prefix { $0 != "/" }) } }
+    public var sourceId: String? {
+        guard let l = linkedFrom, let i = l.firstIndex(of: "/") else { return linkedFrom }
+        return String(l[l.index(after: i)...])
+    }
+
+    /// Something shared with you that you may do (tasks: anyone's, or assigned to you).
+    public var youCanDo: Bool {
+        !isTask || linkedAssignee == Checkin.linkAnyone || linkedAssignee == Checkin.linkYou || linkedAssignee.isEmpty
+    }
 
     public init(id: String = Ids.new(), name: String, times: [AlarmTime] = [AlarmTime(12, 0)],
                 repeat: Repeat = .everyDay, enabled: Bool = true, aboutYesterday: Bool = false,
@@ -685,6 +722,14 @@ public struct Checkin: Equatable, Identifiable {
         if !description.isEmpty { o["description"] = .string(description) }
         if !timeCommitment.isEmpty { o["timeCommitment"] = .string(timeCommitment) }
         if let followsUp { o["followsUp"] = .string(followsUp) }
+        if !sharedWith.isEmpty { o["sharedWith"] = .array(sharedWith.sorted().map { .string($0) }) }
+        if !assignee.isEmpty { o["assignee"] = .string(assignee) }
+        if let doneBy { o["doneBy"] = .string(doneBy) }
+        if let linkedFrom { o["linkedFrom"] = .string(linkedFrom) }
+        if !linkedAssignee.isEmpty { o["linkedAssignee"] = .string(linkedAssignee) }
+        if linkedGone { o["linkedGone"] = .bool(true) }
+        if let linkedDoneAt { o["linkedDoneAt"] = .int(linkedDoneAt) }
+        if let updatedAt { o["updatedAt"] = .int(updatedAt) }
         return .object(o)
     }
 
@@ -698,7 +743,7 @@ public struct Checkin: Equatable, Identifiable {
         }
         let commitment = o.string("commitment")
         let snooze = o.int("snoozeMinutes", defaultSnooze)
-        return Checkin(
+        var c = Checkin(
             id: id,
             name: o.string("name", "Check-in"),
             times: seen.sorted(),
@@ -730,6 +775,15 @@ public struct Checkin: Equatable, Identifiable {
             timeCommitment: timeCommitmentName(o.string("timeCommitment")) != nil ? o.string("timeCommitment") : "",
             followsUp: o.string("followsUp").isEmpty ? nil : o.string("followsUp")
         )
+        c.sharedWith = Set((o.array("sharedWith") ?? []).compactMap { $0.stringValue })
+        c.assignee = o.string("assignee")
+        c.doneBy = o.string("doneBy").isEmpty ? nil : o.string("doneBy")
+        c.linkedFrom = o.string("linkedFrom").isEmpty ? nil : o.string("linkedFrom")
+        c.linkedAssignee = o.string("linkedAssignee")
+        c.linkedGone = o.bool("linkedGone", false)
+        c.linkedDoneAt = o.int("linkedDoneAt")
+        c.updatedAt = o.int("updatedAt")
+        return c
     }
 
     /// What a new install starts with (the Android app's defaults).
