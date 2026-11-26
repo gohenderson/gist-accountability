@@ -1,0 +1,65 @@
+{
+  "_about": "Made by make_vectors.py: fixed keys and values both apps' tests check against.",
+  "a": {
+    "public": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBjaSBUoA8Gbyxd6OVtF507pqXUiuI5BCAsRTSVPjOBq6iVnDjBtqzDWy69YMCM8ZoCLHf4jMwMPy2MHCZNVWyQ==",
+    "private": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgwB0aiHVH5c4wk/BZJFE1zJC/Kq8mTeSd63S1TYnhV9qhRANCAAQGNpIFSgDwZvLF3o5W0XnTumpdSK4jkEICxFNJU+M4GrqJWcOMG2rMNbLr1gwIzxmgIsd/iMzAw/LYwcJk1VbJ"
+  },
+  "b": {
+    "public": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElGckrXMgAs+A5XbocGBAOSu4zRpoAu8PjQWoa66Ezx/ywZjBML/T+SUM6JTTHWtaVVdMMapeNiXElpzEelbB4Q==",
+    "private": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgBw2h1Z82x6UyJpFDsoSgAuN3umxhG67fOBP8s2MNb4ehRANCAASUZyStcyACz4DlduhwYEA5K7jNGmgC7w+NBahrroTPH/LBmMEwv9P5JQzolNMda1pVV0wxql42JcSWnMR6VsHh"
+  },
+  "link": "testlink1",
+  "sharedKeyHex": "53c1989a1001c3d94d560178db16e09edfefee5ed03d3b666d0ef657bc5ee701",
+  "code": "B9F7-48B2",
+  "seal": {
+    "nonceHex": "000102030405060708090a0b",
+    "label": "testlink1/from-sidea/000001.gist",
+    "plain": "{\"hello\":\"world\"}",
+    "sealedBase64": "R0lTVDEAAQIDBAUGBwgJCgshCYzpqT7hl/bPgUUmNOlvOmc5wGfNriBRUzdTK2EBKxw="
+  },
+  "invite": {
+    "kind": "c",
+    "fingerprintHex": "0b140f8ed13575fb9e5f",
+    "tokenHex": "0102030405060708090a",
+    "code": "AFRQ-WFAP-R3IT-K5P3-TZPQ-CAQD-AQCQ-MBYI-BEFA",
+    "qr": "GIST:AFRQWFAPR3ITK5P3TZPQCAQDAQCQMBYIBEFA"
+  },
+  "proof": {
+    "scope": "testlink1",
+    "side": "sideb",
+    "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElGckrXMgAs+A5XbocGBAOSu4zRpoAu8PjQWoa66Ezx/ywZjBML/T+SUM6JTTHWtaVVdMMapeNiXElpzEelbB4Q==",
+    "joinedAt": 1764000000000,
+    "proof": "kJ+L/hvrkKhdxrW0zk+nGHJEkvUoLmmLFBRNosjape4="
+  },
+  "folder": {
+    "side": "sidea",
+    "seq": 2,
+    "items": {
+      "walk": {
+        "id": "walk",
+        "name": "Evening walk, longer",
+        "enabled": true,
+        "times": [
+          "19:30"
+        ],
+        "lat": 40.7128
+      }
+    },
+    "afterChange1": {
+      "read": {
+        "id": "read",
+        "name": "Read \"10\" pages",
+        "enabled": false
+      },
+      "walk": {
+        "id": "walk",
+        "name": "Evening walk ✓",
+        "enabled": true,
+        "times": [
+          "19:30"
+        ],
+        "lat": 40.7128
+      }
+    }
+  }
+}

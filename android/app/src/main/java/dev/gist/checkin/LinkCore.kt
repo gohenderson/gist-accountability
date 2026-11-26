@@ -212,8 +212,11 @@ object LinkCrypto {
     }
 
     /** Encrypts [plain] for a file; [label] (where it's written) must match to open it, so files can't be swapped. */
-    fun seal(key: ByteArray, label: String, plain: ByteArray): ByteArray {
-        val nonce = ByteArray(12).also { random.nextBytes(it) }
+    fun seal(key: ByteArray, label: String, plain: ByteArray): ByteArray =
+        seal(key, label, plain, ByteArray(12).also { random.nextBytes(it) })
+
+    /** [seal] with a given nonce: only for tests (shared/sync), never twice with one key. */
+    internal fun seal(key: ByteArray, label: String, plain: ByteArray, nonce: ByteArray): ByteArray {
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
         c.updateAAD(label.toByteArray())
