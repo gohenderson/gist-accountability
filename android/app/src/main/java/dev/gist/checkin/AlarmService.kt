@@ -29,7 +29,12 @@ import kotlin.math.ceil
  * a gentle alarm clock. Once you've been woken, it doesn't start soft again: when a pause
  * runs out, it comes back at full volume.
  */
-class AlarmService : Service() {
+class AlarmService : Service(), ProfileScoped {
+    /** The profile of the alarm it was last started for (every profile's alarms ring). */
+    @Volatile
+    private var profile: String? = null
+    override val profileId: String get() = profile ?: Profiles.current(this)
+
     private val handler = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
@@ -82,8 +87,11 @@ class AlarmService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         if (!getSystemService(PowerManager::class.java).isInteractive) return // screen off: the lock screen shows it
         // A test ring can be left, and so can a soft alarm (it has Snooze / Dismiss instead).
-        val store = Store(this)
-        if (store.alarmPending.none { !it.practice && !store.isSoft(it) }) return
+        val mustAnswer = Profiles.contexts(this).any { ctx ->
+            val store = Store(ctx)
+            store.alarmPending.any { !it.practice && !store.isSoft(it) }
+        }
+        if (!mustAnswer) return
         try {
             startActivity(CheckinActivity.alarmIntent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         } catch (e: Exception) {
@@ -101,6 +109,7 @@ class AlarmService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         running = true
+        intent?.getStringExtra(Profiles.EXTRA)?.let { profile = it }
         startForeground(
             Notif.ID_ALARM,
             Notif.alarm(this),
@@ -249,7 +258,7 @@ class AlarmService : Service() {
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         // Gave up ringing (or got killed) without answers: leave a sticky reminder.
-        if (Store(this).alarmPending.isNotEmpty()) Notif.showWaiting(this)
+        if (Profiles.withAlarm(this) != null) Notif.showWaiting(this)
         super.onDestroy()
     }
 

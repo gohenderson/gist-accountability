@@ -8,7 +8,8 @@ import android.os.Build
 
 /** Fired by AlarmManager at a check-in's time (or right after arriving at / leaving its place). */
 class AlarmReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(app: Context, intent: Intent) {
+        val context = Profiles.fromIntent(app, intent) // the profile this alarm is for
         val store = Store(context)
         val id = intent.getStringExtra(AlarmScheduler.EXTRA_CHECKIN) ?: return
         val c = store.checkin(id) ?: return // deleted since it was scheduled
@@ -73,7 +74,7 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         try {
             context.startForegroundService(
-                Intent(context, AlarmService::class.java).putExtra(AlarmService.EXTRA_CHECKIN, c.id)
+                Profiles.tag(Intent(context, AlarmService::class.java).putExtra(AlarmService.EXTRA_CHECKIN, c.id), context)
             )
         } catch (e: Exception) {
             // Background start refused (only possible if exact alarms were denied).
@@ -97,15 +98,15 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action !in SYSTEM_ACTIONS) return
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             // Android drops place watches on reboot (and may on update): set them up again.
-            Store(context).checkins.forEach { LocationTriggers.remove(context, it.id) }
+            Profiles.contexts(context).forEach { p -> Store(p).checkins.forEach { LocationTriggers.remove(p, it.id) } }
         }
-        AlarmScheduler.scheduleAll(context)
+        Profiles.scheduleAll(context) // every profile's alarms ring, whichever you're on
         if (Build.VERSION.SDK_INT >= 34 &&
             !context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
         ) {
             Notif.showFullScreenPermissionLost(context)
         }
-        if (Store(context).alarmPending.isNotEmpty()) Notif.showWaiting(context)
+        if (Profiles.withAlarm(context) != null) Notif.showWaiting(context)
     }
 }
 

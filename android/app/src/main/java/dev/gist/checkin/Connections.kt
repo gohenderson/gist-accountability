@@ -65,7 +65,7 @@ class Connections(
     /** Opens a connection's folder (tests use plain folders). */
     private val openFolder: (String) -> LinkFolder = { LinkFolder.open(context, it) },
 ) {
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = Profiles.prefs(context, PREFS)
 
     /** Your name, as the other side sees it (the same on all your devices). */
     var myName: String
@@ -492,7 +492,7 @@ class Connections(
     }
 
     companion object {
-        private const val PREFS = "gist-links"
+        const val PREFS = "gist-links"
         private const val K_LINKS = "links"
         private const val K_NAME = "myName"
         private const val K_GOT = "got."
@@ -505,7 +505,7 @@ class Connections(
 
         /** Runs [sync] off the main thread, then [then] on it when what's shared with you changed. */
         fun syncInBackground(activity: android.app.Activity, then: () -> Unit = {}) {
-            val links = Connections(activity.applicationContext)
+            val links = Connections(Profiles.scoped(activity, Profiles.of(activity)))
             if (links.here.isEmpty()) return
             Thread {
                 val changed = synchronized(SYNC) { links.sync() }

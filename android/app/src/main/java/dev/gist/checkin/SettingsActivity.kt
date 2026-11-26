@@ -102,6 +102,8 @@ class SettingsActivity : BaseActivity() {
         conn.add(outlineButton("Connections…") { startActivity(ConnectionsActivity.intent(this)) }.apply { tag = "connections" }, dp(12))
         col.add(conn, dp(12))
 
+        col.add(profilesCard(), dp(12))
+
         // CSV
         val csv = card()
         csv.add(sectionTitle("Spreadsheet"))
@@ -117,6 +119,35 @@ class SettingsActivity : BaseActivity() {
         col.add(about, dp(12))
 
         setContentView(screen(col))
+    }
+
+    /**
+     * Profiles: separate setups (say Personal and Work), each with everything its own. You
+     * see one at a time; all of them ring.
+     */
+    private fun profilesCard() = card().apply {
+        tag = "profiles"
+        add(sectionTitle("Profiles"))
+        add(label("Separate setups, say Personal and Work: each has its own check-ins and tasks, answers, settings, " +
+            "Gist folder and devices. Every profile's alarms ring, whichever one you're on.", 15f), dp(6))
+        val current = profileId
+        for (p in Profiles.all(this@SettingsActivity)) {
+            val key = p.id.ifEmpty { "default" }
+            val r = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            val name = if (p.id == current) "${p.name} (this one)" else p.name
+            r.addWeighted(label(name, 16f, bold = p.id == current).apply { tag = "profile-row:$key" })
+            if (p.id != current) {
+                r.addWrapped(textButton("Switch") { ProfileUi.switchTo(this@SettingsActivity, p.id) }.apply { tag = "profile-switch:$key" })
+            }
+            r.addWrapped(textButton("Rename") { ProfileUi.rename(this@SettingsActivity, p.id) { render() } }.apply { tag = "profile-rename:$key" })
+            if (p.id != current && p.id != Profiles.DEFAULT) {
+                r.addWrapped(textButton("Delete", colorBad) { ProfileUi.delete(this@SettingsActivity, p.id) { render() } }.apply { tag = "profile-delete:$key" })
+            }
+            add(r, dp(8))
+        }
+        add(outlineButton("New profile…") {
+            ProfileUi.add(this@SettingsActivity) { ProfileUi.switchTo(this@SettingsActivity, it.id) }
+        }.apply { tag = "new-profile" }, dp(12))
     }
 
     // ---------------------------------------------------------------- backup

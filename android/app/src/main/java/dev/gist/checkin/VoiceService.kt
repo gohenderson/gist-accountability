@@ -28,7 +28,7 @@ import java.util.Locale
  */
 class VoiceService : Service() {
     private val handler = Handler(Looper.getMainLooper())
-    private val queue = ArrayDeque<String>() // check-in ids waiting to play
+    private val queue = ArrayDeque<Pair<String, String>>() // (profile, check-in id) waiting to play
     private var playing = false
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -46,18 +46,18 @@ class VoiceService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(ID, notification(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        intent?.getStringExtra(EXTRA_CHECKIN)?.let { queue.addLast(it) }
+        intent?.getStringExtra(EXTRA_CHECKIN)?.let { queue.addLast((intent.getStringExtra(Profiles.EXTRA) ?: Profiles.DEFAULT) to it) }
         if (!playing) next()
         return START_NOT_STICKY
     }
 
     private fun next() {
-        val id = queue.removeFirstOrNull()
-        if (id == null) {
+        val (profile, id) = queue.removeFirstOrNull() ?: run {
             stopSelf()
             return
         }
-        val c = Store(this).checkin(id)
+        val ctx = Profiles.scoped(this, profile) // its own profile's check-in and clip
+        val c = Store(ctx).checkin(id)
         if (c == null) {
             next()
             return
@@ -68,8 +68,8 @@ class VoiceService : Service() {
             return
         }
         playing = true
-        val clip = Backgrounds.voiceFile(this, c.id)
-        val useClip = c.voiceSource == Checkin.VOICE_CLIP && Backgrounds.hasVoice(this, c.id)
+        val clip = Backgrounds.voiceFile(ctx, c.id)
+        val useClip = c.voiceSource == Checkin.VOICE_CLIP && Backgrounds.hasVoice(ctx, c.id)
         lastPlayed = if (useClip) CLIP else spokenText(c)
         plays++
         requestFocus()
@@ -182,7 +182,7 @@ class VoiceService : Service() {
 
         /** Plays [c] now. */
         fun play(context: Context, c: Checkin) {
-            val i = Intent(context, VoiceService::class.java).putExtra(EXTRA_CHECKIN, c.id)
+            val i = Profiles.tag(Intent(context, VoiceService::class.java).putExtra(EXTRA_CHECKIN, c.id), context)
             try {
                 context.startForegroundService(i)
             } catch (e: Exception) {

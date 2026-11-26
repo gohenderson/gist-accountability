@@ -170,7 +170,7 @@ class DeviceMedia(
         return null
     }
 
-    private fun root() = File(context.filesDir, "backgrounds")
+    private fun root() = File(Profiles.filesDir(context), "backgrounds")
 
     /** The media files check-in [id] has here now: name → hash. */
     private fun current(id: String): Map<String, String> {

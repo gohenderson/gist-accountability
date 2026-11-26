@@ -101,9 +101,14 @@ object AlarmScheduler {
     /** Call when a check-in is deleted. */
     fun cancel(context: Context, checkinId: String) {
         val am = context.getSystemService(AlarmManager::class.java)
-        am.cancel(broadcast(context, checkinId, test = false))
-        am.cancel(broadcast(context, checkinId, test = true))
-        am.cancel(snoozeBroadcast(context, Pending(checkinId, "", "")))
+        listOf(
+            broadcast(context, checkinId, test = false),
+            broadcast(context, checkinId, test = true),
+            snoozeBroadcast(context, Pending(checkinId, "", "")),
+        ).forEach {
+            am.cancel(it)
+            it.cancel() // gone with the check-in
+        }
         LocationTriggers.remove(context, checkinId)
     }
 
@@ -128,10 +133,11 @@ object AlarmScheduler {
             .putExtra(EXTRA_CHECKIN, p.checkinId)
             .putExtra(EXTRA_TEST, p.practice)
             .putExtra(EXTRA_SNOOZE, true)
+        Profiles.distinct(intent, context, "snooze/${p.checkinId}")
         if (p.time.isNotEmpty()) intent.putExtra(EXTRA_TIME, p.time)
         if (p.day.isNotEmpty()) intent.putExtra(EXTRA_DAY, p.day)
         return PendingIntent.getBroadcast(
-            context, (p.checkinId.hashCode() and 0x3FFFFFFF) * 2, intent,
+            context, (Profiles.hash(context, p.checkinId) and 0x3FFFFFFF) * 2, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
     }
@@ -176,10 +182,11 @@ object AlarmScheduler {
         time: String? = null,
         day: String? = null,
     ): PendingIntent {
-        val requestCode = (checkinId.hashCode() and 0x3FFFFFFF) * 2 + (if (test) 1 else 0)
+        val requestCode = (Profiles.hash(context, checkinId) and 0x3FFFFFFF) * 2 + (if (test) 1 else 0)
         val intent = Intent(context, AlarmReceiver::class.java)
             .putExtra(EXTRA_CHECKIN, checkinId)
             .putExtra(EXTRA_TEST, test)
+        Profiles.distinct(intent, context, "ring/$checkinId/$test")
         if (time != null) intent.putExtra(EXTRA_TIME, time)
         if (day != null) intent.putExtra(EXTRA_DAY, day)
         return PendingIntent.getBroadcast(
