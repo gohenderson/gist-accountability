@@ -46,6 +46,7 @@ class ConnectionsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        tryWaiting(quiet = true)
         render()
         Connections.syncInBackground(this) { render() }
         Devices.syncInBackground(this) { render() }
@@ -68,15 +69,16 @@ class ConnectionsActivity : BaseActivity() {
             setOnFocusChangeListener { _, has -> if (!has) links.myName = text.toString() }
         }, dp(4))
         col.add(me, dp(20))
+        col.add(gistFolderCard(), dp(12))
         col.add(devicesCard(), dp(12))
 
         // New
         val add = card()
         add.add(sectionTitle("New connection"))
-        add.add(label("Each connection uses its own folder that both copies of Gist can reach: on one phone, any " +
-            "folder (say Documents/GistLink); between phones, a folder Syncthing keeps in step. One side invites " +
-            "(picks an empty folder and shows an invite code), the other joins (scans or types the code, then " +
-            "picks the same folder). What you share is encrypted, and only you can change it.", 15f), dp(6))
+        add.add(label("One side invites: Gist makes a folder for the connection in your Gist folder (People/Jess, " +
+            "say) and shows an invite code; share that folder with them in Syncthing. The other joins: scans or " +
+            "types the code, and Gist finds the folder once Syncthing brings it. What you share is encrypted, and " +
+            "only you can change it.", 15f), dp(6))
         val r = row()
         r.addWeighted(primaryButton("Invite…") { pick(REQ_INVITE) }.apply { tag = "invite" })
         r.addWeighted(outlineButton("Join…") { askForInvite('c') }.apply { tag = "join" }, startMargin = dp(8))
@@ -99,6 +101,106 @@ class ConnectionsActivity : BaseActivity() {
         setContentView(screen(col))
     }
 
+    /** The one folder everything syncs through, and a join waiting for its folder. */
+    private fun gistFolderCard() = card().apply {
+        val gf = GistFolder(this@ConnectionsActivity)
+        add(sectionTitle("Your Gist folder"))
+        val root = gf.root
+        if (root == null) {
+            add(label("Pick one folder for Gist to sync through (say Documents/Gist). Gist keeps a folder in it for " +
+                "your devices (My devices) and one for each person you connect with (People/Jess). In Syncthing, " +
+                "share each of those, not the Gist folder itself.", 15f), dp(6))
+            add(primaryButton("Pick the Gist folder…") { startPick(REQ_ROOT) }.apply { tag = "gist-folder-pick" }, dp(10))
+        } else {
+            add(label(folderName(root), 15f).apply { tag = "gist-folder" }, dp(6))
+            add(muted("My devices: share it with your devices in Syncthing. People: one folder per connection, " +
+                "each shared with that person only.", 13f), dp(4))
+            add(textButton("Change…") { startPick(REQ_ROOT) }.apply { tag = "gist-folder-change" }, dp(4))
+        }
+        gf.waiting?.let { w ->
+            val what = if (w.startsWith("d:")) "My devices" else "their folder"
+            add(label("Waiting for $what to arrive. Accept the Syncthing share into " +
+                (if (w.startsWith("d:")) "your Gist folder as My devices" else "People in your Gist folder") +
+                "; Gist joins as soon as it's there.", 15f, color = colorWarn).apply { tag = "join-waiting" }, dp(10))
+            val r = row()
+            r.addWeighted(outlineButton("Look again") { tryWaiting(quiet = false) }.apply { tag = "join-look" })
+            r.addWeighted(textButton("Pick it myself…") {
+                pendingInvite = w.substring(2)
+                gf.waiting = null
+                startPick(if (w.startsWith("d:")) REQ_DEVICES_JOIN else REQ_JOIN)
+            }.apply { tag = "join-pick" }, startMargin = dp(8))
+            add(r, dp(6))
+            add(textButton("Cancel") { gf.waiting = null; render() }.apply { tag = "join-cancel" }, dp(2))
+        }
+    }
+
+    private fun folderName(location: String): String = try {
+        android.provider.DocumentsContract.getTreeDocumentId(android.net.Uri.parse(location)).substringAfter(':').ifEmpty { "Your storage" }
+    } catch (e: Exception) { location }
+
+    /** Joins with the invite waiting for its folder, if the folder's there now. */
+    private fun tryWaiting(quiet: Boolean) {
+        val gf = GistFolder(this)
+        val w = gf.waiting ?: return
+        val inv = LinkInvite.parse(w.substring(2)) ?: run { gf.waiting = null; return }
+        if (joinInGistFolder(inv, quiet)) gf.waiting = null
+        render()
+    }
+
+    /**
+     * Joins with [inv] in the Gist folder: your devices in My devices, a connection in the
+     * folder under People that it's for. False when the folder isn't there yet.
+     */
+    private fun joinInGistFolder(inv: LinkInvite, quiet: Boolean): Boolean {
+        val gf = GistFolder(this)
+        try {
+            if (inv.kind == 'd') {
+                val loc = gf.devices() ?: return false
+                if (Devices(this).folder != null) { toast("This device already syncs with your devices."); return true }
+                return when (Devices(this).join(loc, inv)) {
+                    null -> { toast("Joined. Open Gist on the device that showed the invite to let this one in."); Devices.syncInBackground(this) { render() }; true }
+                    else -> { if (!quiet) toast("My devices isn't here yet, or the invite's device isn't in it yet."); false }
+                }
+            }
+            val loc = links.findInvited(gf.people().values, inv)
+                ?: run { if (!quiet) toast("Their folder isn't in People yet."); return false }
+            val (l, problem) = links.join(loc, inv)
+            if (problem != null || l == null) return false
+            toast("Connected with ${l.peerName.ifEmpty { "them" }}")
+            Connections.syncInBackground(this) { render() }
+            return true
+        } catch (e: Exception) {
+            if (!quiet) toast("Couldn't read the Gist folder: pick it again.")
+            return false
+        }
+    }
+
+    /** Who's the new connection for: the folder's named for them. */
+    private fun askWhoFor() {
+        val field = EditText(this).apply {
+            hint = "e.g. Jess"
+            tag = "invite-who"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            isSingleLine = true
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Who's it for?")
+            .setMessage("Gist makes a folder for it in People in your Gist folder, named for them.")
+            .setView(column().apply { setPadding(dp(24), dp(8), dp(24), dp(8)); add(field) })
+            .setPositiveButton("Invite") { _, _ ->
+                val loc = GistFolder(this).newPerson(field.text.toString()) ?: return@setPositiveButton
+                try {
+                    val l = links.invite(loc)
+                    render()
+                    showLinkInvite(l, loc.substringAfterLast('#').substringAfter("${GistFolder.PEOPLE}/"))
+                } catch (e: Exception) {
+                    toast("Couldn't make the folder: pick your Gist folder again.")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** Your own devices: everything kept in step between them; whether this one rings. */
     private fun devicesCard() = card().apply {
         val devices = Devices(this@ConnectionsActivity)
@@ -106,10 +208,10 @@ class ConnectionsActivity : BaseActivity() {
         add(sectionTitle("Your devices"))
         if (devices.folder == null) {
             add(label("Keep all your check-ins, tasks and answers in step on your phone and tablet (say). Set up on " +
-                "one (pick an empty folder); then, for each other device, tap Add a device on one that's in and " +
-                "Join on the new one (scan or type its code, then pick the same folder, kept in step by Syncthing).", 15f), dp(6))
+                "one: Gist makes My devices in your Gist folder; share it with your other devices in Syncthing. " +
+                "Then, for each, tap Add a device on one that's in and Join on the new one (scan or type its code).", 15f), dp(6))
             val r = row()
-            r.addWeighted(primaryButton("Set up…") { pick(REQ_DEVICES_SETUP) }.apply { tag = "devices-setup" })
+            r.addWeighted(primaryButton("Set up…") { setUpDevices() }.apply { tag = "devices-setup" })
             r.addWeighted(outlineButton("Join…") { askForInvite('d') }.apply { tag = "devices-join" }, startMargin = dp(8))
             add(r, dp(12))
         } else {
@@ -222,11 +324,22 @@ class ConnectionsActivity : BaseActivity() {
             .setTitle("Keep it on this device?")
             .setMessage("This device takes over reading and sharing for ${l.peerName.ifEmpty { "this connection" }}, " +
                 "and $home stops once it hears. Do this when $home is gone or won't be opening Gist: if both share " +
-                "at once before hearing, changes can clash.\n\nNext, pick the connection's folder as this device " +
-                "reaches it (the one Syncthing keeps in step).")
-            .setPositiveButton("Pick the folder") { _, _ ->
-                pendingAdopt = l.id
-                pick(REQ_ADOPT)
+                "at once before hearing, changes can clash. Its folder needs to be on this device too (in People in " +
+                "your Gist folder, or you'll be asked to pick it).")
+            .setPositiveButton("Go ahead") { _, _ ->
+                val found = GistFolder(this).people().values.firstOrNull { loc ->
+                    try { LinkProtocol.linkId(LinkFolder.open(this, loc)) == l.id } catch (e: Exception) { false }
+                }
+                if (found != null && links.adopt(l.id, found) == null) {
+                    toast("Kept on this device now.")
+                    render()
+                    Devices.syncInBackground(this) { render() }
+                    Connections.syncInBackground(this) { render() }
+                } else {
+                    toast("Pick the connection's folder.")
+                    pendingAdopt = l.id
+                    startPick(REQ_ADOPT)
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -247,11 +360,29 @@ class ConnectionsActivity : BaseActivity() {
             .show()
     }
 
-    private fun showLinkInvite(l: Link) {
+    private fun showLinkInvite(l: Link, person: String? = null) {
+        val folder = person ?: l.folder.substringAfter('#', "").substringAfter("${GistFolder.PEOPLE}/").ifEmpty { null }
         links.invitation(l)?.let { (inv, until) ->
-            showInvite("Invite", "On the other phone (or Gist B), open Connections, tap Join, scan this (or type the " +
-                "code), then pick the same folder.", inv, until)
+            showInvite("Invite", (if (folder != null) "In Syncthing, share People/$folder (in your Gist folder) with " +
+                "them. " else "") + "On their phone (or Gist B), they open Connections, tap Join and scan this (or " +
+                "type the code).", inv, until)
         }
+    }
+
+    private fun setUpDevices() {
+        val gf = GistFolder(this)
+        val loc = gf.devices() ?: return startPick(REQ_DEVICES_SETUP)
+        try {
+            if (Devices.groupOf(LinkFolder.open(this, loc)) != null) {
+                toast("My devices is already set up in your Gist folder: tap Join instead.")
+                return
+            }
+            Devices(this).setUp(loc)
+            toast("Set up. In Syncthing, share My devices (in your Gist folder) with your other devices.")
+        } catch (e: Exception) {
+            toast("Couldn't make My devices: pick your Gist folder again.")
+        }
+        render()
     }
 
     /** Shows [inv] as a QR code and a code to type, until [until]. */
@@ -331,6 +462,10 @@ class ConnectionsActivity : BaseActivity() {
             inv == null -> toast("That isn't a Gist invite code: check it and try again.")
             inv.kind != kind -> toast(if (kind == 'c') "That's an invite for your devices: use Join under Your devices."
                 else "That's an invite for a connection: use Join under New connection.")
+            GistFolder(this).root != null -> {
+                if (!joinInGistFolder(inv, quiet = true)) GistFolder(this).waiting = "$kind:${inv.code}"
+                render()
+            }
             else -> {
                 pendingInvite = inv.code
                 toast("Now pick the same folder they picked.")
@@ -339,12 +474,17 @@ class ConnectionsActivity : BaseActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun pick(request: Int) {
         if (links.myName.isBlank() && request in setOf(REQ_INVITE, REQ_JOIN)) {
             toast("Add your name first, so they know it's you.")
             return
         }
+        if (request == REQ_INVITE && GistFolder(this).root != null) return askWhoFor()
+        startPick(request)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun startPick(request: Int) {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), request)
     }
 
@@ -367,6 +507,11 @@ class ConnectionsActivity : BaseActivity() {
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         try {
             when (requestCode) {
+                REQ_ROOT -> {
+                    GistFolder(this).root = uri.toString()
+                    tryWaiting(quiet = true)
+                    render()
+                }
                 REQ_DEVICES_SETUP -> {
                     val f = LinkFolder.open(this, uri.toString())
                     if (Devices.groupOf(f) != null) {
@@ -437,6 +582,7 @@ class ConnectionsActivity : BaseActivity() {
         private const val STATE_INVITE = "pendingInvite"
         private const val STATE_ADOPT = "pendingAdopt"
         private const val REQ_ADOPT = 27
+        private const val REQ_ROOT = 28
 
         fun intent(context: Context) = Intent(context, ConnectionsActivity::class.java)
     }

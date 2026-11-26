@@ -54,21 +54,28 @@ interface LinkFolder {
     fun delete(path: String)
 
     companion object {
-        /** A folder picked with the folder picker ("content://…"). */
+        /**
+         * A folder picked with the folder picker ("content://…"), or a folder inside one
+         * ("content://…#People/Jess": see [GistFolder]).
+         */
         fun open(context: Context, location: String): LinkFolder {
-            require(location.startsWith("content://")) { "Not a folder picked for a connection" }
-            return SafFolder(context.contentResolver, Uri.parse(location))
+            val base = location.substringBefore('#')
+            val sub = location.substringAfter('#', "")
+            require(base.startsWith("content://")) { "Not a folder picked for a connection" }
+            val saf = SafFolder(context.contentResolver, Uri.parse(base))
+            return if (sub.isEmpty()) saf else SubFolder(saf, sub)
         }
     }
 }
 
 /**
- * Paths inside a connection's folder: plain names joined by "/", nothing that could reach
- * outside it ("..", ".", empty parts, backslashes). Names come partly from the other side
+ * Paths inside a connection's folder: names joined by "/", nothing that could reach outside
+ * it ("..", ".", empty parts, backslashes) or hidden (a leading dot). Names come partly from the other side
  * (their side id), so they're checked before use.
  */
 object LinkPath {
-    private val part = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+    // A name: not hidden (no leading dot), no slashes, colons or control characters.
+    private val part = Regex("""[^./\\:\x00-\x1f][^/\\:\x00-\x1f]{0,63}""")
 
     fun parts(path: String): List<String> {
         val parts = path.split('/')
@@ -77,6 +84,15 @@ object LinkPath {
         }
         return parts
     }
+}
+
+/** Folder [sub] (say "People/Jess") inside [base]: what it holds, as a folder of its own. */
+class SubFolder(private val base: LinkFolder, sub: String) : LinkFolder {
+    private val prefix = LinkPath.parts(sub).joinToString("/")
+    override fun read(path: String) = base.read("$prefix/$path")
+    override fun write(path: String, bytes: ByteArray) = base.write("$prefix/$path", bytes)
+    override fun names(dir: String) = base.names(if (dir.isEmpty()) prefix else "$prefix/$dir")
+    override fun delete(path: String) = base.delete("$prefix/$path")
 }
 
 /** A folder picked with Android's folder picker (the Storage Access Framework), e.g. Documents/GistLink. */
