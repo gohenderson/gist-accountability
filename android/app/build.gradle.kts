@@ -20,7 +20,7 @@ android {
     // import them (SharedBackupTest), so both apps read the same files the same way.
     sourceSets["androidTest"].assets.srcDir("../../shared/backups")
     // Sync test files shared with the iOS app (shared/sync): SyncVectorsTest.
-    sourceSets["androidTest"].assets.srcDir("../../shared/sync")
+    sourceSets["androidTest"].assets.srcDir("../../shared/sync/files")
 
     defaultConfig {
         applicationId = if (peer) "dev.gist.checkin.peer" else "dev.gist.checkin"
