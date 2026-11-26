@@ -177,6 +177,22 @@ class Devices(
         useKey(key, next, side, gone)
     }
 
+    /**
+     * Removes the keys this device sealed for others ([others]) once they have them: their
+     * snapshot opens with the key in use.
+     */
+    private fun forgetPickedUpKeys(f: LinkFolder, id: String, key: ByteArray, others: List<String>) {
+        val dir = LinkProtocol.dir(side)
+        val mine = f.names(dir).toSet()
+        for (s in others) {
+            val sealed = listOf("key-$s.gist", "rekey-$s.gist").filter { it in mine }
+            if (sealed.isEmpty()) continue
+            val snap = "${LinkProtocol.dir(s)}/snapshot.gist"
+            val has = f.read(snap)?.let { LinkCrypto.open(key, "$id/$snap", it) } != null
+            if (has) sealed.forEach { f.delete("$dir/$it") }
+        }
+    }
+
     /** Removes the keys this device sealed for removed devices (theirs to open no more). */
     private fun forgetKeysFor(f: LinkFolder, gone: kotlin.collections.Set<String>) {
         val dir = LinkProtocol.dir(side)
@@ -301,8 +317,14 @@ class Devices(
                 .putBoolean(K_REPUBLISH, false).commit()
         }
         LinkProtocol.writeReceipts(f, side, got)
-        LinkProtocol.cleanUp(f, side, others)
+        if (others.isEmpty()) {
+            // The only device: no one to wait for (a device that joins starts from the snapshot).
+            f.names(LinkProtocol.dir(side)).filter { CHANGE.matches(it) }.forEach { f.delete("${LinkProtocol.dir(side)}/$it") }
+        } else {
+            LinkProtocol.cleanUp(f, side, others)
+        }
         media.cleanUp(f, side, others, prefs.getInt(K_SENT_SEQ, 0))
+        forgetPickedUpKeys(f, id, key, others)
         return changed
     }
 
@@ -445,6 +467,7 @@ class Devices(
         private val SYNC = Any()
 
         private const val ORDER = "o:list"
+        private val CHANGE = Regex("\\d{6}\\.gist")
 
         /** The key in a let-in file: just the key (older devices), or JSON with its generation. */
         fun keyOf(bytes: ByteArray): ByteArray? = if (bytes.size == 32) bytes else try {

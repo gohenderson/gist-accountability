@@ -590,4 +590,32 @@ class DevicesTest {
         assertEquals(2, devPrefs.getInt("epoch", 0))
         assertEquals(listOf(tab), devices.others().map { it.first })
     }
+
+    // ------------------------------------------------------------ tidying the folder
+
+    @Test
+    fun aDeviceOnItsOwnKeepsJustItsSnapshot() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        devices.sync()
+        store.updateCheckin("a") { it.copy(name = "Alpha 2") }
+        devices.sync()
+        val mine = f.names("from-${devices.side}")
+        assertTrue(mine.none { Regex("\\d{6}\\.gist").matches(it) })
+        assertTrue("snapshot.gist" in mine)
+    }
+
+    @Test
+    fun aKeyIsRemovedOnceTheOtherDeviceHasIt() {
+        TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha")))
+        devices.setUp(dir.path)
+        val key = tabletJoins()
+        val name = "from-${devices.side}/key-$tab.gist"
+        devices.sync()
+        assertNotNull("not picked up yet", f.read(name))
+        // The tablet publishes with the key: it has it.
+        tabletHas(key, mapOf("c:t" to json(TestEnv.checkin("t", "Tablet's"))))
+        devices.sync()
+        assertNull(f.read(name))
+    }
 }
