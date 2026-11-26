@@ -651,7 +651,7 @@ extension String {
 /// Read-only; Add to my list when you may do it.
 struct SharedCard: View {
     @Environment(AppModel.self) private var model
-    let link: Link
+    let link: Connection
     let checkin: Checkin
     @State private var added = false
 

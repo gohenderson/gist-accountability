@@ -194,7 +194,7 @@ final class AppModel {
 
     /// Adds [item] that [l] shares to your list.
     @discardableResult
-    func addShared(_ l: Link, _ item: Checkin) -> Checkin? {
+    func addShared(_ l: Connection, _ item: Checkin) -> Checkin? {
         let c = sync.connections.addToMyList(l, item, data: &data)
         save()
         rescheduleSoon()

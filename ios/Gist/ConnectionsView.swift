@@ -17,10 +17,10 @@ struct ConnectionsView: View {
     @State private var askingWho = false
     @State private var who = ""
     @State private var message: String?
-    @State private var confirmRemove: Link?
+    @State private var confirmRemove: Connection?
     @State private var confirmRemoveDevice: (side: String, name: String)?
     @State private var confirmLeave = false
-    @State private var confirmAdopt: Link?
+    @State private var confirmAdopt: Connection?
     /// A scanned or typed invite waiting for its folder to be picked (no Gist folder yet).
     @State private var pendingInvite: LinkInvite?
     @State private var adopting: String?
@@ -39,6 +39,8 @@ struct ConnectionsView: View {
     }
 
     private var parts: SyncParts { model.sync }
+
+    init() {}
 
     var body: some View {
         let _ = model.syncRevision
@@ -189,7 +191,8 @@ struct ConnectionsView: View {
                 if others.isEmpty {
                     Text("No other devices yet: tap Add a device, then Join on the other device.").foregroundStyle(Theme.muted)
                 }
-                ForEach(others, id: \.side) { o in
+                ForEach(others.indices, id: \.self) { i in
+                    let o = others[i]
                     HStack {
                         VStack(alignment: .leading) {
                             Text("\(o.name) · code \(o.code)").accessibilityIdentifier("device:\(o.side)")
@@ -245,7 +248,7 @@ struct ConnectionsView: View {
 
     @State private var invitingByPick = false
 
-    @ViewBuilder private func linkSection(_ l: Link) -> some View {
+    @ViewBuilder private func linkSection(_ l: Connection) -> some View {
         Section {
             Text(l.connected ? (l.peerName.isEmpty ? "Someone" : l.peerName) : "Waiting for someone to join…")
                 .font(.headline)
@@ -341,15 +344,23 @@ struct ConnectionsView: View {
     }
 
     static func problem(_ e: Error) -> String {
-        switch e {
-        case Connections.JoinProblem.notAConnection: return "There's no invite to join in that folder."
-        case Connections.JoinProblem.alreadyYours: return "You're already in that connection."
-        case Connections.JoinProblem.notTheirInvite: return "That invite isn't for the connection in that folder."
-        case Devices.JoinProblem.notDevices: return "That folder isn't set up for your devices: tap Set up on one of them first."
-        case Devices.JoinProblem.notTheirInvite: return "That invite isn't from a device in that folder."
-        case Connections.AdoptProblem.notItsFolder: return "That isn't this connection's folder: pick the one you share with the other person."
-        default: return "Gist couldn't use that folder: \(e.localizedDescription)"
+        if let p = e as? Connections.JoinProblem {
+            switch p {
+            case .notAConnection: return "There's no invite to join in that folder."
+            case .alreadyYours: return "You're already in that connection."
+            case .notTheirInvite: return "That invite isn't for the connection in that folder."
+            }
         }
+        if let p = e as? Devices.JoinProblem {
+            switch p {
+            case .notDevices: return "That folder isn't set up for your devices: tap Set up on one of them first."
+            case .notTheirInvite: return "That invite isn't from a device in that folder."
+            }
+        }
+        if let p = e as? Connections.AdoptProblem, p == .notItsFolder {
+            return "That isn't this connection's folder: pick the one you share with the other person."
+        }
+        return "Gist couldn't use that folder: \(e.localizedDescription)"
     }
 
     private func setUpDevices() {
@@ -377,7 +388,7 @@ struct ConnectionsView: View {
         }
     }
 
-    private func showLinkInvite(_ l: Link, person: String? = nil) {
+    private func showLinkInvite(_ l: Connection, person: String? = nil) {
         let folder = person ?? (l.folder.contains("#\(GistFolder.peopleName)/") ? String(l.folder.split(separator: "/").last ?? "") : nil)
         guard let i = parts.connections.invitation(l) else { return }
         showing = ShownInvite(title: "Invite",
@@ -441,7 +452,7 @@ struct ConnectionsView: View {
         }
     }
 
-    private func adopt(_ l: Link) {
+    private func adopt(_ l: Connection) {
         let found = parts.gistFolder.people().values.first { loc in
             (try? FolderAccess.folder(loc)).flatMap { LinkProtocol.linkId($0) } == l.id
         }

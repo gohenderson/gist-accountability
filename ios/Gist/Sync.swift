@@ -18,6 +18,7 @@ final class DefaultsPrefs: SyncPrefs {
 /// A location is "bm:<id>" (a picked folder), or a plain path (UI tests), with "#People/Jess"
 /// for a folder inside it.
 enum FolderAccess {
+    struct Unreachable: Error {}
     private static let prefs = DefaultsPrefs("gist-bookmarks")
     private static var open: [String: URL] = [:]
 
@@ -41,10 +42,10 @@ enum FolderAccess {
 
     static func url(_ base: String) throws -> URL {
         if base.hasPrefix("/") { return URL(fileURLWithPath: base) }
-        guard base.hasPrefix("bm:") else { throw LinkPath.BadPath() }
+        guard base.hasPrefix("bm:") else { throw Unreachable() }
         let id = String(base.dropFirst(3))
         if let u = open[id] { return u }
-        guard let text = prefs.string(id), let data = Data(base64Encoded: text) else { throw LinkPath.BadPath() }
+        guard let text = prefs.string(id), let data = Data(base64Encoded: text) else { throw Unreachable() }
         var stale = false
         let u = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
         _ = u.startAccessingSecurityScopedResource()
