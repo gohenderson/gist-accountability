@@ -425,27 +425,27 @@ they see what you share, but only you can change it, and the other way round.
 
   ```
   Gist/
-    My devices/      shared in Syncthing with your own devices
+    My devices/      shared with your own devices
     People/
       Jess/          shared with Jess only (one folder per connection)
   ```
 
-  Don't share the Gist folder itself in Syncthing; share each folder in it.
+  Don't share the Gist folder itself; share each folder in it.
 - **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
   and says who it's for: Gist makes People/Jess and shows an **invite**, a QR code with a
-  code under it (like `AFYW-…`). Share People/Jess with them in Syncthing. The other taps
+  code under it (like `AFYW-…`). Share People/Jess with them. The other taps
   **Join…** and **scans** the QR code (or taps **Type the code**, for a device without a
-  camera). Gist finds their folder under People once Syncthing has brought it; until then
+  camera). Gist finds their folder under People once it has arrived; until then
   it says it's waiting, and joins by itself as soon as it's there (or **Pick it myself…**
-  if Syncthing put it somewhere else).
+  if the shared folder landed somewhere else).
 - **The invite is the key to the door.** It never goes in the folder, so someone who can
   see the folder but not your screen can't join. It works **once**, for **15 minutes**;
   **Show the invite** (on a connection still waiting) shows it again, or a new one if it
   ran out. Pass it in person or over a channel you trust, not through the shared folder.
   Both phones then show the same **code** (like `4F7A-91C2`), which you can still compare.
-- **Between phones** the folder has to be kept in step by
-  [Syncthing](https://syncthing.net) (on Android, Syncthing-Fork). Gist never goes online
-  itself. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
+- **Between phones** the folders have to be kept in step by an app that shares folders
+  between devices, such as [Syncthing](https://syncthing.net). Gist never goes online
+  itself, and works with whatever keeps the folders in step. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
   page): a second copy with its own data. Both can pick the same folder, say
   Documents/GistLink.
 - **Share with…** on a check-in's or task's page (Details) picks which connections see
@@ -473,11 +473,11 @@ they see what you share, but only you can change it, and the other way round.
 
 **Settings → Connections → Your devices** keeps everything on your phone and tablet (say)
 in step: check-ins, tasks and answers. **Set up…** on one: Gist makes **My devices** in your
-Gist folder; share it with your other devices in Syncthing (into their Gist folders, as My
+Gist folder; share it with your other devices (into their Gist folders, as My
 devices). Then, for each of the others: tap **Add a device…** on one that's in, which shows
 an invite (a QR code and a code to type, good once for 15 minutes); on the new one tap
 **Join…** and scan or type it; Gist finds My devices by itself (waiting for it if
-Syncthing hasn't brought it yet). The new
+it hasn't arrived yet). The new
 device waits to be let in until Gist opens on the one that showed the invite; only that
 device lets it in, and the new one takes the shared key only from it. Each pair then shows
 the same code.
@@ -498,7 +498,7 @@ the same code.
   that's open stay per device.
 - **Photos, videos and voice clips.** A check-in's background photos or video and its
   voice clip reach your other devices too (the later change wins). Each file goes in the
-  folder once, encrypted, so Syncthing copies it once; a device that gets the change
+  folder once, encrypted, so it's copied between devices once; a device that gets the change
   before the file waits for it. They're as big as Gist lets them be anywhere: photos are
   shrunk when you pick them, and videos and clips have a size limit.
 - **Stopping or removing a device.** **Stop syncing on this device** keeps everything on it

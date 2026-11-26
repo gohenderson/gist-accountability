@@ -81,7 +81,7 @@ class GistFolderTest {
 
     @Test
     fun joiningFindsTheFolderTheInviteIsFor() {
-        // Two people have invited this phone; their folders arrived (Syncthing) under People.
+        // Two people have invited this phone; their shared folders arrived under People.
         val jess = LinkCrypto.newKeyPair()
         val sam = LinkCrypto.newKeyPair()
         LinkProtocol.invite(FileFolder(File(dir, "People/Jess")), "link-j", LinkHello("jess", "Jess", jess.first))
