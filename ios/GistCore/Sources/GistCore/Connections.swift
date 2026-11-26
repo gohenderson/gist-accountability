@@ -15,7 +15,7 @@ public final class MemoryPrefs: SyncPrefs {
 }
 
 /// A connection with someone else's Gist, through a folder you both can reach. As on Android.
-public struct Link: Equatable {
+public struct Connection: Equatable {
     public var id: String
     /// Where its folder is ("" for one kept on another of your devices).
     public var folder: String
@@ -72,10 +72,10 @@ public struct Link: Equatable {
         ])
     }
 
-    static func from(_ o: JSONObject) -> Link? {
+    static func from(_ o: JSONObject) -> Connection? {
         guard let id = o["id"]?.stringValue, let side = o["side"]?.stringValue,
               let pub = o["publicKey"]?.stringValue, let priv = o["privateKey"]?.stringValue else { return nil }
-        var l = Link(id: id, folder: o.string("folder"), side: side, publicKey: pub, privateKey: priv)
+        var l = Connection(id: id, folder: o.string("folder"), side: side, publicKey: pub, privateKey: priv)
         func opt(_ k: String) -> String? { o[k]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } }
         l.peer = opt("peer")
         l.peerName = o.string("peerName")
@@ -124,24 +124,24 @@ public final class Connections {
     }
 
     /// The connections this device is home for (it reads and publishes for them).
-    public var here: [Link] {
+    public var here: [Connection] {
         guard let s = prefs.string(Self.kLinks), case .array(let a)? = try? JSONText.parse(s) else { return [] }
-        return a.compactMap { $0.objectValue.flatMap(Link.from) }
+        return a.compactMap { $0.objectValue.flatMap(Connection.from) }
     }
 
     /// Every connection: those kept here, then those kept on your other devices.
-    public var all: [Link] {
+    public var all: [Connection] {
         let h = here
         return h + remote().filter { r in !h.contains { $0.id == r.id } }
     }
 
-    public func get(_ id: String) -> Link? { all.first { $0.id == id } }
+    public func get(_ id: String) -> Connection? { all.first { $0.id == id } }
 
-    func save(_ list: [Link]) {
+    func save(_ list: [Connection]) {
         prefs.set(Self.kLinks, JSONText.string(.array(list.map { .object($0.json) })))
     }
 
-    func update(_ id: String, _ change: (inout Link) -> Void) {
+    func update(_ id: String, _ change: (inout Connection) -> Void) {
         save(here.map { l in
             var l = l
             if l.id == id { change(&l) }
@@ -164,10 +164,10 @@ public final class Connections {
     static func tokenText() -> String { LinkInvites.newToken().base64EncodedString() }
 
     /// Starts a connection in [folder] (empty, or not yet a connection), with an invite to pass on.
-    public func invite(folder: String, now: Int = GistData.nowMs) throws -> Link {
+    public func invite(folder: String, now: Int = GistData.nowMs) throws -> Connection {
         let f = try openFolder(folder)
         let (pub, priv) = LinkCrypto.newKeyPair()
-        var l = Link(id: Ids.new() + Ids.new(), folder: folder, side: Ids.new(), publicKey: pub, privateKey: priv)
+        var l = Connection(id: Ids.new() + Ids.new(), folder: folder, side: Ids.new(), publicKey: pub, privateKey: priv)
         l.inviteToken = Self.tokenText()
         l.inviteExpires = now + LinkInvites.validMs
         l.needsProof = true
@@ -178,7 +178,7 @@ public final class Connections {
     }
 
     /// [l]'s invite to show (a new one if it ran out), or nil once someone's joined.
-    public func invitation(_ l: Link, now: Int = GistData.nowMs) -> (invite: LinkInvite, expires: Int)? {
+    public func invitation(_ l: Connection, now: Int = GistData.nowMs) -> (invite: LinkInvite, expires: Int)? {
         guard !l.connected, l.isHere else { return nil }
         var cur = get(l.id) ?? l
         if cur.inviteToken == nil || cur.inviteExpires < now {
@@ -207,14 +207,14 @@ public final class Connections {
     public enum JoinProblem: Error { case notAConnection, alreadyYours, notTheirInvite }
 
     /// Joins the connection in [folder] with [invite]: only if the inviter's key there is the one it names.
-    public func join(folder: String, invite: LinkInvite, now: Int = GistData.nowMs) throws -> Link {
+    public func join(folder: String, invite: LinkInvite, now: Int = GistData.nowMs) throws -> Connection {
         let f = try openFolder(folder)
         guard let id = LinkProtocol.linkId(f) else { throw JoinProblem.notAConnection }
         guard !all.contains(where: { $0.id == id }) else { throw JoinProblem.alreadyYours }
         guard let inviter = LinkProtocol.sides(f, mySide: "").compactMap({ LinkProtocol.hello(f, $0) })
             .first(where: { LinkInvites.fingerprint($0.key) == invite.fingerprint }) else { throw JoinProblem.notTheirInvite }
         let (pub, priv) = LinkCrypto.newKeyPair()
-        var l = Link(id: id, folder: folder, side: Ids.new(), publicKey: pub, privateKey: priv)
+        var l = Connection(id: id, folder: folder, side: Ids.new(), publicKey: pub, privateKey: priv)
         l.peer = inviter.side
         l.peerName = inviter.name
         l.peerKey = inviter.key
@@ -251,7 +251,7 @@ public final class Connections {
         return changed
     }
 
-    func syncOne(_ start: Link, _ data: inout GistData) throws -> Bool {
+    func syncOne(_ start: Connection, _ data: inout GistData) throws -> Bool {
         let f = try openFolder(start.folder)
         var l = start
         if !l.connected {
@@ -312,7 +312,7 @@ public final class Connections {
 
     /// Brings your check-ins up to date with what [l] shares: tasks of yours they finished (if
     /// they may), and what you added from them (name, description, who may do it, done, gone).
-    func apply(_ l: Link, _ got: [String: String], _ data: inout GistData) {
+    func apply(_ l: Connection, _ got: [String: String], _ data: inout GistData) {
         var theirs: [String: Checkin] = [:]
         for (id, json) in got where id != Self.doneKey {
             if let o = (try? JSONText.parse(json))?.objectValue, let c = try? Checkin.from(o) { theirs[id] = c }
@@ -364,7 +364,7 @@ public final class Connections {
     }
 
     /// Tasks of [l]'s you've done that they let you do: their id → when.
-    func doneForThem(_ l: Link, _ mine: [Checkin]) -> [String: Int] {
+    func doneForThem(_ l: Connection, _ mine: [Checkin]) -> [String: Int] {
         var out: [String: Int] = [:]
         for c in mine where c.linkId == l.id && c.isTask && c.youCanDo && c.taskDone && c.doneBy == nil {
             if let s = c.sourceId, let at = c.doneAt { out[s] = at }
@@ -375,7 +375,7 @@ public final class Connections {
     /// Adds [item] (shared by [l]) to your list: yours to set alarms and steps for; its name
     /// and description stay theirs. Nil if it's already there.
     @discardableResult
-    public func addToMyList(_ l: Link, _ item: Checkin, data: inout GistData) -> Checkin? {
+    public func addToMyList(_ l: Connection, _ item: Checkin, data: inout GistData) -> Checkin? {
         let key = "\(l.id)/\(item.id)"
         guard !data.checkins.contains(where: { $0.linkedFrom == key }) else { return nil }
         var c = item
@@ -392,7 +392,7 @@ public final class Connections {
     }
 
     /// What you've added from [l] (their id → yours).
-    public func added(_ l: Link, _ data: GistData) -> [String: Checkin] {
+    public func added(_ l: Connection, _ data: GistData) -> [String: Checkin] {
         var out: [String: Checkin] = [:]
         for c in data.checkins where c.linkId == l.id { if let s = c.sourceId { out[s] = c } }
         return out
@@ -404,14 +404,14 @@ public final class Connections {
     }
 
     /// What [l] shares with you, read-only.
-    public func shared(_ l: Link) -> [Checkin] {
+    public func shared(_ l: Connection) -> [Checkin] {
         received(l.id).filter { $0.key != Self.doneKey }.sorted { $0.key < $1.key }.compactMap { _, json in
             (try? JSONText.parse(json))?.objectValue.flatMap { try? Checkin.from($0) }
         }
     }
 
     /// An item as [l] sees it: without who else it's shared with, and who may do it as they see it.
-    func shareJSON(_ c: Checkin, _ l: Link) -> String {
+    func shareJSON(_ c: Checkin, _ l: Connection) -> String {
         let who: String
         switch c.assignee {
         case "": who = Checkin.linkAnyone
@@ -447,10 +447,10 @@ public final class Connections {
     }
 
     /// The connections kept on your other devices.
-    func remote() -> [Link] {
+    func remote() -> [Connection] {
         let hidden = hiddenRemote()
         return remoteItems().keys.sorted().compactMap { k in
-            guard let o = remoteItems()[k], let lo = o.object("link"), var l = Link.from(lo),
+            guard let o = remoteItems()[k], let lo = o.object("link"), var l = Connection.from(lo),
                   let home = o["home"]?.stringValue else { return nil }
             l.folder = ""
             l.sent = [:]
