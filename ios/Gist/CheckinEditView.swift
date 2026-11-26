@@ -110,11 +110,20 @@ struct CheckinEditView: View {
 
     /// Name, description, time commitment and category.
     @ViewBuilder private func details(_ c: Binding<Checkin>) -> some View {
+        // Added from a connection: its name and description are theirs.
+        let from = c.wrappedValue.linkId.map { id in model.sync.connections.get(id).map { $0.peerName.isEmpty ? "a connection" : $0.peerName } ?? "a connection" }
         SwiftUI.Section {
             LabeledContent("Name") {
                 TextField("Name", text: c.name)
                     .multilineTextAlignment(.trailing)
+                    .disabled(from != nil)
                     .accessibilityIdentifier("checkin-name")
+            }
+            if let from {
+                Text("From \(from): its name and description are theirs (they change when \(from) changes them). Its alarms, times, steps and category are yours." +
+                     (c.wrappedValue.linkedGone ? " \(from) has removed it." : ""))
+                    .font(.footnote).foregroundStyle(Theme.muted)
+                    .accessibilityIdentifier("linked-note")
             }
             // A follow-up's chain: the task it continues, and any that continue it.
             if let prev = c.wrappedValue.followsUp.flatMap({ model.checkin($0) }) {
@@ -127,6 +136,7 @@ struct CheckinEditView: View {
             }
             TextField("Description: what it's about, notes", text: c.description, axis: .vertical)
                 .lineLimit(2...8)
+                .disabled(from != nil)
                 .accessibilityIdentifier("checkin-description")
             Picker("Time commitment", selection: c.timeCommitment) {
                 Text("Not set").tag("")
@@ -138,7 +148,32 @@ struct CheckinEditView: View {
                     .multilineTextAlignment(.trailing)
                     .accessibilityIdentifier("checkin-category")
             }
+            if from == nil {
+                NavigationLink {
+                    ShareWithView(checkin: c)
+                } label: {
+                    LabeledContent("Shared with", value: sharedText(c.wrappedValue))
+                }
+                .accessibilityIdentifier("share-with")
+                // A shared task: who may do it.
+                if c.wrappedValue.isTask && !c.wrappedValue.sharedWith.isEmpty {
+                    let people = model.sync.connections.all.filter { $0.connected && c.wrappedValue.sharedWith.contains($0.id) }
+                    Picker("Who can do it", selection: c.assignee) {
+                        Text("Anyone").tag("")
+                        Text("Only you").tag(Checkin.assignMe)
+                        ForEach(people, id: \.id) { Text("Only \($0.peerName.isEmpty ? "them" : $0.peerName)").tag($0.id) }
+                    }
+                    .accessibilityIdentifier("assignee")
+                }
+            }
         }
+    }
+
+    /// "Jess" (they see it, read-only), or nobody.
+    private func sharedText(_ c: Checkin) -> String {
+        let names = model.sync.connections.all.filter { $0.connected && c.sharedWith.contains($0.id) }
+            .map { $0.peerName.isEmpty ? "someone" : $0.peerName }
+        return names.isEmpty ? "Nobody" : names.joined(separator: ", ")
     }
 
     /// On / off, one-time task (and where it stands), and "about yesterday".
@@ -157,11 +192,12 @@ struct CheckinEditView: View {
             .accessibilityIdentifier("task-switch")
             if c.wrappedValue.isTask {
                 if let doneAt = c.wrappedValue.doneAt {
-                    Text("✓ Done \(TimeText.done(doneAt))").foregroundStyle(Theme.good)
+                    Text("✓ Done \(TimeText.done(doneAt))" + (c.wrappedValue.doneBy.map { " by \($0)" } ?? "")).foregroundStyle(Theme.good)
                         .accessibilityIdentifier("task-done")
                     Button("Put it back on the list") {
                         c.wrappedValue.enabled = true
                         c.wrappedValue.doneAt = nil
+                        c.wrappedValue.doneBy = nil
                     }
                     .accessibilityIdentifier("task-reopen")
                 } else if !c.wrappedValue.times.isEmpty && c.wrappedValue.enabled && model.next(c.wrappedValue) == nil {
@@ -642,5 +678,39 @@ struct DaysEditor: View {
         case .month: days = Repeat(Repeat.monthly, days.kind == Repeat.monthly ? days.days : [1])
         case .date: days = .onDate(days.date ?? Days.today())
         }
+    }
+}
+
+/// Who sees a check-in or task (read-only): any of your connections.
+struct ShareWithView: View {
+    @Environment(AppModel.self) private var model
+    @Binding var checkin: Checkin
+
+    var body: some View {
+        let links = model.sync.connections.all.filter { $0.connected }
+        Form {
+            if links.isEmpty {
+                Text("You have no connections yet. Connect with someone in Settings → Connections; then you can share this with them (read-only).")
+                    .foregroundStyle(Theme.muted)
+                NavigationLink("Connections…") { ConnectionsView() }
+            } else {
+                Section {
+                    ForEach(links, id: \.id) { l in
+                        Toggle(l.peerName.isEmpty ? "Someone" : l.peerName, isOn: Binding(
+                            get: { checkin.sharedWith.contains(l.id) },
+                            set: { on in
+                                if on { checkin.sharedWith.insert(l.id) } else {
+                                    checkin.sharedWith.remove(l.id)
+                                    if checkin.assignee == l.id { checkin.assignee = "" }
+                                }
+                            }))
+                        .accessibilityIdentifier("share:\(l.id)")
+                    }
+                } footer: {
+                    Text("They see it, read-only: you change it. They can add it to their own list.")
+                }
+            }
+        }
+        .navigationTitle("Share with")
     }
 }

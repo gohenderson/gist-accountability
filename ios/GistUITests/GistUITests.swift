@@ -398,4 +398,63 @@ final class GistUITests: XCTestCase {
         XCTAssertEqual(name.value as? String, "(Follow-Up) Organize shed")
         XCTAssertTrue(element("follows").exists)
     }
+
+    // MARK: Connections and your devices
+
+    /// Connections, from a fresh start, with a Gist folder in temporary storage.
+    private func launchConnections() {
+        app = XCUIApplication()
+        app.launchArguments = ["-gist-demo", "-gist-sync-test", "-gist-route", "connections"]
+        app.launch()
+        waitFor(element("gist-folder"))
+    }
+
+    func testSettingUpYourDevicesShowsAnInvite() {
+        launchConnections()
+        let setUp = element("devices-setup")
+        scrollTo(setUp)
+        setUp.tap()
+        waitFor(app.alerts.firstMatch)
+        app.alerts.buttons["OK"].tap()
+        let add = element("devices-add")
+        scrollTo(add)
+        add.tap()
+        let code = element("invite-code")
+        waitFor(code)
+        // 36 letters and digits in groups of 4.
+        XCTAssertEqual((code.label as String).count, 44)
+        XCTAssertTrue(element("invite-qr").exists)
+        app.buttons["Done"].tap()
+        scrollTo(element("ring-here"))
+    }
+
+    func testInvitingSomeoneMakesTheirFolderAndShowsAnInvite() {
+        launchConnections()
+        let invite = element("invite")
+        scrollTo(invite)
+        invite.tap()
+        let who = app.alerts.textFields.firstMatch
+        waitFor(who)
+        who.typeText("Jess")
+        app.alerts.buttons["Invite"].tap()
+        let code = element("invite-code")
+        waitFor(code)
+        XCTAssertTrue(showing("Share People/Jess").exists)
+        app.buttons["Done"].tap()
+        waitFor(showing("Waiting for someone to join"))
+    }
+
+    func testJoiningWithATypedCodeWaitsForTheFolder() {
+        launchConnections()
+        let join = element("join")
+        scrollTo(join)
+        join.tap()
+        let field = element("invite-field")
+        waitFor(field)
+        field.tap()
+        // A real-looking invite for a connection nobody has shared yet.
+        field.typeText("AFRQ-WFAP-R3IT-K5P3-TZPQ-CAQD-AQCQ-MBYI-BEFA")
+        element("invite-next").tap()
+        waitFor(element("join-waiting"))
+    }
 }

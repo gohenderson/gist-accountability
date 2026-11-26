@@ -55,6 +55,22 @@ final class AppModel {
     private let fileURL: URL
     let calendar = Calendar.current
 
+    /// Syncing: your Gist folder, connections with other people, and your devices.
+    let sync = SyncParts()
+    /// Bumped after each sync that changed something (views showing what's shared re-read it).
+    private(set) var syncRevision = 0
+    /// Ring on this device: off, check-ins don't ring here (another of your devices rings);
+    /// what's waiting still shows, and answering it here counts everywhere.
+    private(set) var ringHere: Bool
+
+    func setRingHere(_ on: Bool) {
+        ringHere = on
+        defaults.set(on, forKey: "ringHere")
+        rescheduleSoon()
+    }
+    private var syncing = false
+    private var syncTask: Task<Void, Never>?
+
     init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                  appropriateFor: nil, create: true)) ?? FileManager.default.temporaryDirectory
@@ -82,6 +98,107 @@ final class AppModel {
         places = Self.decode(PlaceLog.self, defaults.data(forKey: "places")) ?? PlaceLog()
         alarmsAllowed = AlarmService.authorized
         alarmsAsked = !AlarmService.notDetermined
+        ringHere = defaults.object(forKey: "ringHere") as? Bool ?? true
+        data.tracking = sync.devices.folder != nil
+        sync.settings.onTake = { [weak self] in self?.reloadViewSettings() }
+    }
+
+    /// Each tab's view and sort, group order and folded groups, as saved (one may have come
+    /// from another of your devices).
+    private func reloadViewSettings() {
+        groupedTabs = Set(StartTab.allCases.filter { defaults.string(forKey: Self.tabKey("view", $0)) == Grouping.byCategoryView })
+        sorts = Dictionary(uniqueKeysWithValues: StartTab.allCases.map { t in
+            (t, defaults.string(forKey: Self.tabKey("sort", t)).flatMap { Grouping.sorts.contains($0) ? $0 : nil } ?? Grouping.sortCustom)
+        })
+        foldedGroups = Set(defaults.stringArray(forKey: "foldedGroups") ?? [])
+        groupOrder = defaults.stringArray(forKey: "groupOrder") ?? []
+    }
+
+    // MARK: - Syncing
+
+    /// Syncs soon (after a change: a few changes in a row go together).
+    func syncSoon(after seconds: Double = 2) {
+        guard sync.devices.folder != nil || !sync.connections.here.isEmpty else { return }
+        syncTask?.cancel()
+        syncTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.syncNow()
+        }
+    }
+
+    /// Reads and publishes your connections and devices now; takes in what changed.
+    func syncNow() {
+        guard !syncing else { return }
+        syncing = true
+        defer { syncing = false }
+        var d = data
+        let before = d
+        let shared = sync.connections.sync(&d)
+        var result = DevicesSyncResult()
+        if sync.devices.folder != nil, let r = try? sync.devices.sync(&d) { result = r }
+        if d != before {
+            data = d
+            save()
+            rescheduleSoon()
+        }
+        // Answered on another device: stop waiting (and ringing) for it here.
+        if !result.closed.isEmpty {
+            let closed = Set(result.closed.map { "\($0.checkinId)|\($0.day)|\($0.time)" })
+            func isClosed(_ p: Pending) -> Bool { !p.practice && closed.contains("\(p.checkinId)|\(p.day)|\(p.time)") }
+            waiting.removeAll(where: isClosed)
+            if let r = running, isClosed(r.pending) { running = nil }
+            save()
+            Task { await QuietNotifier.clear(keeping: waiting) }
+        }
+        if shared || result.changed || d != before { syncRevision += 1 }
+    }
+
+    /// Starts keeping your devices in step in [folder] (this device makes the key).
+    func setUpDevices(_ folder: String) throws {
+        try sync.devices.setUp(folder: folder, data: &data)
+        save()
+        syncNow()
+    }
+
+    /// Joins your devices in [folder] with [invite].
+    func joinDevices(_ folder: String, _ invite: LinkInvite) throws {
+        try sync.devices.join(folder: folder, invite: invite, data: &data)
+        save()
+        syncNow()
+    }
+
+    func leaveDevices() {
+        sync.devices.leave(data: &data)
+        save()
+        syncRevision += 1
+    }
+
+    /// Your name, as your connections see it (the same on your devices).
+    var linkName: String {
+        get { sync.connections.myName }
+        set {
+            sync.connections.myName = newValue
+            defaults.set(newValue.trimmingCharacters(in: .whitespaces), forKey: "linkName")
+            sync.settings.changed("linkName", tracking: data.tracking)
+            syncSoon()
+        }
+    }
+
+    /// Forgets connection [id] (on its home) and stops sharing with it.
+    func removeConnection(_ id: String) {
+        sync.connections.remove(id, data: &data)
+        save()
+        syncNow()
+    }
+
+    /// Adds [item] that [l] shares to your list.
+    @discardableResult
+    func addShared(_ l: Connection, _ item: Checkin) -> Checkin? {
+        let c = sync.connections.addToMyList(l, item, data: &data)
+        save()
+        rescheduleSoon()
+        return c
     }
 
     // MARK: - Reading
@@ -120,6 +237,7 @@ final class AppModel {
     /// Brings everything up to date: rings that went off while the app was closed are
     /// logged (as missed until done) and wait to be done; strict ones open full screen.
     func refresh() async {
+        syncNow() // answers and changes from your other devices first
         alarmsAllowed = AlarmService.authorized
         alarmsAsked = !AlarmService.notDetermined
         let now = Date()
@@ -161,15 +279,17 @@ final class AppModel {
     private func presentNext() {
         guard running == nil else { return }
         if let p = waiting.first(where: { p in
-            p.practice || (data.checkin(p.checkinId).map { $0.counted && !$0.isQuiet } ?? false)
+            p.practice || (ringHere && (data.checkin(p.checkinId).map { $0.counted && !$0.isQuiet } ?? false))
         }) {
             running = RunRequest(pending: p, early: false)
         }
     }
 
     func reschedule() async {
-        let plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, oneOff: OneOffStore.all(),
+        var plan = AlarmPlan.plan(data, waiting: waiting, practice: practice, oneOff: OneOffStore.all(),
                                   places: places, now: Date(), calendar: calendar)
+        // Ring on this device off: only test rings ring here.
+        if !ringHere { plan = plan.filter { $0.practice } }
         let checkins = Dictionary(data.checkins.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         await AlarmService.replaceAll(with: plan, checkins: checkins)
         await QuietNotifier.sync(AlarmPlan.quietRings(data, places: places, now: Date(), calendar: calendar),
@@ -491,11 +611,15 @@ final class AppModel {
     func setGroupByCategory(_ on: Bool) {
         if on { groupedTabs.insert(tab) } else { groupedTabs.remove(tab) }
         defaults.set(on ? Grouping.byCategoryView : Grouping.ungrouped, forKey: Self.tabKey("view", tab))
+        sync.settings.changed(Self.tabKey("view", tab), tracking: data.tracking)
+        syncSoon()
     }
 
     func setSort(_ how: String) {
         sorts[tab] = how
         defaults.set(how, forKey: Self.tabKey("sort", tab))
+        sync.settings.changed(Self.tabKey("sort", tab), tracking: data.tracking)
+        syncSoon()
     }
 
     /// A group's fold state is kept per tab.
@@ -530,12 +654,16 @@ final class AppModel {
     func toggleGroup(_ key: String) {
         if foldedGroups.contains(key) { foldedGroups.remove(key) } else { foldedGroups.insert(key) }
         defaults.set(Array(foldedGroups), forKey: "foldedGroups")
+        sync.settings.changed("collapsedGroups", tracking: data.tracking)
+        syncSoon()
     }
 
     /// Expand all / Collapse all: the groups only.
     func setAllFolded(_ folded: Bool, groups: Set<String>) {
         if folded { foldedGroups.formUnion(groups) } else { foldedGroups.subtract(groups) }
         defaults.set(Array(foldedGroups), forKey: "foldedGroups")
+        sync.settings.changed("collapsedGroups", tracking: data.tracking)
+        syncSoon()
     }
 
     // MARK: - Backups
@@ -630,6 +758,21 @@ final class AppModel {
     }
 
     /// For UI tests of tasks: a morning planner that picks 2 tasks, and 3 in the backlog.
+    /// UI tests: syncing starts afresh, with a Gist folder in temporary storage and a name.
+    func debugSyncTest() {
+        for suite in ["gist-folder", "gist-links", "gist-devices", "gist-bookmarks"] {
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+        }
+        defaults.removeObject(forKey: "linkName")
+        defaults.removeObject(forKey: "settingsAt")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("gist-ui-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        sync.gistFolder.root = dir.path
+        sync.connections.myName = "Alex"
+        data.tracking = false
+        syncRevision += 1
+    }
+
     func loadDemoTasks() {
         // No set time, so it never rings by itself during a test (tests run it as a test ring).
         data.checkins.append(Checkin(id: "plan", name: "Plan the day", times: [],
@@ -646,6 +789,7 @@ final class AppModel {
     // MARK: - Saving
 
     private func save() {
+        if !syncing { syncSoon() } // your other devices and connections hear about it
         if let text = try? YAMLCodec.dump(data.json) {
             try? text.write(to: fileURL, atomically: true, encoding: .utf8)
         }

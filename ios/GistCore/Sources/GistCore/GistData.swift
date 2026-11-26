@@ -123,6 +123,7 @@ public struct GistData: Equatable {
             guard c.isTask else { return }
             c.enabled = true
             c.doneAt = nil
+            c.doneBy = nil
         }
     }
 

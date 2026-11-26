@@ -41,11 +41,17 @@ struct RootView: View {
                 let args = ProcessInfo.processInfo.arguments
                 if args.contains("-gist-demo") { model.loadDemo() }
                 if args.contains("-gist-demo-tasks") { model.loadDemoTasks() }
+                if args.contains("-gist-sync-test") { model.debugSyncTest() }
                 if let i = args.firstIndex(of: "-gist-route"), i + 1 < args.count {
                     model.debugRoute = args[i + 1]
                 }
                 #endif
                 await model.refresh()
+                // Keep in step with your other devices and connections while Gist is open.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    if phase == .active { model.syncNow() }
+                }
             }
             .alert("Gist", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
                 Button("OK", role: .cancel) {}

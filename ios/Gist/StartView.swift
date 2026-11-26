@@ -7,6 +7,7 @@ enum Route: Hashable {
     case settings
     case library
     case doneTasks
+    case connections
 }
 
 /// The start page (laid out like the Android app's): a summary for the tab, setup and
@@ -31,6 +32,7 @@ struct StartView: View {
                     tabs
                     controls
                     list
+                    sharedWithYou
                     if model.tab == .tasks {
                         NavigationLink(value: Route.doneTasks) {
                             Text("Done tasks (\(model.doneTasks.count))").frame(maxWidth: .infinity)
@@ -62,6 +64,7 @@ struct StartView: View {
                 case .history(let id): HistoryView(checkinId: id)
                 case .settings: SettingsView()
                 case .doneTasks: DoneTasksView(path: $path)
+                case .connections: ConnectionsView()
                 case .library:
                     LibraryView { c in
                         path.removeLast()
@@ -86,6 +89,7 @@ struct StartView: View {
             case "settings": path.append(Route.settings)
             case "library": path.append(Route.library)
             case "done": path.append(Route.doneTasks)
+            case "connections": path.append(Route.connections)
             case "tab": if parts.count == 2, let t = StartTab(rawValue: parts[1]) { model.setTab(t) }
             case "run":
                 if parts.count == 2 {
@@ -315,6 +319,31 @@ struct StartView: View {
         }
     }
 
+    /// What your connections share with you (read-only), on the same tab.
+    @ViewBuilder private var sharedWithYou: some View {
+        let _ = model.syncRevision
+        let links = model.sync.connections.all.filter { $0.connected && $0.shown }
+        ForEach(links, id: \.id) { l in
+            let added = model.sync.connections.added(l, model.data)
+            let theirs = model.sync.connections.shared(l).filter { added[$0.id] == nil }.filter { c in
+                switch model.tab {
+                case .tasks: return c.isTask && !c.inBacklog && !c.taskDone
+                case .backlog: return c.inBacklog
+                case .checkins: return !c.isTask
+                }
+            }
+            if !theirs.isEmpty {
+                let who = l.peerName.isEmpty ? "someone" : l.peerName
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("From \(who)").font(.title3.bold()).accessibilityIdentifier("from:\(l.id)")
+                    Text("Shared with you · read-only").font(.footnote).foregroundStyle(Theme.muted)
+                }
+                .padding(.top, 16)
+                ForEach(theirs) { c in SharedCard(link: l, checkin: c) }
+            }
+        }
+    }
+
     private func sorted(_ list: [Checkin]) -> [Checkin] {
         Grouping.sort(list, model.sort, next: { model.next($0)?.at }, score: { model.score($0) })
     }
@@ -335,7 +364,8 @@ struct CheckinCard: View {
         let c = checkin
         let folded = model.expandedCheckin != c.id
         let score = model.score(c)
-        let waiting = c.isQuiet ? model.waiting.first { $0.checkinId == c.id && !$0.practice } : nil
+        // Waiting on its card: No alarm ones, and any when this device doesn't ring.
+        let waiting = c.isQuiet || !model.ringHere ? model.waiting.first { $0.checkinId == c.id && !$0.practice } : nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 if !c.isTask {
@@ -378,6 +408,13 @@ struct CheckinCard: View {
             } else {
                 Text(CheckinSummary.oneLine(c)).font(.subheadline).foregroundStyle(Theme.muted)
                     .accessibilityIdentifier("summary:\(c.id)")
+                // Added from a connection: whose it is.
+                if let id = c.linkId {
+                    let who = model.sync.connections.get(id).map { $0.peerName.isEmpty ? "a connection" : $0.peerName } ?? "a connection"
+                    Text(c.linkedGone ? "From \(who) · they removed it" : c.isTask ? "From \(who) · \(CheckinSummary.assigned(c, who))" : "From \(who)")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                        .accessibilityIdentifier("linked:\(c.id)")
+                }
                 // Its description: the first few lines (all of it is on its page).
                 if !c.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(c.description).font(.subheadline).lineLimit(4)
@@ -495,7 +532,7 @@ struct DoneTasksView: View {
             ForEach(done) { c in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(c.name).font(.headline)
-                    Text("✓ Done \(TimeText.done(c.doneAt ?? 0))").font(.subheadline).foregroundStyle(Theme.good)
+                    Text("✓ Done \(TimeText.done(c.doneAt ?? 0))" + (c.doneBy.map { " by \($0)" } ?? "")).font(.subheadline).foregroundStyle(Theme.good)
                     if let date = c.times.compactMap({ $0.days?.date }).first {
                         Text("Was set for \(Repeat.dateText(date))").font(.footnote).foregroundStyle(Theme.muted)
                     }
@@ -559,6 +596,16 @@ struct ReorderView: View {
 
 /// Short descriptions of a check-in.
 enum CheckinSummary {
+    /// A shared task: who may do it, as its owner set it.
+    static func assigned(_ c: Checkin, _ who: String) -> String {
+        switch c.linkedAssignee {
+        case Checkin.linkYou: return "assigned to you"
+        case Checkin.linkOwner: return "only \(who) can do it"
+        case Checkin.linkOther: return "assigned to someone else"
+        default: return "anyone can do it"
+        }
+    }
+
     /// e.g. "7:00 AM, 9:30 PM · Mon–Fri · 3 × Medium, 2 questions"
     static func oneLine(_ c: Checkin) -> String {
         var parts: [String] = []
@@ -598,4 +645,46 @@ enum CheckinSummary {
 extension String {
     /// "When you arrive" → "when you arrive"
     var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}
+
+/// Something a connection shares with you: its name, when it's set for and its description.
+/// Read-only; Add to my list when you may do it.
+struct SharedCard: View {
+    @Environment(AppModel.self) private var model
+    let link: Connection
+    let checkin: Checkin
+    @State private var added = false
+
+    var body: some View {
+        let c = checkin
+        let who = link.peerName.isEmpty ? "someone" : link.peerName
+        VStack(alignment: .leading, spacing: 6) {
+            Text(c.name).font(.headline)
+            Text(CheckinSummary.oneLine(c)).font(.subheadline).foregroundStyle(Theme.muted)
+            if !c.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(c.description).font(.subheadline).lineLimit(4)
+            }
+            Text("From \(who)" + (c.category.isEmpty ? "" : " · \(c.category)")).font(.footnote).foregroundStyle(Theme.muted)
+            if c.isTask {
+                Text(CheckinSummary.assigned(c, who)).font(.footnote).foregroundStyle(Theme.muted)
+                    .accessibilityIdentifier("assigned:\(link.id):\(c.id)")
+            }
+            if c.youCanDo {
+                Button("Add to my list") {
+                    if model.addShared(link, c) != nil { added = true }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("add-shared:\(link.id):\(c.id)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("shared:\(link.id):\(c.id)")
+        .alert("Added", isPresented: $added) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Its alarms are yours to set; its name and description stay \(who)'s.")
+        }
+    }
 }
