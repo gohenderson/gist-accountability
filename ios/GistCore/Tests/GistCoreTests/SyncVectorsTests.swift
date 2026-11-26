@@ -9,7 +9,7 @@ final class SyncVectorsTests: XCTestCase {
     static let shared: URL = {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { url.deleteLastPathComponent() }
-        return url.appendingPathComponent("shared/sync")
+        return url.appendingPathComponent("shared/sync/files")
     }()
 
     private var v: JSONObject!

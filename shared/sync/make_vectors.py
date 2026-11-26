@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Makes the shared sync test files (vectors.json and folder/) that both apps' tests read, so
+"""Makes the shared sync test files (files/vectors.json and files/folder/) that both apps' tests read, so
 an iPhone and an Android phone are known to read and write the same sync files.
 
 Run from anywhere: python3 shared/sync/make_vectors.py (needs the `cryptography` package).
@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "files")
 N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
 
 
