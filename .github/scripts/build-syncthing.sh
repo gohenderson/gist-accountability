@@ -30,13 +30,13 @@ for abi in "$@"; do
 	(
 		cd "$src"
 		CGO_ENABLED=1 GOOS=android GOARCH="$goarch" GOARM="$goarm" CC="$bin/$cc" \
-			go build -trimpath -tags noupgrade \
+			go build -trimpath -tags noupgrade,noassets \
 			-ldflags "-s -w \
 				-X github.com/syncthing/syncthing/lib/build.Version=$version \
 				-X github.com/syncthing/syncthing/lib/build.Stamp=$(git log -1 --format=%ct) \
 				-X github.com/syncthing/syncthing/lib/build.User=gist \
 				-X github.com/syncthing/syncthing/lib/build.Host=github-actions \
-				-X github.com/syncthing/syncthing/lib/build.Tags=noupgrade" \
+				-X github.com/syncthing/syncthing/lib/build.Tags=noupgrade,noassets" \
 			-o "$out/$abi/libsyncthing.so" ./cmd/syncthing
 	)
 	ls -l "$out/$abi/libsyncthing.so"
