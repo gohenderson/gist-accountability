@@ -515,7 +515,8 @@ class Connections(
             val links = Connections(Profiles.scoped(activity, Profiles.of(activity)))
             if (links.here.isEmpty()) return
             Thread {
-                val changed = synchronized(SYNC) { links.sync() }
+                // A folder it can't reach (deleted, access gone) mustn't take the app down.
+                val changed = try { synchronized(SYNC) { links.sync() } } catch (e: Exception) { false }
                 if (changed) activity.runOnUiThread { if (!activity.isFinishing) then() }
             }.start()
         }

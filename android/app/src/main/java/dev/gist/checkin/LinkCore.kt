@@ -99,14 +99,20 @@ class SubFolder(private val base: LinkFolder, sub: String) : LinkFolder {
 class SafFolder(private val resolver: ContentResolver, private val tree: Uri) : LinkFolder {
     private val rootId = DocumentsContract.getTreeDocumentId(tree)
 
-    /** The document id of [name] in folder [parentId], or null. */
-    private fun child(parentId: String, name: String): String? {
+    /**
+     * The document id of [name] in folder [parentId], or null: also when the folder can't be
+     * read, say Gist's access to it is gone (the folder was deleted, or access taken away).
+     */
+    private fun child(parentId: String, name: String): String? = try {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
         resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-            while (c.moveToNext()) if (c.getString(1) == name) return c.getString(0)
+            var found: String? = null
+            while (found == null && c.moveToNext()) if (c.getString(1) == name) found = c.getString(0)
+            found
         }
-        return null
+    } catch (e: Exception) {
+        null
     }
 
     override fun delete(path: String) {
