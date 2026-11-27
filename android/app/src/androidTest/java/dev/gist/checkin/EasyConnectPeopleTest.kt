@@ -45,6 +45,11 @@ class EasyConnectPeopleTest {
         TestEnv.reset(emptyList())
     }
 
+    /** Plain folders here (the app's are reached through Android's folder access). */
+    private val open: (String) -> LinkFolder = { FileFolder(File(it)) }
+    private fun folder(c: android.content.Context) = GistFolder(c, open)
+    private fun links(c: android.content.Context) = Connections(c, open)
+
     /** What Syncthing would do: everything in one folder is in the other too. */
     private fun carry(from: File, to: File) {
         from.walkTopDown().filter { it.isFile }.forEach { f ->
@@ -57,32 +62,32 @@ class EasyConnectPeopleTest {
     @Test
     fun aScannedCodeMakesTheirFolderAndConnectsOnceItArrives() {
         // Greg shows a code for Jess: her folder, and a connection invite (as Easy Connect does it).
-        val gf = GistFolder(greg)
+        val gf = folder(greg)
         val loc = gf.newPerson("Jess")!!
-        val links = Connections(greg)
+        val links = links(greg)
         val link = links.invite(loc)
         val (invite, _) = links.invitation(link)!!
         val code = EasyConnect.Code.parse(EasyConnect.Code(invite, "MFZWI3D-BONSGYC-YLTMRWG-C43ENR5-QXGZDMM-FZWI3DP-BONSGYY-LTMRWAD",
-            EasyConnect.linkFolderId(link.id), Connections(greg).myName).qr)!!
+            EasyConnect.linkFolderId(link.id), links.myName).qr)!!
 
         // Jess scans it: People/Greg (named for him), waiting for his side.
-        val (path, label) = EasyConnect.prepareJoin(jess, code)
+        val (path, label) = EasyConnect.prepareJoin(jess, code, open)
         assertEquals(File(root, "jess/People/Greg").path, path)
         assertEquals("Gist · Greg", label)
-        assertFalse("nothing's arrived yet", EasyConnect.finishJoins(jess))
-        assertTrue(Connections(jess).all.isEmpty())
+        assertFalse("nothing's arrived yet", EasyConnect.finishJoins(jess, open))
+        assertTrue(links(jess).all.isEmpty())
 
         // Greg's side arrives: she's connected, with him.
         carry(File(gf.pathOf(loc)), File(path))
-        assertTrue(EasyConnect.finishJoins(jess))
-        assertNull(GistFolder(jess).waiting)
-        val hers = Connections(jess).all.single()
+        assertTrue(EasyConnect.finishJoins(jess, open))
+        assertNull(folder(jess).waiting)
+        val hers = links(jess).all.single()
         assertEquals("Greg", hers.peerName)
 
         // Her side reaches Greg: he's connected with her.
         carry(File(path), File(gf.pathOf(loc)))
-        Connections.syncNow(greg)
-        val his = Connections(greg).all.single()
+        links(greg).sync()
+        val his = links(greg).all.single()
         assertTrue(his.connected)
         assertEquals("Jess", his.peerName)
         assertEquals(hers.id, his.id)
@@ -91,10 +96,10 @@ class EasyConnectPeopleTest {
     @Test
     fun aSecondPersonWithTheSameNameGetsTheirOwnFolder() {
         File(root, "jess/People/Greg").mkdirs()
-        val links = Connections(greg)
-        val link = links.invite(GistFolder(greg).newPerson("Someone")!!)
+        val links = links(greg)
+        val link = links.invite(folder(greg).newPerson("Someone")!!)
         val code = EasyConnect.Code(links.invitation(link)!!.first, "MFZWI3D-BONSGYC-YLTMRWG-C43ENR5-QXGZDMM-FZWI3DP-BONSGYY-LTMRWAD",
             EasyConnect.linkFolderId(link.id), "Greg")
-        assertEquals(File(root, "jess/People/Greg 2").path, EasyConnect.prepareJoin(jess, code).first)
+        assertEquals(File(root, "jess/People/Greg 2").path, EasyConnect.prepareJoin(jess, code, open).first)
     }
 }

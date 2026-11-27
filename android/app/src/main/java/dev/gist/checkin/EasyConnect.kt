@@ -218,8 +218,8 @@ object EasyConnect {
      * Gist's part of joining with [code]: where the folder goes (My devices, or People/<their
      * name> for a person), and waiting for it. Its path and Syncthing label.
      */
-    fun prepareJoin(context: Context, code: Code): Pair<String, String> {
-        val gf = GistFolder(context)
+    fun prepareJoin(context: Context, code: Code, open: (String) -> LinkFolder = { LinkFolder.open(context, it) }): Pair<String, String> {
+        val gf = GistFolder(context, open)
         val result = if (code.invite.kind == 'd') {
             (gf.path(GistFolder.DEVICES) ?: throw IllegalStateException("No Gist folder")) to label(context)
         } else {
@@ -234,17 +234,17 @@ object EasyConnect {
      * A code scanned here: join with it as soon as its folder has arrived (My devices, or the
      * person's folder in People). True once joined (or it's no longer waiting).
      */
-    fun finishJoins(context: Context): Boolean {
-        val gf = GistFolder(context)
+    fun finishJoins(context: Context, open: (String) -> LinkFolder = { LinkFolder.open(context, it) }): Boolean {
+        val gf = GistFolder(context, open)
         val waiting = gf.waiting ?: return true
         val invite = LinkInvite.parse(waiting.substring(2)) ?: run { gf.waiting = null; return true }
         val joined = runCatching {
             if (invite.kind == 'd') {
-                if (Devices(context).folder != null) return@runCatching true
+                if (Devices(context, open).folder != null) return@runCatching true
                 val loc = gf.devices() ?: return@runCatching false
-                Devices(context).join(loc, invite) == null
+                Devices(context, open).join(loc, invite) == null
             } else {
-                val links = Connections(context)
+                val links = Connections(context, open)
                 val loc = links.findInvited(gf.people().values, invite) ?: return@runCatching false
                 links.join(loc, invite).second == null
             }
