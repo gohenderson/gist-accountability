@@ -30,7 +30,7 @@ import javax.crypto.spec.SecretKeySpec
  *   and encryption still apply on top: a device is let in only once it proves it had the
  *   invite, and everything in My devices is encrypted for the group.
  *
- * My devices stays where it was (PublicAppData/Gist/<profile>/My devices), so anything else
+ * My devices stays where it was (Gist/<profile>/My devices), so anything else
  * can still share it as well. Syncthing reaches it by its path, which needs All files access
  * ([canReachFiles]).
  */

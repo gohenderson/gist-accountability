@@ -25,7 +25,7 @@ import com.google.zxing.qrcode.QRCodeWriter
  */
 class ConnectionsActivity : BaseActivity() {
     private lateinit var links: Connections
-    /** What to do once access to PublicAppData is allowed: [AFTER_INVITE] or [AFTER_DEVICES]. */
+    /** What to do once access to the Gist folder is allowed: [AFTER_INVITE] or [AFTER_DEVICES]. */
     private var afterAccess: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,20 +136,20 @@ class ConnectionsActivity : BaseActivity() {
         setContentView(screen(col))
     }
 
-    /** Where this profile syncs (PublicAppData/Gist/<profile>), and a join waiting for its folder. */
+    /** Where this profile syncs (Gist/<profile>), and a join waiting for its folder. */
     private fun gistFolderCard() = card().apply {
         val gf = GistFolder(this@ConnectionsActivity)
         add(sectionTitle("Your Gist folder"))
         val root = gf.root
         if (root == null) {
-            add(label("Gist syncs through folders in ${PublicAppData.NAME}/${PublicAppData.GIST}, at the top of your " +
-                "phone's storage, where the app you share folders with can reach them too. Android needs you to allow " +
-                "access to ${PublicAppData.NAME} once; Gist makes everything inside it, for every profile.", 15f), dp(6))
-            add(muted("If ${PublicAppData.NAME} isn't there yet: in the picker, make a new folder named exactly " +
-                "${PublicAppData.NAME} at the top of your storage and open it. Then tap Use this folder, and Allow.", 13f), dp(6))
-            add(primaryButton("Allow access to ${PublicAppData.NAME}…") { requestAccess() }.apply { tag = "gist-folder-allow" }, dp(10))
+            add(label("Gist syncs through folders in a folder named ${GistRoot.NAME} at the top of your phone's storage, " +
+                "where the app you share folders with can reach them too. Android needs you to allow access to it once; " +
+                "Gist makes everything inside it, for every profile.", 15f), dp(6))
+            add(muted("If it isn't there yet: in the picker, make a new folder named ${GistRoot.NAME} at the top of your " +
+                "storage and open it. Then tap Use this folder, and Allow.", 13f), dp(6))
+            add(primaryButton("Allow access to the ${GistRoot.NAME} folder…") { requestAccess() }.apply { tag = "gist-folder-allow" }, dp(10))
         } else {
-            val shown = if (root.startsWith("content://")) "${PublicAppData.NAME}/${PublicAppData.GIST}/${gf.folderName()}" else root
+            val shown = if (root.startsWith("content://")) GistRoot.pathOf(root).removePrefix("/storage/emulated/0/") else root
             add(label(shown, 15f).apply { tag = "gist-folder" }, dp(6))
             add(muted("My devices: share it with your other devices. People: one folder per connection, " +
                 "each shared with that person only.", 13f), dp(4))
@@ -268,18 +268,18 @@ class ConnectionsActivity : BaseActivity() {
     /** The last status line from Syncthing (read off the main thread). */
     private var easyStatus: String? = null
 
-    /** Access to PublicAppData, and All files access for Syncthing; then [then]. */
+    /** Access to the Gist folder, and All files access for Syncthing; then [then]. */
     private fun easyReady(then: () -> Unit) {
         if (GistFolder(this).root == null) {
-            toast("First allow access to ${PublicAppData.NAME}.")
+            toast("First allow access to the ${GistRoot.NAME} folder.")
             requestAccess()
             return
         }
         if (!EasyConnect.canReachFiles()) {
             AlertDialog.Builder(this)
                 .setTitle("Allow All files access")
-                .setMessage("Syncthing, built into Gist, reaches My devices in ${PublicAppData.NAME} by its path, which " +
-                    "Android calls All files access. Gist only uses it for its folders in ${PublicAppData.NAME}. " +
+                .setMessage("Syncthing, built into Gist, reaches the folders in your ${GistRoot.NAME} folder by their path, " +
+                    "which Android calls All files access. Gist only uses it for its folders in ${GistRoot.NAME}. " +
                     "Turn it on for Gist, then come back and tap again.")
                 .setPositiveButton("Open settings") { _, _ ->
                     runCatching { startActivity(EasyConnect.filesAccessIntent(this)) }
@@ -549,7 +549,7 @@ class ConnectionsActivity : BaseActivity() {
             Devices(this).setUp(loc)
             toast("Set up. Now share My devices (in your Gist folder) with your other devices.")
         } catch (e: Exception) {
-            toast("Couldn't make My devices in your Gist folder: check Gist still has access to ${PublicAppData.NAME}.")
+            toast("Couldn't make My devices in your Gist folder: check Gist still has access to the ${GistRoot.NAME} folder.")
         }
         render()
     }
@@ -652,14 +652,14 @@ class ConnectionsActivity : BaseActivity() {
         askWhoFor()
     }
 
-    /** Asks Android for access to PublicAppData (the only folder Gist uses); then does [then]. */
+    /** Asks Android for access to the Gist folder (the only folder Gist uses); then does [then]. */
     @Suppress("DEPRECATION")
     private fun requestAccess(then: String? = null) {
         afterAccess = then
         try {
-            startActivityForResult(PublicAppData.pickIntent(), REQ_ACCESS)
+            startActivityForResult(GistRoot.pickIntent(), REQ_ACCESS)
         } catch (e: android.content.ActivityNotFoundException) {
-            toast("This phone has no folder picker, so Gist can't get access to ${PublicAppData.NAME}.")
+            toast("This phone has no folder picker, so Gist can't get access to the ${GistRoot.NAME} folder.")
         }
     }
 
@@ -683,11 +683,11 @@ class ConnectionsActivity : BaseActivity() {
             afterAccess = null
             return
         }
-        if (!PublicAppData.allow(this, uri)) {
+        if (!GistRoot.allow(this, uri)) {
             AlertDialog.Builder(this)
-                .setTitle("That's not ${PublicAppData.NAME}")
-                .setMessage("Gist only uses ${PublicAppData.PATH}. Pick that folder (make it at the top of your " +
-                    "storage, named exactly ${PublicAppData.NAME}, if it isn't there), then Use this folder.")
+                .setTitle("That's not the ${GistRoot.NAME} folder")
+                .setMessage("Gist only uses ${GistRoot.PATH} (any case: gist will do). Pick that folder (make it at the " +
+                    "top of your storage if it isn't there), then Use this folder.")
                 .setPositiveButton("Try again") { _, _ -> requestAccess(afterAccess) }
                 .setNegativeButton("Cancel") { _, _ -> afterAccess = null }
                 .show()
