@@ -66,7 +66,10 @@ is in `android/app/src/main/java/dev/gist/checkin/`.
 | `HistoryActivity.kt` | one check-in's last 30 days: stats, per-question counts, day grid |
 | `LibraryActivity.kt` | "Add a check-in": the template library, or start blank |
 | `ScanActivity.kt` | registers a code for a scan step |
-| `SettingsActivity.kt` | appearance, pause length, backup export / import, CSV |
+| `NavDrawer.kt` | the ☰ menu on the start page: profile rail, Home, Connections, Backup, Settings, About |
+| `SettingsActivity.kt` | appearance, pause length, profiles (and their pictures) |
+| `BackupActivity.kt` | backup export / import, CSV |
+| `ProfilePicture.kt` | a profile's picture (256 px PNG in its files) and `AvatarView` (picture or first letter) |
 | `AboutActivity.kt` | version, privacy, source code, Donate |
 | `BaseActivity.kt` | shared theme handling (light / dark override) |
 

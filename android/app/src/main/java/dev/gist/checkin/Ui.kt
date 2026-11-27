@@ -62,8 +62,8 @@ fun Context.label(text: CharSequence, sizeSp: Float = 16f, bold: Boolean = false
 fun Context.muted(text: CharSequence, sizeSp: Float = 14f): TextView = label(text, sizeSp, color = colorMuted)
 
 /**
- * Big screen title with an optional muted subtitle, and the profile's name at the top right
- * when you have more than one ([profileBadge]).
+ * Big screen title with an optional muted subtitle, and the profile's picture at the top right
+ * ([profileBadge]).
  */
 fun Context.header(title: String, subtitle: String? = null): LinearLayout {
     val text = column().apply {
@@ -79,23 +79,25 @@ fun Context.withProfileBadge(content: View): LinearLayout {
     return row().apply {
         gravity = Gravity.TOP
         addWeighted(content)
-        addWrapped(badge)
+        addWrapped(badge, startMargin = dp(8))
     }
 }
 
 /**
- * Which profile this page is in, when you have more than one: its name, at the top right of
- * every page. Tap it to switch (or to make a new profile).
+ * Which profile this page is in: its picture (or the first letter of its name), at the top
+ * right of every page. Tap it to switch profile or make a new one.
  */
 fun Context.profileBadge(): View? {
     val activity = this as? Activity ?: return null
-    if (!Profiles.several(this)) return null
-    val name = Profiles.name(this, Profiles.of(this))
-    return textButton("$name ▾") { ProfileUi.pick(activity) }.apply {
+    val id = Profiles.of(this)
+    val name = Profiles.name(this, id)
+    return AvatarView(this, id, name, 36).apply {
         tag = "profile"
         contentDescription = "Profile: $name. Switch profile"
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setPadding(dp(8), paddingTop, 0, paddingBottom)
+        isClickable = true
+        foreground = RippleDrawable(ColorStateList.valueOf(colorOf(R.color.ripple)), null,
+            GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) })
+        setOnClickListener { ProfileUi.pick(activity) }
     }
 }
 

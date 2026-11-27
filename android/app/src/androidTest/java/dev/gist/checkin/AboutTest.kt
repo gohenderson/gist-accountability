@@ -1,6 +1,5 @@
 package dev.gist.checkin
 
-import android.content.Intent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
@@ -25,11 +24,14 @@ class AboutTest {
     fun tearDown() = TestEnv.reset(emptyList())
 
     @Test
-    fun aboutOpensFromSettingsWithVersionDonateAndSource() {
+    fun aboutOpensFromTheMenuWithVersionDonateAndSource() {
         TestEnv.shell("pm grant ${TestEnv.ctx.packageName} android.permission.POST_NOTIFICATIONS")
         TestEnv.reset(emptyList())
-        ActivityScenario.launch<SettingsActivity>(Intent(TestEnv.ctx, SettingsActivity::class.java)).use {
-            onView(tagged("about")).perform(scrollTo(), click())
+        ActivityScenario.launch(MainActivity::class.java).use {
+            onView(tagged("menu")).perform(click())
+            TestEnv.eventually { onView(tagged("nav:about")).check(matches(isDisplayed())) }
+            onView(tagged("nav:about")).perform(click())
+            TestEnv.eventually { onView(withText("About Gist")).check(matches(isDisplayed())) }
             onView(withText("About Gist")).check(matches(isDisplayed()))
             onView(withText(startsWith("Version "))).check(matches(isDisplayed()))
             onView(tagged("donate")).perform(scrollTo()).check(matches(isDisplayed()))

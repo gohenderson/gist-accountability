@@ -489,20 +489,21 @@ class GroupingTest {
     }
 
     @Test
-    fun settingsIsAtTheTop() {
+    fun theMenuIsAtTheTop() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
         main().use { scenario ->
-            onView(tagged("settings")).check(matches(withContentDescription("Settings")))
-            onView(tagged("about")).check(doesNotExist()) // in Settings
+            onView(tagged("menu")).check(matches(withContentDescription("Menu")))
             onView(tagged("donate")).check(doesNotExist())
-            onView(withText("Settings · backup · appearance")).check(doesNotExist())
-            // ☰ to the left of the title; no date under it, and no profile name with just one.
-            onView(tagged("settings")).check(matches(withText("☰")))
-            onView(tagged("settings")).check(isCompletelyLeftOf(withText("Gist")))
+            // ☰ to the left of the title; no date under it; the profile's letter at the top right.
+            onView(tagged("menu")).check(matches(withText("☰")))
+            onView(tagged("menu")).check(isCompletelyLeftOf(withText("Gist")))
             onView(withText(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d"))))
                 .check(doesNotExist())
-            onView(tagged("profile")).check(doesNotExist())
-            onView(tagged("settings")).perform(click())
+            onView(tagged("profile")).check(matches(withContentDescription("Profile: Personal. Switch profile")))
+            onView(tagged("drawer")).check(matches(org.hamcrest.Matchers.not(isDisplayed())))
+            onView(tagged("menu")).perform(click())
+            TestEnv.eventually { onView(tagged("nav:settings")).check(matches(isDisplayed())) }
+            onView(tagged("nav:settings")).perform(click())
             TestEnv.eventually { onView(withText("Settings")).check(matches(isDisplayed())) }
         }
     }

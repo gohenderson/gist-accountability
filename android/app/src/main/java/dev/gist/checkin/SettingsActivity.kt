@@ -1,26 +1,26 @@
 package dev.gist.checkin
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
-import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.ScrollView
 import android.widget.Toast
-import java.time.LocalDate
 
-/** Appearance, backup / restore, and CSV export. */
+/** Appearance, the alarm pause, and profiles (the rest is in the menu: [NavDrawer]). */
 class SettingsActivity : BaseActivity() {
     private lateinit var store: Store
-    private var pendingExport: List<Backup.ExportChoice>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
+        pictureFor = savedInstanceState?.getString(STATE_PICTURE_FOR)
         render()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pictureFor?.let { outState.putString(STATE_PICTURE_FOR, it) }
     }
 
     private fun render() {
@@ -79,45 +79,8 @@ class SettingsActivity : BaseActivity() {
         alarm.add(muted("If the countdown runs out before you finish, the alarm rings again. Applies to every check-in.", 13f), dp(8))
         col.add(alarm, dp(12))
 
-        // Backup
-        val backup = card()
-        backup.add(sectionTitle("Backup"))
-        backup.add(
-            label("A YAML file with the check-ins you choose, their backgrounds (photos and videos) and, if you " +
-                "like, their history. Keep it somewhere safe (Drive, email to yourself) to move to a new phone " +
-                "or share a check-in.", 15f),
-            dp(6)
-        )
-        val b = row()
-        b.addWeighted(primaryButton("Export backup…") { exportBackup() })
-        b.addWeighted(outlineButton("Import backup…") { importBackup() }, startMargin = dp(8))
-        backup.add(b, dp(12))
-        col.add(backup, dp(12))
-
-        // Connections
-        val conn = card()
-        conn.add(sectionTitle("Connections"))
-        conn.add(label("Keep your own devices in step, choose whether this one rings, and share check-ins and tasks " +
-            "with other people (read-only), through shared folders.", 15f), dp(6))
-        conn.add(outlineButton("Connections…") { startActivity(ConnectionsActivity.intent(this)) }.apply { tag = "connections" }, dp(12))
-        col.add(conn, dp(12))
-
         col.add(profilesCard(), dp(12))
         if (SyncthingEngine.shared(this).available) col.add(syncthingCard(), dp(12))
-
-        // CSV
-        val csv = card()
-        csv.add(sectionTitle("Spreadsheet"))
-        csv.add(label("Every result as a CSV file: one row per day, check-in and time.", 15f), dp(6))
-        csv.add(outlineButton("Export results (CSV)…") { exportCsv() }, dp(12))
-        col.add(csv, dp(12))
-
-        // About
-        val about = card()
-        about.add(sectionTitle("About"))
-        about.add(label("Version, privacy, source code, and how to support Gist.", 15f), dp(6))
-        about.add(outlineButton("About Gist · Donate") { startActivity(AboutActivity.intent(this)) }.apply { tag = "about" }, dp(12))
-        col.add(about, dp(12))
 
         setContentView(screen(col))
     }
@@ -176,13 +139,21 @@ class SettingsActivity : BaseActivity() {
         tag = "profiles"
         add(sectionTitle("Profiles"))
         add(label("Separate setups, say Personal and Work: each has its own check-ins and tasks, answers, settings, " +
-            "Gist folder and devices. Every profile's alarms ring, whichever one you're on.", 15f), dp(6))
+            "Gist folder and devices. Every profile's alarms ring, whichever one you're on. Tap a profile's " +
+            "picture to change it (it stays on this phone).", 15f), dp(6))
         val current = profileId
         for (p in Profiles.all(this@SettingsActivity)) {
             val key = p.id.ifEmpty { "default" }
             val r = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            // Its picture (or first letter): tap to choose a picture.
+            r.addWrapped(AvatarView(this@SettingsActivity, p.id, p.name, 40).apply {
+                tag = "profile-picture:$key"
+                contentDescription = "${p.name}'s picture. Change it"
+                isClickable = true
+                setOnClickListener { pictureChoices(p.id) }
+            })
             val name = if (p.id == current) "${p.name} (this one)" else p.name
-            r.addWeighted(label(name, 16f, bold = p.id == current).apply { tag = "profile-row:$key" })
+            r.addWeighted(label(name, 16f, bold = p.id == current).apply { tag = "profile-row:$key" }, startMargin = dp(12))
             if (p.id != current) {
                 r.addWrapped(textButton("Switch") { ProfileUi.switchTo(this@SettingsActivity, p.id) }.apply { tag = "profile-switch:$key" })
             }
@@ -197,261 +168,53 @@ class SettingsActivity : BaseActivity() {
         }.apply { tag = "new-profile" }, dp(12))
     }
 
-    // ---------------------------------------------------------------- backup
+    // ---------------------------------------------------------------- profile pictures
 
-    private fun exportBackup() {
-        if (store.checkins.isEmpty()) {
-            toast("There are no check-ins to export.")
-            return
+    /** The profile whose picture is being chosen. */
+    private var pictureFor: String? = null
+
+    /** Choose a picture for profile [id], or remove the one it has. */
+    private fun pictureChoices(id: String) {
+        if (!ProfilePicture.has(this, id)) return pickPicture(id)
+        val options = listOf(
+            DialogOption("Choose a picture…", tag = "picture-choose"),
+            DialogOption("Remove the picture", "Shows the first letter of the name instead.", "picture-remove"),
+        )
+        pickDialog("${Profiles.name(this, id)}'s picture", options) { i ->
+            if (i == 0) pickPicture(id) else {
+                ProfilePicture.remove(this, id)
+                render()
+            }
         }
-        showExportChoices { choices -> pickExportFile(choices) }
     }
 
     @Suppress("DEPRECATION")
-    private fun pickExportFile(choices: List<Backup.ExportChoice>) {
-        pendingExport = choices
-        val one = choices.singleOrNull()?.let { store.checkin(it.checkinId)?.name }
-        val slug = one?.lowercase()?.replace(Regex("[^a-z0-9]+"), "-")?.trim('-')?.ifEmpty { null }
+    private fun pickPicture(id: String) {
+        pictureFor = id
         startActivityForResult(
-            Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/yaml")
-                .putExtra(Intent.EXTRA_TITLE, "gist-${slug ?: "backup"}-${LocalDate.now()}.yaml"),
-            REQ_EXPORT_BACKUP
+            Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),
+            REQ_PICTURE
         )
     }
 
-    /**
-     * Which check-ins to export, and for each whether to include its history. Calls
-     * [onChosen] with the choices (at least one check-in).
-     */
-    fun showExportChoices(onChosen: (List<Backup.ExportChoice>) -> Unit) {
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), dp(8)) }
-        box.add(muted("Each check-in is saved with its steps and background. Its history is up to you.", 13f))
-        val rows = store.checkins.map { c ->
-            val days = store.historyJson(c.id).length()
-            val card = dialogCard()
-            val include = CheckBox(this).apply {
-                text = c.name
-                isChecked = true
-                tag = "export:${c.id}"
-                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
-            }
-            val history = CheckBox(this).apply {
-                text = if (days == 0) "No history yet" else "Include its history ($days day${if (days == 1) "" else "s"})"
-                isChecked = days > 0
-                isEnabled = days > 0
-                tag = "export-history:${c.id}"
-            }
-            include.setOnCheckedChangeListener { _, on -> history.isEnabled = on && days > 0 }
-            card.add(include)
-            card.add(muted(CheckinText.oneLine(c), 13f), dp(0))
-            card.add(history, dp(4))
-            box.add(card, dp(12))
-            Triple(c.id, include, history)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Export which check-ins?")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Export…") { _, _ ->
-                val choices = rows.filter { it.second.isChecked }
-                    .map { (id, _, h) -> Backup.ExportChoice(id, h.isChecked && h.isEnabled) }
-                if (choices.isEmpty()) toast("Nothing selected.") else onChosen(choices)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
+    @Deprecated("Deprecated in Java")
     @Suppress("DEPRECATION")
-    private fun importBackup() {
-        startActivityForResult(
-            Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("*/*")
-                .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                    "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml",
-                    "text/plain", "application/octet-stream",
-                )),
-            REQ_IMPORT_BACKUP
-        )
-    }
-
-    /**
-     * For each check-in in the file: import it or not; if you already have it, whether to
-     * update, replace or add a copy; and whether to bring its history.
-     */
-    fun showImportChoices(contents: Backup.Contents) {
-        val local = store.checkins
-        val box = column().apply { setPadding(dp(20), dp(8), dp(20), dp(8)) }
-        box.add(muted("Check-ins you don't pick, and ones on this phone that aren't in the file, are left alone.", 13f))
-        class Row(val id: String, val include: CheckBox, val modes: Map<Backup.Mode, RadioButton>, val history: CheckBox)
-        val rows = contents.checkins.map { c ->
-            val match = Backup.match(local, c)
-            val days = contents.historyDays(c.id)
-            val card = card()
-            val include = CheckBox(this).apply {
-                text = c.name
-                isChecked = true
-                tag = "import:${c.id}"
-                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
-            }
-            card.add(include)
-            card.add(muted(CheckinText.oneLine(c), 13f), dp(0))
-            val modes = mutableMapOf<Backup.Mode, RadioButton>()
-            val group = RadioGroup(this)
-            if (match == null) {
-                card.add(label("New on this phone", 14f, color = colorGood), dp(6))
-            } else {
-                card.add(label("You already have “${match.name}”:", 14f, bold = true), dp(8))
-                listOf(
-                    Backup.Mode.UPDATE to "Update it: settings from the file, keep its history",
-                    Backup.Mode.REPLACE to "Replace it, history too",
-                    Backup.Mode.COPY to "Keep it and add this as a copy",
-                ).forEach { (mode, text) ->
-                    val rb = RadioButton(this).apply {
-                        id = View.generateViewId()
-                        this.text = text
-                        tag = "import-mode:${c.id}:${mode.name.lowercase()}"
-                        isChecked = mode == Backup.Mode.UPDATE
-                    }
-                    group.addView(rb)
-                    modes[mode] = rb
-                }
-                card.add(group, dp(2))
-            }
-            val history = CheckBox(this).apply {
-                text = if (days == 0) "No history in the file" else "Import its history ($days day${if (days == 1) "" else "s"})"
-                isChecked = days > 0
-                isEnabled = days > 0
-                tag = "import-history:${c.id}"
-            }
-            card.add(history, dp(4))
-            include.setOnCheckedChangeListener { _, on ->
-                history.isEnabled = on && days > 0
-                modes.values.forEach { it.isEnabled = on }
-            }
-            box.add(card, dp(12))
-            Row(c.id, include, modes, history)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Import from backup")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Import") { _, _ ->
-                val choices = rows.filter { it.include.isChecked }.map { r ->
-                    val mode = r.modes.entries.firstOrNull { it.value.isChecked }?.key ?: Backup.Mode.NEW
-                    Backup.ImportChoice(r.id, mode, r.history.isChecked && r.history.isEnabled)
-                }
-                if (choices.isEmpty()) {
-                    toast("Nothing imported.")
-                    return@setPositiveButton
-                }
-                try {
-                    val done = Backup.import(this, contents, choices)
-                    toast("Imported ${done.size} check-in${if (done.size == 1) "" else "s"}: ${done.joinToString { it.name }}. Alarms are set.")
-                } catch (e: Exception) {
-                    toast("Import failed: ${e.message}")
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // ---------------------------------------------------------------- CSV
-
-    @Suppress("DEPRECATION")
-    private fun exportCsv() {
-        startActivityForResult(
-            Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("text/csv")
-                .putExtra(Intent.EXTRA_TITLE, "gist-log-${Days.today()}.csv"),
-            REQ_EXPORT_CSV
-        )
-    }
-
-    private fun buildCsv(): String {
-        fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
-        val checkins = store.checkins
-        val qs = checkins.flatMap { it.questions }
-        val sb = StringBuilder()
-        sb.append("date,time,check-in,status,early,getting started (s),doing it (s)")
-        qs.forEach { sb.append(',').append(esc(it.text)) }
-        sb.append('\n')
-        val rows = checkins.flatMap { c ->
-            store.allResults(c.id).flatMap { (day, slots) -> slots.map { (time, r) -> Triple(day, time, c to r) } }
-        }.sortedWith(compareBy({ it.first }, { it.second }))
-        for ((day, time, cr) in rows) {
-            val (c, r) = cr
-            sb.append(day).append(',').append(time).append(',').append(esc(c.name))
-                .append(',').append(if (r.status == SlotResult.RANG) "missed" else r.status)
-                .append(',').append(if (r.early) "yes" else "")
-                .append(',').append(r.took?.start?.toString() ?: "")
-                .append(',').append(r.took?.steps?.toString() ?: "")
-            qs.forEach { q ->
-                sb.append(',')
-                if (q.takesValue && r.values.containsKey(q.id)) sb.append(esc(r.values.getValue(q.id)))
-                else r.answers[q.id]?.let { sb.append(if (it) "yes" else "no") }
-            }
-            sb.append('\n')
-        }
-        return sb.toString()
-    }
-
-    // ---------------------------------------------------------------- results
-
-    @Deprecated("Platform Activity API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        val id = pictureFor
         val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) return
-        // Only accept documents from the system file picker (content:// from another app's
-        // provider), never a file path, one of this app's own providers, or anything whose
-        // normalized path points into private storage.
-        if (uri.scheme != "content" || uri.authority.orEmpty().startsWith(packageName)) {
-            toast("That file location isn't supported.")
-            return
-        }
-        val path = uri.path
-        if (path.isNullOrBlank()) {
-            toast("That file location isn't supported.")
-            return
-        }
-        val normalized = java.nio.file.FileSystems.getDefault().getPath(path).normalize()
-        if (normalized.startsWith("/data") || normalized.any { it.toString() == ".." }) {
-            toast("That file location isn't supported.")
-            return
-        }
+        if (requestCode != REQ_PICTURE || resultCode != RESULT_OK || id == null || uri == null) return
+        pictureFor = null
         try {
-            when (requestCode) {
-                REQ_EXPORT_BACKUP -> {
-                    val choices = pendingExport ?: Backup.allChoices(this)
-                    pendingExport = null
-                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(Backup.export(this, choices).toByteArray()) }
-                    toast("Backup saved")
-                }
-                REQ_IMPORT_BACKUP -> {
-                    val text = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                        ?: throw IllegalArgumentException("Couldn't read the file.")
-                    showImportChoices(Backup.parse(this, text))
-                }
-                REQ_EXPORT_CSV -> {
-                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(buildCsv().toByteArray()) }
-                    toast("CSV saved")
-                }
-            }
-        } catch (e: IllegalArgumentException) {
-            AlertDialog.Builder(this).setTitle("Can't import").setMessage(e.message).setPositiveButton("OK", null).show()
+            ProfilePicture.set(this, id, uri)
         } catch (e: Exception) {
-            toast("Failed: ${e.message}")
+            Toast.makeText(this, "Couldn't use that picture: ${e.message}", Toast.LENGTH_LONG).show()
         }
+        render()
     }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
-        private const val REQ_EXPORT_BACKUP = 11
-        private const val REQ_IMPORT_BACKUP = 12
-        private const val REQ_EXPORT_CSV = 13
+        private const val REQ_PICTURE = 21
+        private const val STATE_PICTURE_FOR = "pictureFor"
     }
 }
