@@ -51,6 +51,17 @@ signed with different keys, so Android won't install one over the other. Switchi
 uninstalling first, which deletes your data, so **export a backup** first
 (Settings → Export backup…).
 
+### Syncthing (Easy Connect)
+
+CI builds Syncthing's program from source and puts it in `android/syncthing/jniLibs/<abi>/`
+before building the app. Locally, without it, the app builds and runs as usual, and Easy
+Connect isn't offered. To include it, with Go and the Android NDK installed:
+
+```sh
+git clone --depth 1 --branch "$(cat android/syncthing.version)" https://github.com/syncthing/syncthing _syncthing-src
+bash .github/scripts/build-syncthing.sh _syncthing-src android/syncthing/jniLibs arm64-v8a x86_64
+```
+
 ## Dependencies
 
 Two small libraries, both open-source plain Java (Apache-2.0):

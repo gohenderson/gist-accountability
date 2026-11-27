@@ -16,8 +16,13 @@ Only the latest release is supported.
 
 Gist is designed to have as little to protect as possible:
 
-- **No internet permission.** It can't send anything anywhere. There are no accounts,
-  analytics, ads or crash reporting.
+- **Nothing online except Easy Connect.** There are no accounts, servers, analytics, ads
+  or crash reporting. Gist's own code never opens a network connection. The internet
+  permission is for **Easy Connect** only: Syncthing, run inside Gist only while you have
+  Easy Connect on, syncs the folders you connect with the devices you connect, over TLS,
+  using Syncthing's discovery and relay servers to find them. Gist declines Syncthing's
+  usage reports and turns off its crash reports. Gist talks to it on 127.0.0.1 with a key
+  made new for each run (plain HTTP is allowed to 127.0.0.1 only).
 - **Data stays in the app's private storage:** check-ins, answers, and background and voice
   media. It leaves the phone only when you export it, as a backup file or CSV, to a
   place you choose.
@@ -30,6 +35,10 @@ Gist is designed to have as little to protect as possible:
   receiver, which only re-arms alarms after a restart or a clock change.
 - **Two dependencies**, both small, open-source and pure Java: ZXing core and SnakeYAML
   Engine. Backups are parsed as plain data only.
+- **Syncthing** (Easy Connect) is built by CI from Syncthing's own source, at the release
+  tag in `android/syncthing.version`, and runs as its own process. It needs **All files
+  access** to reach the folders in the Gist folder by path; Gist asks for it only when you
+  use Easy Connect.
 
 ## Automated checks
 

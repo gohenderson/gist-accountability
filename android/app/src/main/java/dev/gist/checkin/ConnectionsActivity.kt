@@ -109,7 +109,7 @@ class ConnectionsActivity : BaseActivity() {
         r.addWeighted(outlineButton("Join…") { askForInvite('c') }.apply { tag = "join" }, startMargin = dp(8))
         add.add(r, dp(12))
         if (SyncthingEngine.shared(this).available) {
-            add.add(sectionTitle("Easy Connect (experiment)"), dp(14))
+            add.add(sectionTitle("Easy Connect"), dp(14))
             add.add(muted("No folder to share by hand: Gist connects your device and theirs itself. One of you shows a " +
                 "code, the other scans it.", 13f), dp(4))
             val e = row()
@@ -238,12 +238,12 @@ class ConnectionsActivity : BaseActivity() {
     }
 
     /**
-     * Easy Connect (builds with Syncthing in them): Gist shares My devices through its own
+     * Easy Connect: Gist shares My devices through its own
      * Syncthing, so another device only scans a code. [setUp]: this device has My devices.
      */
     private fun easyConnect(card: android.widget.LinearLayout, setUp: Boolean) {
         if (!SyncthingEngine.shared(this).available) return
-        card.add(sectionTitle("Easy Connect (experiment)"), dp(14))
+        card.add(sectionTitle("Easy Connect"), dp(14))
         card.add(muted("Gist keeps your devices in step itself, with Syncthing built in: show a code on one device, " +
             "scan it on the other. My devices stays in your Gist folder, so anything else can still share it too.", 13f), dp(4))
         val ready = Devices(this).ready

@@ -92,13 +92,16 @@ started. Copy one and adjust it, or start from scratch.
 
 ## Private by design
 
-- **No internet permission.** Nothing leaves your phone, including your location and
-  steps. There are no accounts, ads or analytics.
+- **No servers, no accounts.** Nothing leaves your phone, including your location and
+  steps, and there are no ads or analytics. The one exception is **Easy Connect**, if you
+  turn it on: it runs [Syncthing](https://syncthing.net) inside Gist to send the folders
+  you connect, encrypted, to your other devices or the people you connect with (no usage
+  or crash reports).
 - Your data stays in the app's private storage. It leaves only when you export it: a
   readable YAML backup (pick which check-ins, with or without history) or a CSV of your
   answers.
 - It uses only Android's built-in APIs plus two small open-source libraries: ZXing for
-  scanning and SnakeYAML Engine for backups.
+  scanning and SnakeYAML Engine for backups, and Syncthing's own program for Easy Connect.
 
 It can't stop you from force-stopping or uninstalling it. The friction is the point.
 

@@ -9,7 +9,11 @@ How Gist is put together, for anyone reading or changing the code. To build it, 
   built in Kotlin code with a few small helpers (`Ui.kt`). That keeps the APK small and
   the dependency list to two libraries (ZXing and SnakeYAML Engine), and it means nothing
   needs Google's servers.
-- **No internet permission.** Location uses Android's own `LocationManager` proximity
+- **Online only for Easy Connect.** Gist's own code never opens a network connection; the
+  internet permission is for Syncthing (`SyncthingEngine`, `SyncthingService`), run as
+  a separate process while Easy Connect is on and reached on 127.0.0.1. Its program is
+  built by CI (`build-syncthing.sh`) and packaged as `lib/<abi>/libsyncthing.so`
+  (arm64-v8a in release builds; also x86_64 in debug builds, for the emulator). Location uses Android's own `LocationManager` proximity
   alerts. Text-to-speech uses whatever engine the phone has. Scanning decodes on the
   device.
 - **Alarms are alarm clocks.** Every ring is scheduled with

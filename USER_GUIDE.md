@@ -465,9 +465,9 @@ they see what you share, but only you can change it, and the other way round.
   **Show the invite** (on a connection still waiting) shows it again, or a new one if it
   ran out. Pass it in person or over a channel you trust, not through the shared folder.
   Both phones then show the same **code** (like `4F7A-91C2`), which you can still compare.
-- **Between phones** the folders have to be kept in step by an app that shares folders
-  between devices, such as [Syncthing](https://syncthing.net). Gist never goes online
-  itself, and works with whatever keeps the folders in step.
+- **Between phones** the folders have to be kept in step: by [Easy Connect](#easy-connect),
+  built in, or by any app that shares folders between devices, such as
+  [Syncthing](https://syncthing.net).
 - **Share with…** on a check-in's or task's page (Details) picks which connections see
   it. Changes go out the next time Gist is opened or you leave the page.
 - **What they share** shows on your start page under **From Jess**, on the tab it belongs
@@ -536,6 +536,32 @@ the same code.
   opening Gist, since two sharing at once could clash. Remove a connection on the device
   it's kept on; your others forget it too.
 - **Coming next:** the iPhone.
+
+
+### Easy Connect
+
+**Easy Connect** does the folder sharing for you, with [Syncthing](https://syncthing.net)
+built into Gist: nothing else to install, no folders to share by hand. One phone shows a
+code, the other scans it.
+
+- **With your own devices:** ☰ → Connections → Your devices → **Show a code** on the one
+  that's set up (it sets up My devices first if needed), then **Scan a code** on the new one.
+- **With someone else:** ☰ → Connections → Easy Connect → **Show a code** (say who it's
+  for) on one phone and **Scan a code** on the other.
+- **Asked once:** access to the Gist folder, and **All files access**, which Syncthing needs
+  to reach the folders in it by their path. Gist uses it only for its folders in Gist.
+- **While it's on**, Syncthing runs in the background (a notification says so) and keeps
+  the folders in step whenever both phones can reach each other, on the same Wi-Fi or over
+  the internet. **Turn off Easy Connect** stops it.
+- **What goes where:** only the folders you connect, only to the devices you connect them
+  with, encrypted on the way. When the phones aren't on the same network, Syncthing finds
+  them through its public discovery servers (which see your device's ID and address) and,
+  if needed, sends the encrypted data through a relay. Gist turns off Syncthing's usage
+  and crash reports. Without Easy Connect, Gist never goes online.
+- **Phones:** release builds include Syncthing for 64-bit phones (nearly all phones with
+  Android 10+).
+- Your folders are still ordinary folders in Gist, so you can also share any of them
+  with something else as before.
 
 ## Profiles (Android)
 

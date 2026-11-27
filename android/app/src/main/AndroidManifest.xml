@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Show the alarm notification / full-screen check-in. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -55,9 +56,21 @@
     </queries>
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
 
-    <!-- Note: no INTERNET permission. Nothing ever leaves the phone. -->
+    <!-- Easy Connect: Syncthing, run inside Gist while Easy Connect is on, keeps your devices'
+         and connections' folders in step with theirs, directly and encrypted. Gist's own code
+         never goes online; Syncthing doesn't run unless you turn Easy Connect on. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Syncthing reaches the folders in the Gist folder by their path. Asked when you turn
+         Easy Connect on. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="${appLabel}"
@@ -168,5 +181,11 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+        <!-- Easy Connect: keeps Syncthing running while it's on. -->
+        <service
+            android:name=".SyncthingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
 </manifest>
