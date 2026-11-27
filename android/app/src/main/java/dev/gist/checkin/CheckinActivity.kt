@@ -95,6 +95,7 @@ class CheckinActivity : BaseActivity() {
     private var seenChanges = 0 // SoftAlarm.changes when last checked
     /** Showing "Task done" (with Create follow-up): stays put until you choose. */
     private var taskDoneShown = false
+    private var againShown = false
     private var barLabel: TextView? = null
     private var barProgress: ProgressBar? = null
     private val ticker = object : Runnable {
@@ -146,7 +147,7 @@ class CheckinActivity : BaseActivity() {
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) {
                 when {
-                    !forced -> finish()
+                    againShown || !forced -> finish()
                     target.practice -> endTest()
                     checkin.soft || checkin.quiet -> finish() // can be left: Snooze / Dismiss, or it waits quietly
                 }
@@ -157,7 +158,7 @@ class CheckinActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!::checkin.isInitialized || taskDoneShown) return
+        if (!::checkin.isInitialized || taskDoneShown || againShown) return
         // Snoozed or dismissed from the notification while this screen was away: move on.
         if (forced && target !in store.pending && !moveOn()) return
         seenChanges = SoftAlarm.changes
@@ -255,6 +256,7 @@ class CheckinActivity : BaseActivity() {
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         when {
+            againShown -> finish() // checked in: Back is "Done"
             !forced -> super.onBackPressed()
             target.practice -> endTest() // a test can be left at any point
             checkin.soft -> super.onBackPressed() // so can a soft alarm (it keeps ringing until snoozed or dismissed)
@@ -472,6 +474,11 @@ class CheckinActivity : BaseActivity() {
             finish()
             return
         }
+        // A ring from a one-off time ("Ring in…", "Ring again in…"): offer the next one, once
+        // nothing else is waiting. In this ring's profile (the next alarm can be another's).
+        val offerAgain = forced && !target.practice && !checkin.isTask && QuickTime.wasOneOff(checkin, slot)
+        val againIn = Profiles.scoped(this, profileId)
+        val again = checkin
         store.removePending(target)
         Notif.clearQuiet(this, checkin.id)
         store.prunePending()
@@ -484,7 +491,42 @@ class CheckinActivity : BaseActivity() {
             return
         }
         stopIfNothingPending()
+        if (offerAgain) {
+            showAgain(againIn, again)
+            return
+        }
         finish()
+    }
+
+    /**
+     * Checked in, from a one-off time: ring again in a while? The last interval picked is first
+     * (30 minutes to start with); Done closes.
+     */
+    private fun showAgain(ctx: Context, c: Checkin) {
+        againShown = true
+        ticks.removeCallbacksAndMessages(null)
+        stopScanner()
+        stopBackground()
+        val last = Store(ctx).quickMinutes
+        fun ringIn(m: Int) {
+            val t = QuickTime.add(ctx, c.id, m)
+            Toast.makeText(this, QuickTime.said(m, t), Toast.LENGTH_LONG).show()
+            finish()
+        }
+        val col = column()
+        col.add(label("✓ Checked in", 30f, bold = true, color = colorGood).apply { tag = "again-title" })
+        col.add(label(c.name, 20f, bold = true), dp(6))
+        col.add(muted("Ring again?", 15f), dp(16))
+        col.add(primaryButton("Again in ${QuickTime.text(last)}") { ringIn(last) }.apply { tag = "again:$last" }, dp(12))
+        val others = QuickTime.CHOICES.filter { it != last && it >= 10 }.take(4)
+        val r = row()
+        others.forEachIndexed { k, m ->
+            r.addWeighted(outlineButton(QuickTime.text(m)) { ringIn(m) }.apply { tag = "again:$m" }, startMargin = if (k > 0) dp(6) else 0)
+        }
+        col.add(r, dp(8))
+        col.add(outlineButton("Other…") { QuickTime.askOther(this) { ringIn(it) } }.apply { tag = "again-other" }, dp(8))
+        col.add(textButton("Done") { finish() }.apply { tag = "again-close" }, dp(12))
+        setScreen(col, withBar = false)
     }
 
     /**

@@ -644,6 +644,11 @@ class Store(context: Context) {
         get() = prefs.getInt(K_PAUSE, DEFAULT_PAUSE).takeIf { it in PAUSE_CHOICES } ?: DEFAULT_PAUSE
         set(v) = putSetting(K_PAUSE) { putInt(K_PAUSE, v) }
 
+    /** The "In…" / "Ring again in…" minutes last picked, offered first next time (this phone only). */
+    var quickMinutes: Int
+        get() = prefs.getInt(K_QUICK, QuickTime.DEFAULT).takeIf { it in 1..QuickTime.MAX } ?: QuickTime.DEFAULT
+        set(v) { prefs.edit().putInt(K_QUICK, v).commit() }
+
     /** Your name as your connections see it (shared by your devices). */
     var linkName: String
         get() = prefs.getString(K_LINK_NAME, "") ?: ""
@@ -952,6 +957,7 @@ class Store(context: Context) {
         internal const val K_CHECKINS_SAVED = "checkinsSaved"
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
+        private const val K_QUICK = "quickMinutes"
         private const val K_VIEW = "view"
         private const val K_SORT = "sort"
         private const val K_START_TAB = "startTab"
