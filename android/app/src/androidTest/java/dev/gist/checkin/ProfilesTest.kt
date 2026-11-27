@@ -102,10 +102,11 @@ class ProfilesTest {
         // Saved in Work; Personal untouched, and still the one you're on.
         val w = Store(workCtx)
         assertTrue(w.pending.isEmpty())
-        val saved = w.results(Days.today(), "job")
-        assertEquals("one result in Work on ${Days.today()}; all results: ${dump()}", 1, saved.size)
-        assertEquals(true, saved.values.single().answers["calls"])
-        assertTrue(TestEnv.store.results(Days.today(), "job").isEmpty())
+        // (Whatever day it was logged on: before 4 AM it's still the day before.)
+        val saved = w.allResults("job").values.flatMap { it.values }
+        assertEquals("one result in Work; all results: ${dump()}", 1, saved.size)
+        assertEquals(true, saved.single().answers["calls"])
+        assertTrue(TestEnv.store.allResults("job").isEmpty())
         assertEquals(Profiles.DEFAULT, Profiles.current(ctx))
     }
 
