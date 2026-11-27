@@ -22,7 +22,7 @@ import android.window.OnBackInvokedDispatcher
  * and the places to go: Home, Connections, Backup, Settings, About · Donate. The page
  * behind is dimmed; tap it, ✕ or Back to close.
  *
- * [attach] wraps the page; call it again when the page is rebuilt (the menu stays open).
+ * Call [attach] after each setContentView (the menu stays open across rebuilds).
  */
 class NavDrawer(private val activity: Activity) {
     var isOpen = false
@@ -32,10 +32,12 @@ class NavDrawer(private val activity: Activity) {
     private var panel: View? = null
     private var backCallback: Any? = null
 
-    /** The page with the menu over it (open if it was). */
-    fun attach(page: View): View {
+    /**
+     * Puts the menu over the page that was just set with setContentView (open if it was). The
+     * page stays the content's first child; the menu is added after it.
+     */
+    fun attach() {
         val root = FrameLayout(activity)
-        root.addView(page, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val s = View(activity).apply {
             tag = "drawer-scrim"
             contentDescription = "Close menu"
@@ -50,7 +52,7 @@ class NavDrawer(private val activity: Activity) {
         scrim = s
         panel = p
         show(isOpen, animate = false, width = width)
-        return root
+        activity.addContentView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     fun open() {

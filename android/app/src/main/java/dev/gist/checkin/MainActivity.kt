@@ -223,7 +223,8 @@ class MainActivity : BaseActivity() {
         }
 
         val sv = screen(col)
-        setContentView(drawer.attach(sv))
+        setContentView(sv)
+        drawer.attach()
         scroll = sv
         sv.restoreScroll(oldY)
     }
