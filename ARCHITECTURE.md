@@ -16,10 +16,17 @@ How Gist is put together, for anyone reading or changing the code. To build it, 
   `AlarmManager.setAlarmClock`. That's exact, survives Doze, and lets the ringing service
   start from the background. Place and running triggers ring through a one-off alarm
   clock alarm for the same reason.
-- **Simple storage.** Check-ins, answers and settings live in one `SharedPreferences`
-  file as JSON (`org.json`). Backups are the same JSON written as YAML through a small
-  bridge (`Yaml.kt`). Background photos and video, and voice clips, are files in the
-  app's private storage.
+- **One SQLite database.** Everything lives in `gist.db` (Android's own `SQLiteDatabase`,
+  no ORM), one file for every profile, each row under its profile's id. Check-ins and
+  tasks are rows, with their triggers, steps, questions and shares in tables of their
+  own; results are a row per check-in, day and time with a row per answer; the waiting
+  list and deletions have tables too. Settings and the bookkeeping for syncing
+  (connections, devices, the Gist folder) are typed key-value rows, read through a
+  `SharedPreferences`-shaped class. Versions before the database kept all this in
+  preferences files; the first open imports them, in one transaction, then deletes them.
+  Backups, and what goes to your other devices and connections, are still the same JSON
+  (written as YAML for backups, through `Yaml.kt`). Background photos and video, and
+  voice clips, are files in the app's private storage.
 - **The alarm screen has its own task** (`taskAffinity` in the manifest). It shows over
   the lock screen, and closing it never disturbs whatever Gist screen was open.
 - **Logic is kept testable.** Scheduling, triggers, run detection, scores, grouping,
@@ -91,7 +98,11 @@ is in `android/app/src/main/java/dev/gist/checkin/`.
 
 | File | What it is |
 |---|---|
-| `Store.kt` | check-ins, results, pending rings and settings (SharedPreferences + JSON); the default check-ins (`DEFAULT_CHECKINS`) |
+| `Store.kt` | one profile's check-ins, results, pending rings and settings, and their JSON for backups and syncing; the default check-ins (`DEFAULT_CHECKINS`) |
+| `Db.kt` | the SQLite database: schema, transactions, caches, deleting a profile's rows |
+| `StoreTables.kt` | check-ins, results, the waiting list and deletions as rows (read and write) |
+| `DbPrefs.kt` | settings and sync bookkeeping as typed key-value rows, through the `SharedPreferences` interface |
+| `LegacyImport.kt` | the one-time import from the preferences files of versions before the database |
 | `Backup.kt`, `Yaml.kt` | backup export and import: selective, with history, media and voice clips; YAML via SnakeYAML Engine |
 | `Backgrounds.kt` | stored background photos and video, and voice clips |
 | `Background.kt` | background type (none, photo, slideshow, video) and caption |

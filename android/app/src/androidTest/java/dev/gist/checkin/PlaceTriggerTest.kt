@@ -194,7 +194,7 @@ class PlaceTriggerTest {
         TestEnv.reset(emptyList())
         val legacy = """[{"id":"old","name":"Gym","times":["12:00"],"repeat":{"kind":"weekly","days":[1,3,5]},
             "trigger":{"kind":"arrive","place":{"name":"Gym","lat":40.7128,"lon":-74.006,"radiusM":200},"oncePerDay":true}}]"""
-        TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE).edit().putString("checkins", legacy).commit()
+        TestEnv.importLegacy("gist", mapOf("checkins" to legacy))
         val c = Store(TestEnv.ctx).checkin("old")!!
         assertTrue("an event replaced the times", c.times.isEmpty())
         assertEquals(Trigger.ARRIVE, c.events.single().kind)

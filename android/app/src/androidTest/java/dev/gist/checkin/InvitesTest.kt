@@ -56,8 +56,8 @@ class InvitesTest {
     }
 
     private fun clear() {
-        TestEnv.ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
-        TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(TestEnv.ctx, "gist-links").edit().clear().commit()
+        Profiles.prefs(TestEnv.ctx, "gist-devices").edit().clear().commit()
         Store(TestEnv.ctx).tracking = false
     }
 
@@ -167,7 +167,7 @@ class InvitesTest {
     fun olderConnectionsStillLetInWhoeverJoins() {
         // Made before invites: no token kept, no proof needed.
         val link = links.invite(dir.path)
-        val prefs = TestEnv.ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE)
+        val prefs = Profiles.prefs(TestEnv.ctx, "gist-links")
         val raw = prefs.all.entries.first { it.value is String && (it.value as String).contains(link.id) }
         val text = raw.value as String
         val all = org.json.JSONArray(text)

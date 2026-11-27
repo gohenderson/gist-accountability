@@ -1,11 +1,11 @@
 package dev.gist.checkin
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.SharedPreferences
-import org.json.JSONArray
-import org.json.JSONObject
+import android.database.sqlite.SQLiteDatabase
 import java.io.File
 
 /**
@@ -13,8 +13,9 @@ import java.io.File
  * check-ins and tasks, answers, settings, Gist folder, connections and devices. You see one
  * at a time; every profile's alarms stay set, and ring whichever profile you're on.
  *
- * The first profile ([DEFAULT]) uses Gist's original storage, so nothing moves for it. Another
- * profile keeps its preferences as "<name>@<id>" and its files under files/profiles/<id>/.
+ * Everything a profile keeps in the database ([Db]) is under its id (the first profile's is
+ * [DEFAULT]); its files (photos, clips) are under files/ for the first profile and
+ * files/profiles/<id>/ for another.
  *
  * Which profile code works in comes from its Context: an activity's or service's own
  * ([ProfileScoped]), or [scoped] around any other. Intents that cross into receivers, services
@@ -25,43 +26,42 @@ object Profiles {
     /** The first profile: Gist's original storage. */
     const val DEFAULT = ""
 
-    private const val PREFS = "gist-profiles"
-    private const val K_LIST = "profiles"
-    private const val K_CURRENT = "current"
+    const val DEFAULT_NAME = "Personal"
+    private const val K_CURRENT = "currentProfile"
 
-    /** Preferences each profile has its own of (deleted with it). */
-    val PREF_NAMES = listOf("gist", Connections.PREFS, Devices.PREFS, GistFolder.PREFS, LocationTriggers.PREFS)
+    /**
+     * The names each profile keeps settings and sync bookkeeping under ([prefs]); before the
+     * database, preferences files of these names.
+     */
+    val PREF_NAMES = listOf(Store.PREFS, Connections.PREFS, Devices.PREFS, GistFolder.PREFS, LocationTriggers.PREFS)
 
     data class Profile(val id: String, val name: String)
 
-    private fun global(context: Context): SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
     /** Every profile, the first one first. */
     fun all(context: Context): List<Profile> {
-        val raw = global(context).getString(K_LIST, null)
-        val list = raw?.let { s ->
-            try {
-                JSONArray(s).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { Profile(it.getString("id"), it.getString("name")) } }
-            } catch (e: Exception) { null }
-        } ?: emptyList()
-        return if (list.none { it.id == DEFAULT }) listOf(Profile(DEFAULT, "Personal")) + list else list
+        val list = Db.get(context).read.query("profile", arrayOf("id", "name"), null, null, null, null, "position, rowid")
+            .rows { Profile(it.str("id"), it.str("name")) }
+        return if (list.none { it.id == DEFAULT }) listOf(Profile(DEFAULT, DEFAULT_NAME)) + list else list
     }
 
-    private fun save(context: Context, list: List<Profile>) {
-        val a = JSONArray()
-        list.forEach { a.put(JSONObject().put("id", it.id).put("name", it.name)) }
-        global(context).edit().putString(K_LIST, a.toString()).commit()
-    }
-
-    fun name(context: Context, id: String): String = all(context).firstOrNull { it.id == id }?.name ?: "Personal"
+    fun name(context: Context, id: String): String = all(context).firstOrNull { it.id == id }?.name ?: DEFAULT_NAME
 
     /** The profile you're looking at. */
-    fun current(context: Context): String =
-        global(context).getString(K_CURRENT, DEFAULT)?.takeIf { id -> all(context).any { it.id == id } } ?: DEFAULT
+    fun current(context: Context): String {
+        val id = Db.get(context).read.query("app_state", arrayOf("value"), "key = ?", arrayOf(K_CURRENT), null, null, null)
+            .rows { it.strOrNull("value") }.firstOrNull() ?: return DEFAULT
+        return if (all(context).any { it.id == id }) id else DEFAULT
+    }
 
     fun setCurrent(context: Context, id: String) {
-        if (all(context).any { it.id == id }) global(context).edit().putString(K_CURRENT, id).commit()
+        if (all(context).any { it.id == id }) Db.get(context).tx { setCurrentIn(it, id) }
+    }
+
+    internal fun setCurrentIn(w: SQLiteDatabase, id: String) {
+        w.insertWithOnConflict("app_state", null, ContentValues().apply {
+            put("key", K_CURRENT)
+            put("value", id)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     /** More than one profile (so it's worth saying which one something is from). */
@@ -70,14 +70,26 @@ object Profiles {
     /** A new, empty profile called [name]. */
     fun add(context: Context, name: String): Profile {
         val p = Profile(Store.newId() + Store.newId(), name.trim().ifEmpty { "Profile" })
+        Db.get(context).tx { w ->
+            val position = w.compileStatement("SELECT COALESCE(MAX(position), 0) + 1 FROM profile").simpleQueryForLong()
+            w.insertOrThrow("profile", null, ContentValues().apply {
+                put("id", p.id)
+                put("name", p.name)
+                put("position", position)
+            })
+        }
         Store(scoped(context, p.id)).checkins = emptyList() // empty: not the first-run examples
-        save(context, all(context) + p)
         return p
     }
 
     fun rename(context: Context, id: String, name: String) {
         val n = name.trim().ifEmpty { return }
-        save(context, all(context).map { if (it.id == id) it.copy(name = n) else it })
+        Db.get(context).tx { w ->
+            val v = ContentValues().apply { put("name", n) }
+            if (w.update("profile", v, "id = ?", arrayOf(id)) == 0 && id == DEFAULT) {
+                w.insert("profile", null, v.apply { put("id", DEFAULT); put("position", 0) })
+            }
+        }
     }
 
     /**
@@ -93,10 +105,8 @@ object Profiles {
             LocationTriggers.remove(ctx, it.id)
             Notif.clearQuiet(ctx, it.id)
         }
-        val app = context.applicationContext
-        PREF_NAMES.forEach { app.deleteSharedPreferences(prefsName(it, id)) }
-        File(app.filesDir, "profiles/$id").deleteRecursively()
-        save(context, all(context).filter { it.id != id })
+        Db.get(context).deleteProfile(id)
+        File(context.applicationContext.filesDir, "profiles/$id").deleteRecursively()
         return true
     }
 
@@ -115,11 +125,11 @@ object Profiles {
         return null
     }
 
+    /** The old preferences file a profile kept [name] in (see LegacyImport). */
     fun prefsName(name: String, id: String) = if (id == DEFAULT) name else "$name@$id"
 
-    /** Preferences [name] of [context]'s profile. */
-    fun prefs(context: Context, name: String): SharedPreferences =
-        context.applicationContext.getSharedPreferences(prefsName(name, of(context)), Context.MODE_PRIVATE)
+    /** Settings [name] of [context]'s profile, kept in the database. */
+    fun prefs(context: Context, name: String): SharedPreferences = DbPrefs(Db.get(context), of(context), name)
 
     /** Where [context]'s profile keeps its files (photos, clips). */
     fun filesDir(context: Context): File {

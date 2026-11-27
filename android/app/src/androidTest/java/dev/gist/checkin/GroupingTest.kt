@@ -345,7 +345,7 @@ class GroupingTest {
     @Test
     fun theOldPerCardFoldingIsDropped() {
         TestEnv.reset(listOf(TestEnv.checkin("a", "Alpha"), TestEnv.checkin("b", "Beta")))
-        val prefs = TestEnv.ctx.getSharedPreferences("gist", android.content.Context.MODE_PRIVATE)
+        val prefs = Profiles.prefs(TestEnv.ctx, "gist")
         prefs.edit().putStringSet("collapsedCheckins", setOf("a")).putString("style", "compact").commit()
         assertNull("all folded to start", TestEnv.store.expandedCheckin)
         TestEnv.store.expandedCheckin = "b"

@@ -405,27 +405,26 @@ class Devices(
         // Answers: an answer beats "rang"; between answers, the later wins.
         val entries = store.entriesJson()
         val closed = mutableListOf<Pending>()
-        var answersChanged = false
+        val taken = mutableListOf<Pair<Pending, JSONObject>>()
         items.filterKeys { it.startsWith("r:") }.forEach { (k, json) ->
             val day = k.removePrefix("r:")
             val theirs = try { JSONObject(json) } catch (e: Exception) { return@forEach }
-            val d = entries.optJSONObject(day) ?: JSONObject().also { entries.put(day, it) }
+            val d = entries.optJSONObject(day)
             theirs.keys().forEach { id ->
                 val slots = theirs.optJSONObject(id) ?: return@forEach
-                val mine = d.optJSONObject(id) ?: JSONObject().also { d.put(id, it) }
+                val mine = d?.optJSONObject(id)
                 slots.keys().forEach { time ->
                     val t = slots.optJSONObject(time) ?: return@forEach
-                    val m = mine.optJSONObject(time)
+                    val m = mine?.optJSONObject(time)
                     if (m == null || wins(t, m)) {
-                        mine.put(time, t)
-                        answersChanged = true
+                        taken.add(Pending(id, day, time) to t)
                         if (t.optString("s") != SlotResult.RANG) closed.add(Pending(id, day, time))
                     }
                 }
             }
         }
-        if (answersChanged) {
-            store.replaceEntries(entries)
+        if (taken.isNotEmpty()) {
+            store.putSlotsJson(taken)
             changed = true
         }
         // Answered elsewhere: stop waiting (and ringing) for it here.

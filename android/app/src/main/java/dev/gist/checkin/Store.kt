@@ -283,32 +283,43 @@ data class SlotResult(
 }
 
 /**
- * All app state, kept in one private SharedPreferences file on the phone.
- * Results are stored per day, check-in and time:
+ * One profile's check-ins and tasks, results, waiting list and settings, kept in the database
+ * ([Db]): check-ins, results, the waiting list and deletions in their own tables, settings as
+ * key-value rows ([DbPrefs], under [PREFS]).
+ *
+ * Results go to backups and your other devices as JSON, per day, check-in and time:
  *   { "2026-11-07": { "<checkinId>": { "21:30": { "s": "answered", "a": { "<questionId>": true },
  *                                                "v": { "<questionId>": 182.4 }, "early": false } } } }
  * ("v": typed answers, numbers as numbers and text as text, "" when left empty; only when there are some.
  *  "rangAt": when a waiting time first rang, epoch ms. "took": {"start": s, "steps": s}, how long a
- *  check-in that counts took: from ringing to Start check-in (none when done early), and doing it.)
+ *  check-in that counts took: from ringing to Start check-in (none when done early), and doing it.
+ *  "w": when it last changed, while syncing your devices.) See [ResultRows].
  */
 class Store(context: Context) {
-    private val prefs = Profiles.prefs(context, "gist")
+    private val db = Db.get(context)
+    private val profile = Profiles.of(context)
+    private val prefs = Profiles.prefs(context, PREFS)
 
     // ------------------------------------------------------------ check-ins
 
+    /** Before any are saved: the examples (a fresh install's Morning and Evening). */
     var checkins: List<Checkin>
         get() {
-            val raw = prefs.getString(K_CHECKINS, null) ?: return DEFAULT_CHECKINS
-            val arr = JSONArray(raw)
-            return (0 until arr.length()).map { checkinFromJson(arr.getJSONObject(it)) }
+            synchronized(db) {
+                db.checkinCache[profile]?.let { return it }
+                if (!prefs.getBoolean(K_CHECKINS_SAVED, false)) return DEFAULT_CHECKINS
+                return CheckinRows.read(db.read, profile).also { db.checkinCache[profile] = it }
+            }
         }
-        set(v) {
+        set(v) = synchronized(db) { writeCheckins(v) }
+
+    private fun writeCheckins(v: List<Checkin>) {
             // A task that's just gone into the backlog (new, or turned off) gets stamped,
             // unless the caller set the time itself (a restored backup).
-            val was = if (prefs.contains(K_CHECKINS)) checkins.associateBy { it.id } else emptyMap()
+            val saved = prefs.getBoolean(K_CHECKINS_SAVED, false)
+            val was = if (saved) checkins.associateBy { it.id } else emptyMap()
             val now = System.currentTimeMillis()
-            val arr = JSONArray()
-            v.forEach { c0 ->
+            val list = v.map { c0 ->
                 val old = was[c0.id]
                 val entered = c0.inBacklog && old?.inBacklog != true && c0.backlogAt == old?.backlogAt
                 var c = if (entered) c0.copy(backlogAt = now) else c0
@@ -316,8 +327,8 @@ class Store(context: Context) {
                 if (tracking && c.updatedAt == old?.updatedAt && (old == null || c.copy(updatedAt = null) != old.copy(updatedAt = null))) {
                     c = c.copy(updatedAt = now)
                 }
-                arr.put(checkinToJson(c))
-            }
+                c
+            }.distinctBy { it.id }
             // Deleted: remembered, so your other devices delete it too.
             val gone = was.keys - v.map { it.id }.toSet()
             if (tracking && gone.isNotEmpty()) {
@@ -326,14 +337,19 @@ class Store(context: Context) {
                 deleted = d
             }
             // Reordered (not just added to or deleted from): your other devices take the new order.
-            val edit = prefs.edit().putString(K_CHECKINS, arr.toString())
-            if (tracking) {
-                val newIds = v.map { it.id }
+            val reordered = tracking && run {
+                val newIds = list.map { it.id }
                 val kept = newIds.toSet()
-                if (was.keys.filter { it in kept } != newIds.filter { it in was }) edit.putLong(K_ORDER_AT, now)
+                was.keys.filter { it in kept } != newIds.filter { it in was }
             }
-            edit.commit()
-        }
+            db.checkinCache.remove(profile)
+            db.tx { w ->
+                CheckinRows.write(w, profile, list)
+                if (!saved) prefs.edit().putBoolean(K_CHECKINS_SAVED, true).commit()
+                if (reordered) prefs.edit().putLong(K_ORDER_AT, now).commit()
+            }
+            db.checkinCache[profile] = list
+    }
 
     /** When the order of your list last changed here (or on your other devices); 0 if never since syncing. */
     var orderAt: Long
@@ -350,10 +366,8 @@ class Store(context: Context) {
 
     /** Check-ins deleted here or on your other devices: id → when (so they stay deleted everywhere). */
     var deleted: Map<String, Long>
-        get() = prefs.getString(K_DELETED, null)?.let { s ->
-            try { JSONObject(s).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } } catch (e: Exception) { null }
-        } ?: emptyMap()
-        set(v) { prefs.edit().putString(K_DELETED, JSONObject(v as Map<*, *>).toString()).commit() }
+        get() = DeletedRows.read(db.read, profile)
+        set(v) { db.tx { DeletedRows.write(it, profile, v) } }
 
     /**
      * This device rings for check-ins (on by default). Off: they remind quietly here, like No
@@ -392,19 +406,8 @@ class Store(context: Context) {
         get() = pending.filter { it.practice || (ringHere && checkin(it.checkinId)?.quiet != true) }
 
     var pending: List<Pending>
-        get() {
-            val raw = prefs.getString(K_PENDING, null) ?: return emptyList()
-            val arr = JSONArray(raw)
-            return (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                Pending(o.getString("c"), o.getString("d"), o.optString("t", ""), o.optBoolean("p", false))
-            }
-        }
-        set(v) {
-            val arr = JSONArray()
-            v.forEach { arr.put(JSONObject().put("c", it.checkinId).put("d", it.day).put("t", it.time).put("p", it.practice)) }
-            prefs.edit().putString(K_PENDING, arr.toString()).commit()
-        }
+        get() = PendingRows.read(db.read, profile)
+        set(v) { db.tx { PendingRows.write(it, profile, v) } }
 
     fun addPending(p: Pending) {
         val list = pending
@@ -425,11 +428,15 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ results
 
-    fun result(day: String, checkinId: String, time: String): SlotResult? = results(day, checkinId)[time]
+    fun result(day: String, checkinId: String, time: String): SlotResult? = slot(day, checkinId, time)?.result
+
+    private fun slot(day: String, checkinId: String, time: String): ResultRows.Slot? =
+        ResultRows.query(db.read, "profile_id = ? AND checkin_id = ? AND day = ? AND time = ?", arrayOf(profile, checkinId, day, time))[checkinId]?.get(day)?.get(time)
 
     /** One check-in's results on one day, by time. */
     fun results(day: String, checkinId: String): Map<String, SlotResult> =
-        entriesJson().optJSONObject(day)?.optJSONObject(checkinId)?.toResults() ?: emptyMap()
+        ResultRows.query(db.read, "profile_id = ? AND checkin_id = ? AND day = ?", arrayOf(profile, checkinId, day))[checkinId]
+            ?.get(day)?.mapValues { it.value.result } ?: emptyMap()
 
     /**
      * One check-in's results for every day, oldest first: day → time → result. This is what
@@ -438,13 +445,11 @@ class Store(context: Context) {
      */
     fun allResults(checkinId: String, includeSoft: Boolean = false): Map<String, Map<String, SlotResult>> {
         if (!includeSoft && checkin(checkinId)?.counted == false) return emptyMap()
-        val all = entriesJson()
+        val all = ResultRows.query(db.read, "profile_id = ? AND checkin_id = ?", arrayOf(profile, checkinId))[checkinId] ?: return emptyMap()
         val out = sortedMapOf<String, Map<String, SlotResult>>()
-        all.keys().forEach { day ->
-            all.optJSONObject(day)?.optJSONObject(checkinId)?.let { o ->
-                val r = o.toResults().filterValues { includeSoft || !it.soft }
-                if (r.isNotEmpty()) out[day] = r
-            }
+        all.forEach { (day, slots) ->
+            val r = slots.mapValues { it.value.result }.filterValues { includeSoft || !it.soft }
+            if (r.isNotEmpty()) out[day] = r
         }
         return out
     }
@@ -486,12 +491,7 @@ class Store(context: Context) {
 
     /** Forget a time's result (e.g. undo a skip). */
     fun clearResult(day: String, checkinId: String, time: String) {
-        val all = entriesJson()
-        val c = all.optJSONObject(day)?.optJSONObject(checkinId) ?: return
-        c.remove(time)
-        if (c.length() == 0) all.getJSONObject(day).remove(checkinId)
-        if (all.getJSONObject(day).length() == 0) all.remove(day)
-        prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+        db.tx { ResultRows.delete(it, profile, checkinId, day, time) }
     }
 
     /** Marks task [id] done now: it turns off (no more rings) and moves to Done tasks. */
@@ -548,70 +548,22 @@ class Store(context: Context) {
 
     /** Every answer on [day], all check-ins and times merged. Handy for tests. */
     fun entry(day: String): Answers? {
-        val d = entriesJson().optJSONObject(day) ?: return null
+        val d = ResultRows.query(db.read, "profile_id = ? AND day = ?", arrayOf(profile, day))
         var merged: Answers = emptyMap()
-        d.keys().forEach { id -> results(day, id).toSortedMap().values.forEach { merged = merged + it.answers } }
+        d.values.forEach { days -> days[day]?.values?.forEach { merged = merged + it.result.answers } }
         return merged.ifEmpty { null }
     }
 
     /** Results logged while a check-in isn't strict are marked soft (see [allResults]). */
     private fun put(day: String, checkinId: String, time: String, r: SlotResult) {
         val soft = r.soft || checkin(checkinId)?.counted == false
-        val all = entriesJson()
-        val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
-        val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
-        val a = JSONObject()
-        r.answers.forEach { (k, v) -> a.put(k, v) }
-        c.put(time, JSONObject().put("s", r.status).put("a", a).put("early", r.early).apply {
-            if (tracking) put("w", System.currentTimeMillis()) // when: the later answer wins between your devices
-            if (soft) put("soft", true)
-            if (r.values.isNotEmpty()) put("v", valuesToJson(r.values))
-            r.rangAt?.let { put("rangAt", it) }
-            r.took?.let { t -> put("took", JSONObject().apply { t.start?.let { put("start", it) }; put("steps", t.steps) }) }
-        })
-        prefs.edit().putString(K_ENTRIES, all.toString()).commit()
+        // When: the later answer wins between your devices.
+        val slot = ResultRows.Slot(r.copy(soft = soft), if (tracking) System.currentTimeMillis() else null)
+        db.tx { ResultRows.put(it, profile, checkinId, day, time, slot) }
         // Doing a task once completes it.
         if (r.status in TASK_DONE_STATUSES) {
             checkin(checkinId)?.takeIf { it.isTask && it.doneAt == null }?.let { completeTask(it.id) }
         }
-    }
-
-    private fun JSONObject.toResults(): Map<String, SlotResult> {
-        val out = mutableMapOf<String, SlotResult>()
-        keys().forEach { time ->
-            val o = optJSONObject(time) ?: return@forEach
-            val a = o.optJSONObject("a")
-            val answers = mutableMapOf<String, Boolean>()
-            a?.keys()?.forEach { k -> answers[k] = a.optBoolean(k) }
-            val took = o.optJSONObject("took")?.takeIf { it.has("steps") }?.let { t ->
-                Took(if (t.has("start")) t.optInt("start") else null, t.optInt("steps"))
-            }
-            out[time] = SlotResult(o.optString("s", SlotResult.ANSWERED), answers, o.optBoolean("early", false),
-                o.optBoolean("soft", false), valuesFromJson(o.optJSONObject("v")),
-                if (o.has("rangAt")) o.optLong("rangAt") else null, took)
-        }
-        return out
-    }
-
-    /** Numbers are kept as numbers (so a backup reads `weight: 182.4`), anything else as text. */
-    private fun valuesToJson(values: Values): JSONObject = JSONObject().apply {
-        values.forEach { (k, v) ->
-            val n = Question.cleanNumber(v)
-            if (n != null && n == v) put(k, java.math.BigDecimal(n)) else put(k, v)
-        }
-    }
-
-    private fun valuesFromJson(o: JSONObject?): Values {
-        if (o == null) return emptyMap()
-        val out = mutableMapOf<String, String>()
-        o.keys().forEach { k ->
-            when (val v = o.opt(k)) {
-                is Number -> out[k] = java.math.BigDecimal(v.toString()).stripTrailingZeros().toPlainString()
-                is String -> out[k] = v
-                else -> {}
-            }
-        }
-        return out
     }
 
     // ------------------------------------------------------------ settings
@@ -768,27 +720,38 @@ class Store(context: Context) {
 
     // ------------------------------------------------------------ backup support
 
-    /** All results as stored (day → check-in → time → result). */
-    fun entriesJson(): JSONObject =
-        prefs.getString(K_ENTRIES, null)?.let { JSONObject(it) } ?: JSONObject()
-
-    /** One check-in's history as stored: day → time → result. */
-    fun historyJson(checkinId: String): JSONObject {
-        val all = entriesJson()
+    /** All results as JSON (day → check-in → time → result), as backups and your devices have them. */
+    fun entriesJson(): JSONObject {
         val out = JSONObject()
-        all.keys().forEach { day -> all.optJSONObject(day)?.optJSONObject(checkinId)?.let { out.put(day, it) } }
+        ResultRows.query(db.read, "profile_id = ?", arrayOf(profile)).forEach { (id, days) ->
+            days.forEach { (day, slots) ->
+                val d = out.optJSONObject(day) ?: JSONObject().also { out.put(day, it) }
+                d.put(id, JSONObject().apply { slots.forEach { (time, slot) -> put(time, ResultRows.toJson(slot)) } })
+            }
+        }
+        return out
+    }
+
+    /** One time's result as JSON (with when it changed, for syncing); null if none. */
+    fun slotJson(day: String, checkinId: String, time: String): JSONObject? = slot(day, checkinId, time)?.let { ResultRows.toJson(it) }
+
+    /** Writes results from JSON as they are, each at its check-in, day and time ([Pending] as the key). */
+    fun putSlotsJson(slots: List<Pair<Pending, JSONObject>>) {
+        db.tx { w -> slots.forEach { (k, json) -> ResultRows.put(w, profile, k.checkinId, k.day, k.time, ResultRows.fromJson(json)) } }
+    }
+
+    /** One check-in's history as JSON: day → time → result. */
+    fun historyJson(checkinId: String): JSONObject {
+        val out = JSONObject()
+        ResultRows.query(db.read, "profile_id = ? AND checkin_id = ?", arrayOf(profile, checkinId))[checkinId]?.forEach { (day, slots) ->
+            out.put(day, JSONObject().apply { slots.forEach { (time, slot) -> put(time, ResultRows.toJson(slot)) } })
+        }
         return out
     }
 
     /** Forgets everything [checkinId] logged. */
     fun deleteHistory(checkinId: String) {
-        val all = entriesJson()
-        all.keys().asSequence().toList().forEach { day ->
-            val d = all.optJSONObject(day) ?: return@forEach
-            d.remove(checkinId)
-            if (d.length() == 0) all.remove(day)
-        }
-        replaceEntries(all)
+        db.tx { ResultRows.delete(it, profile, checkinId) }
     }
 
     /**
@@ -796,172 +759,178 @@ class Store(context: Context) {
      * logged and not in [history] are kept; without it, the check-in's history is replaced.
      */
     fun putHistory(checkinId: String, history: JSONObject, merge: Boolean) {
-        if (!merge) deleteHistory(checkinId)
-        val all = entriesJson()
-        history.keys().forEach { day ->
-            val slots = history.optJSONObject(day) ?: return@forEach
-            val d = all.optJSONObject(day) ?: JSONObject().also { all.put(day, it) }
-            val c = d.optJSONObject(checkinId) ?: JSONObject().also { d.put(checkinId, it) }
-            slots.keys().forEach { time -> slots.optJSONObject(time)?.let { c.put(time, it) } }
-        }
-        replaceEntries(all)
-    }
-
-    /** Replaces all results with [json] (same shape as [entriesJson]). */
-    fun replaceEntries(json: JSONObject) {
-        prefs.edit().putString(K_ENTRIES, json.toString()).commit()
-    }
-
-    private fun questionFromJson(o: JSONObject) = Question.fromJson(o, o.getString("id"))
-
-    /**
-     * The step list. Check-ins saved before steps could repeat kept one math / scan /
-     * questions setup on the check-in itself plus an order of kinds; those become steps.
-     */
-    private fun stepsFromJson(o: JSONObject): List<StepConfig> {
-        val arr = o.optJSONArray("steps") ?: JSONArray()
-        val objects = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-        if (objects.isNotEmpty() || (arr.length() == 0 && !o.has("mathCount") && !o.has("questions") && !o.has("scanCode"))) {
-            return objects.mapNotNull { StepConfig.fromJson(it) }
-        }
-        val qs = o.optJSONArray("questions") ?: JSONArray()
-        val questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) }
-        val mathCount = o.optInt("mathCount", 0)
-        val scanCode = o.optString("scanCode", "").ifEmpty { null }
-        val listed = (0 until arr.length()).map { arr.optString(it) }.filter { it in Steps.ALL }
-        val configured = buildList {
-            if (mathCount > 0) add(Steps.MATH)
-            if (scanCode != null) add(Steps.SCAN)
-            if (questions.isNotEmpty()) add(Steps.QUESTIONS)
-        }
-        return (listed + configured).distinct().map { kind ->
-            when (kind) {
-                Steps.MATH -> StepConfig(Store.newId(), kind, mathCount = mathCount.coerceAtLeast(1), mathLevel = o.optInt("mathLevel", 3))
-                Steps.SCAN -> StepConfig(Store.newId(), kind, scanCode = scanCode, scanLabel = o.optString("scanLabel", ""))
-                else -> StepConfig(Store.newId(), kind, questions = questions)
-            }
-        }
-    }
-
-    fun checkinFromJson(o: JSONObject): Checkin {
-        // Each time is "HH:mm", or {"t": "HH:mm", "days": {…}} when it has its own days.
-        val ts = o.optJSONArray("times") ?: JSONArray()
-        val c = Checkin(
-            id = o.getString("id"),
-            name = o.optString("name", "Check-in"),
-            times = (0 until ts.length()).mapNotNull { i ->
-                val obj = ts.optJSONObject(i)
-                if (obj != null) {
-                    AlarmTime.parse(obj.optString("t"))?.copy(
-                        days = obj.optJSONObject("days")?.let { Repeat.fromJson(it) },
-                        where = obj.optString("where", Trigger.ANYWHERE).takeIf { it in setOf(Trigger.AT, Trigger.AWAY) } ?: Trigger.ANYWHERE,
-                        place = Place.fromJson(obj.optJSONObject("place")),
-                    )
-                } else {
-                    AlarmTime.parse(ts.optString(i))
+        db.tx { w ->
+            if (!merge) ResultRows.delete(w, profile, checkinId)
+            history.keys().forEach { day ->
+                val slots = history.optJSONObject(day) ?: return@forEach
+                slots.keys().forEach { time ->
+                    slots.optJSONObject(time)?.let { ResultRows.put(w, profile, checkinId, day, time, ResultRows.fromJson(it)) }
                 }
-            }.distinct().sorted(),
-            repeat = Repeat.fromJson(o.optJSONObject("repeat")),
-            enabled = o.optBoolean("enabled", true),
-            aboutYesterday = o.optBoolean("aboutYesterday", false),
-            steps = stepsFromJson(o),
-            soundUri = o.optString("soundUri", "").ifEmpty { null },
-            soundTitle = o.optString("soundTitle", ""),
-            background = Background.fromJson(o.optJSONObject("background")),
-            events = (o.optJSONArray("events") ?: JSONArray()).let { a ->
-                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Trigger.fromJson(it) }.filter { it.isEvent }
-            },
-            category = o.optString("category", "").trim(),
-            commitment = o.optString("commitment", "").takeIf { it in Checkin.COMMITMENTS }
-                ?: if (o.optBoolean("soft", false)) Checkin.SOFT else Checkin.STRICT,
-            voiceSource = if (o.optString("voiceSource") == Checkin.VOICE_CLIP) Checkin.VOICE_CLIP else Checkin.VOICE_TEXT,
-            voiceText = o.optString("voiceText", ""),
-            voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
-            snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
-            description = o.optString("description", ""),
-            timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
-            followsUp = o.optString("followsUp", "").ifEmpty { null },
-            sharedWith = o.optJSONArray("sharedWith")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
-            assignee = o.optString("assignee", ""),
-            doneBy = o.optString("doneBy", "").ifEmpty { null },
-            linkedFrom = o.optString("linkedFrom", "").ifEmpty { null },
-            linkedAssignee = o.optString("linkedAssignee", ""),
-            linkedGone = o.optBoolean("linkedGone", false),
-            linkedDoneAt = if (o.has("linkedDoneAt")) o.optLong("linkedDoneAt") else null,
-            updatedAt = if (o.has("updatedAt")) o.optLong("updatedAt") else null,
-            task = o.optBoolean("task", false),
-            doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
-            backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
-        ).let { c ->
-            // The first tasks were a check-in repeating "once" on a date: now a flag, with the
-            // date on each of its times ("On a specific date").
-            if (c.repeat.kind != Repeat.ONCE) c
-            else c.copy(task = true, repeat = Repeat.EVERY_DAY, times = c.times.map { it.copy(days = c.repeat) })
-        }
-        // Saved before a check-in could have several kinds of trigger: one "trigger" applied
-        // to the whole check-in. An event replaced the times; a place condition applied to all.
-        val legacy = o.optJSONObject("trigger")
-        if (legacy == null || o.has("events")) return c
-        val t = Trigger.fromJson(legacy)
-        return when {
-            t.isEvent -> c.copy(times = emptyList(), events = listOf(t.copy(days = c.repeat)))
-            t.where != Trigger.ANYWHERE && t.place != null -> c.copy(times = c.times.map { it.copy(where = t.where, place = t.place) })
-            else -> c
+            }
         }
     }
 
-    fun checkinToJson(c: Checkin): JSONObject {
-        return JSONObject()
-            .put("id", c.id)
-            .put("name", c.name)
-            .put("times", JSONArray().apply {
-                c.times.forEach { t ->
-                    if (t.days == null && !t.usesLocation) {
-                        put(t.toString())
-                    } else {
-                        put(JSONObject().put("t", t.toString()).apply {
-                            t.days?.let { put("days", it.toJson()) }
-                            if (t.usesLocation) put("where", t.where).put("place", t.place!!.toJson())
-                        })
-                    }
-                }
-            })
-            .put("repeat", c.repeat.toJson())
-            .put("enabled", c.enabled)
-            .put("aboutYesterday", c.aboutYesterday)
-            .put("soundUri", c.soundUri ?: "")
-            .put("soundTitle", c.soundTitle)
-            .put("background", c.background.toJson())
-            .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
-            .put("events", JSONArray().apply { c.events.forEach { put(it.toJson()) } })
-            .put("category", c.category)
-            .put("commitment", c.commitment)
-            .put("voiceSource", c.voiceSource)
-            .put("voiceText", c.voiceText)
-            .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
-            .put("snoozeMinutes", c.snoozeMinutes)
-            .apply {
-                // Only when set; apps that don't know them just skip them.
-                if (c.description.isNotEmpty()) put("description", c.description)
-                if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
-                c.followsUp?.let { put("followsUp", it) }
-                if (c.sharedWith.isNotEmpty()) put("sharedWith", JSONArray(c.sharedWith.sorted()))
-                if (c.assignee.isNotEmpty()) put("assignee", c.assignee)
-                c.doneBy?.let { put("doneBy", it) }
-                c.linkedFrom?.let { put("linkedFrom", it) }
-                if (c.linkedAssignee.isNotEmpty()) put("linkedAssignee", c.linkedAssignee)
-                if (c.linkedGone) put("linkedGone", true)
-                c.linkedDoneAt?.let { put("linkedDoneAt", it) }
-                c.updatedAt?.let { put("updatedAt", it) }
-            }
-            .apply {
-                if (c.task) put("task", true)
-                c.doneAt?.let { put("doneAt", it) }
-                if (c.task) c.backlogAt?.let { put("backlogAt", it) }
-            }
+    /** Deletes this profile's check-ins, results, waiting list, deletions and settings (for tests). */
+    internal fun wipe() = synchronized(db) {
+        db.tx { w -> listOf("checkin", "slot_result", "pending", "deleted_item").forEach { w.delete(it, "profile_id = ?", arrayOf(profile)) } }
+        prefs.edit().clear().commit()
+        db.checkinCache.remove(profile)
     }
+
+    fun checkinFromJson(o: JSONObject): Checkin = parseCheckin(o)
+
+    fun checkinToJson(c: Checkin): JSONObject = checkinJson(c)
 
     companion object {
+        private fun questionFromJson(o: JSONObject) = Question.fromJson(o, o.getString("id"))
+
+        /**
+         * The step list. Check-ins saved before steps could repeat kept one math / scan /
+         * questions setup on the check-in itself plus an order of kinds; those become steps.
+         */
+        private fun stepsFromJson(o: JSONObject): List<StepConfig> {
+            val arr = o.optJSONArray("steps") ?: JSONArray()
+            val objects = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            if (objects.isNotEmpty() || (arr.length() == 0 && !o.has("mathCount") && !o.has("questions") && !o.has("scanCode"))) {
+                return objects.mapNotNull { StepConfig.fromJson(it) }
+            }
+            val qs = o.optJSONArray("questions") ?: JSONArray()
+            val questions = (0 until qs.length()).map { questionFromJson(qs.getJSONObject(it)) }
+            val mathCount = o.optInt("mathCount", 0)
+            val scanCode = o.optString("scanCode", "").ifEmpty { null }
+            val listed = (0 until arr.length()).map { arr.optString(it) }.filter { it in Steps.ALL }
+            val configured = buildList {
+                if (mathCount > 0) add(Steps.MATH)
+                if (scanCode != null) add(Steps.SCAN)
+                if (questions.isNotEmpty()) add(Steps.QUESTIONS)
+            }
+            return (listed + configured).distinct().map { kind ->
+                when (kind) {
+                    Steps.MATH -> StepConfig(Store.newId(), kind, mathCount = mathCount.coerceAtLeast(1), mathLevel = o.optInt("mathLevel", 3))
+                    Steps.SCAN -> StepConfig(Store.newId(), kind, scanCode = scanCode, scanLabel = o.optString("scanLabel", ""))
+                    else -> StepConfig(Store.newId(), kind, questions = questions)
+                }
+            }
+        }
+
+        fun parseCheckin(o: JSONObject): Checkin {
+            // Each time is "HH:mm", or {"t": "HH:mm", "days": {…}} when it has its own days.
+            val ts = o.optJSONArray("times") ?: JSONArray()
+            val c = Checkin(
+                id = o.getString("id"),
+                name = o.optString("name", "Check-in"),
+                times = (0 until ts.length()).mapNotNull { i ->
+                    val obj = ts.optJSONObject(i)
+                    if (obj != null) {
+                        AlarmTime.parse(obj.optString("t"))?.copy(
+                            days = obj.optJSONObject("days")?.let { Repeat.fromJson(it) },
+                            where = obj.optString("where", Trigger.ANYWHERE).takeIf { it in setOf(Trigger.AT, Trigger.AWAY) } ?: Trigger.ANYWHERE,
+                            place = Place.fromJson(obj.optJSONObject("place")),
+                        )
+                    } else {
+                        AlarmTime.parse(ts.optString(i))
+                    }
+                }.distinct().sorted(),
+                repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+                enabled = o.optBoolean("enabled", true),
+                aboutYesterday = o.optBoolean("aboutYesterday", false),
+                steps = stepsFromJson(o),
+                soundUri = o.optString("soundUri", "").ifEmpty { null },
+                soundTitle = o.optString("soundTitle", ""),
+                background = Background.fromJson(o.optJSONObject("background")),
+                events = (o.optJSONArray("events") ?: JSONArray()).let { a ->
+                    (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Trigger.fromJson(it) }.filter { it.isEvent }
+                },
+                category = o.optString("category", "").trim(),
+                commitment = o.optString("commitment", "").takeIf { it in Checkin.COMMITMENTS }
+                    ?: if (o.optBoolean("soft", false)) Checkin.SOFT else Checkin.STRICT,
+                voiceSource = if (o.optString("voiceSource") == Checkin.VOICE_CLIP) Checkin.VOICE_CLIP else Checkin.VOICE_TEXT,
+                voiceText = o.optString("voiceText", ""),
+                voiceHeadphonesOnly = o.optBoolean("voiceHeadphonesOnly", true),
+                snoozeMinutes = o.optInt("snoozeMinutes", Checkin.DEFAULT_SNOOZE).takeIf { it in Checkin.SNOOZE_CHOICES } ?: Checkin.DEFAULT_SNOOZE,
+                description = o.optString("description", ""),
+                timeCommitment = o.optString("timeCommitment", "").takeIf { Checkin.timeCommitmentName(it) != null } ?: "",
+                followsUp = o.optString("followsUp", "").ifEmpty { null },
+                sharedWith = o.optJSONArray("sharedWith")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
+                assignee = o.optString("assignee", ""),
+                doneBy = o.optString("doneBy", "").ifEmpty { null },
+                linkedFrom = o.optString("linkedFrom", "").ifEmpty { null },
+                linkedAssignee = o.optString("linkedAssignee", ""),
+                linkedGone = o.optBoolean("linkedGone", false),
+                linkedDoneAt = if (o.has("linkedDoneAt")) o.optLong("linkedDoneAt") else null,
+                updatedAt = if (o.has("updatedAt")) o.optLong("updatedAt") else null,
+                task = o.optBoolean("task", false),
+                doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
+                backlogAt = if (o.has("backlogAt")) o.optLong("backlogAt") else null,
+            ).let { c ->
+                // The first tasks were a check-in repeating "once" on a date: now a flag, with the
+                // date on each of its times ("On a specific date").
+                if (c.repeat.kind != Repeat.ONCE) c
+                else c.copy(task = true, repeat = Repeat.EVERY_DAY, times = c.times.map { it.copy(days = c.repeat) })
+            }
+            // Saved before a check-in could have several kinds of trigger: one "trigger" applied
+            // to the whole check-in. An event replaced the times; a place condition applied to all.
+            val legacy = o.optJSONObject("trigger")
+            if (legacy == null || o.has("events")) return c
+            val t = Trigger.fromJson(legacy)
+            return when {
+                t.isEvent -> c.copy(times = emptyList(), events = listOf(t.copy(days = c.repeat)))
+                t.where != Trigger.ANYWHERE && t.place != null -> c.copy(times = c.times.map { it.copy(where = t.where, place = t.place) })
+                else -> c
+            }
+        }
+
+        fun checkinJson(c: Checkin): JSONObject {
+            return JSONObject()
+                .put("id", c.id)
+                .put("name", c.name)
+                .put("times", JSONArray().apply {
+                    c.times.forEach { t ->
+                        if (t.days == null && !t.usesLocation) {
+                            put(t.toString())
+                        } else {
+                            put(JSONObject().put("t", t.toString()).apply {
+                                t.days?.let { put("days", it.toJson()) }
+                                if (t.usesLocation) put("where", t.where).put("place", t.place!!.toJson())
+                            })
+                        }
+                    }
+                })
+                .put("repeat", c.repeat.toJson())
+                .put("enabled", c.enabled)
+                .put("aboutYesterday", c.aboutYesterday)
+                .put("soundUri", c.soundUri ?: "")
+                .put("soundTitle", c.soundTitle)
+                .put("background", c.background.toJson())
+                .put("steps", JSONArray().apply { c.steps.forEach { put(it.toJson()) } })
+                .put("events", JSONArray().apply { c.events.forEach { put(it.toJson()) } })
+                .put("category", c.category)
+                .put("commitment", c.commitment)
+                .put("voiceSource", c.voiceSource)
+                .put("voiceText", c.voiceText)
+                .put("voiceHeadphonesOnly", c.voiceHeadphonesOnly)
+                .put("snoozeMinutes", c.snoozeMinutes)
+                .apply {
+                    // Only when set; apps that don't know them just skip them.
+                    if (c.description.isNotEmpty()) put("description", c.description)
+                    if (c.timeCommitment.isNotEmpty()) put("timeCommitment", c.timeCommitment)
+                    c.followsUp?.let { put("followsUp", it) }
+                    if (c.sharedWith.isNotEmpty()) put("sharedWith", JSONArray(c.sharedWith.sorted()))
+                    if (c.assignee.isNotEmpty()) put("assignee", c.assignee)
+                    c.doneBy?.let { put("doneBy", it) }
+                    c.linkedFrom?.let { put("linkedFrom", it) }
+                    if (c.linkedAssignee.isNotEmpty()) put("linkedAssignee", c.linkedAssignee)
+                    if (c.linkedGone) put("linkedGone", true)
+                    c.linkedDoneAt?.let { put("linkedDoneAt", it) }
+                    c.updatedAt?.let { put("updatedAt", it) }
+                }
+                .apply {
+                    if (c.task) put("task", true)
+                    c.doneAt?.let { put("doneAt", it) }
+                    if (c.task) c.backlogAt?.let { put("backlogAt", it) }
+                }
+        }
+
         private const val DAY_MS = 24L * 60 * 60 * 1000
         const val FOLLOW_UP_PREFIX = "(Follow-Up) "
         /** Checkin.assignee: only you. */
@@ -973,9 +942,14 @@ class Store(context: Context) {
         const val LINK_OTHER = "other"
         /** Results that complete a task: done, answered, or (soft) dismissed. */
         private val TASK_DONE_STATUSES = setOf(SlotResult.DONE, SlotResult.ANSWERED, SlotResult.DISMISSED)
-        private const val K_CHECKINS = "checkins"
-        private const val K_PENDING = "pendingList"
-        private const val K_ENTRIES = "results"
+        /** The settings' name in [DbPrefs] (and the old preferences file's). */
+        const val PREFS = "gist"
+        /** Where the old preferences file kept these (see LegacyImport). */
+        internal const val K_CHECKINS = "checkins"
+        internal const val K_PENDING = "pendingList"
+        internal const val K_ENTRIES = "results"
+        /** Set once check-ins have been saved (until then: the examples). */
+        internal const val K_CHECKINS_SAVED = "checkinsSaved"
         private const val K_THEME = "theme"
         private const val K_PAUSE = "pauseSeconds"
         private const val K_VIEW = "view"
@@ -987,7 +961,7 @@ class Store(context: Context) {
         val TABS = listOf(TAB_CHECKINS, TAB_TASKS, TAB_BACKLOG)
         /** The old Cards / Compact layout setting, read once to carry it over. */
         private const val K_STYLE = "style"
-        private const val K_DELETED = "deleted"
+        internal const val K_DELETED = "deleted"
         private const val K_RING_HERE = "ringHere"
         private const val K_TRACKING = "trackChanges"
         private const val K_EXPANDED_CHECKIN = "expandedCheckin"

@@ -54,7 +54,7 @@ class DevicesTest {
     }
 
     private fun clear() {
-        TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(TestEnv.ctx, "gist-devices").edit().clear().commit()
         store.tracking = false
         store.ringHere = true
         Backgrounds.deleteAll(TestEnv.ctx)
@@ -430,7 +430,7 @@ class DevicesTest {
         Backgrounds.photoFile(ctx, "a", 0).writeBytes("second".toByteArray())
         devices.sync()
         assertNotNull("the tablet hasn't read the change yet", f.read(oldBlob))
-        val seq = TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).getInt("sentSeq", 0)
+        val seq = Profiles.prefs(TestEnv.ctx, "gist-devices").getInt("sentSeq", 0)
         LinkProtocol.writeReceipts(f, tab, mapOf(devices.side to seq))
         devices.sync()
         assertNull(f.read(oldBlob))
@@ -452,7 +452,7 @@ class DevicesTest {
 
     // ------------------------------------------------------------ leaving and removing
 
-    private val devPrefs get() = TestEnv.ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE)
+    private val devPrefs get() = Profiles.prefs(TestEnv.ctx, "gist-devices")
 
     /** Another device [s] joins with an invite from this phone and is let in: the key it gets. */
     private fun deviceJoins(s: String, keys: Pair<String, String>): ByteArray {

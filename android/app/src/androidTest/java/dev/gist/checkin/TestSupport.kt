@@ -60,12 +60,32 @@ object TestEnv {
         // Stopping is asynchronous: wait, or the next test could mistake this alarm for its own.
         eventually(10_000) { if (AlarmService.running) throw AssertionError("alarm service still running") }
         ctx.getSystemService(NotificationManager::class.java).cancelAll()
-        ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().clear().commit()
+        Store(ctx).wipe()
         val s = Store(ctx)
         s.checkins = checkins
         s.pending = pending
         // Answers go to the first check-in at 12:00 (TestEnv.checkin's time).
         checkins.firstOrNull()?.let { c -> entries.forEach { (day, answers) -> s.saveAnswers(day, c.id, "12:00", answers) } }
+    }
+
+    /**
+     * Writes [values] to the old preferences file [name] (as Gist kept things before the
+     * database) and imports it, as an update from that version would.
+     */
+    fun importLegacy(name: String, values: Map<String, Any>) {
+        val e = ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit()
+        values.forEach { (k, v) ->
+            when (v) {
+                is String -> e.putString(k, v)
+                is Int -> e.putInt(k, v)
+                is Long -> e.putLong(k, v)
+                is Boolean -> e.putBoolean(k, v)
+                is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
+                else -> throw IllegalArgumentException(k)
+            }
+        }
+        e.commit()
+        Db.get(ctx).importLegacyNow()
     }
 
     fun checkin(

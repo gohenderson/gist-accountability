@@ -26,8 +26,7 @@ class StoreTest {
     @After
     fun tearDown() = TestEnv.reset(emptyList())
 
-    private fun clearPrefs() =
-        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().clear().commit()
+    private fun clearPrefs() = Store(TestEnv.ctx).wipe()
 
     @Test
     fun freshInstallStartsWithMorningAndEvening() {
@@ -68,7 +67,7 @@ class StoreTest {
             "scanCode":"CODE","scanLabel":"Sink","questions":[{"id":"a","text":"A?","yesIsGood":true}],
             "steps":["questions","math"]}]"""
         TestEnv.reset(emptyList())
-        TestEnv.ctx.getSharedPreferences("gist", Context.MODE_PRIVATE).edit().putString("checkins", legacy).commit()
+        TestEnv.importLegacy("gist", mapOf("checkins" to legacy))
         val c = Store(TestEnv.ctx).checkin("old")!!
         assertEquals(listOf(Steps.QUESTIONS, Steps.MATH, Steps.SCAN), c.steps.map { it.kind })
         assertEquals(4, c.steps[1].mathCount)
