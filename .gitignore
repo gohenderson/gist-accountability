@@ -15,3 +15,6 @@ xcuserdata/
 
 # Python bytecode from running the CI scripts locally
 __pycache__/
+
+# Syncthing built for the Easy Connect experiment (CI: build-syncthing.sh)
+android/syncthing/

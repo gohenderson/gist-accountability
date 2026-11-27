@@ -21,6 +21,18 @@ android {
     sourceSets["androidTest"].assets.srcDir("../../shared/backups")
     // Sync test files shared with the iOS app (shared/sync): SyncVectorsTest.
     sourceSets["androidTest"].assets.srcDir("../../shared/sync/files")
+    // Syncthing's program, in debug builds only (the Easy Connect experiment): built by CI
+    // (.github/scripts/build-syncthing.sh) into android/syncthing/jniLibs/<abi>/. Without it
+    // the app builds as before and Easy Connect says it isn't there.
+    sourceSets["debug"].jniLibs.srcDir("../syncthing/jniLibs")
+
+    // Unpacked on install (not run from inside the APK): Android only lets an app run a
+    // program from its native library folder.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 
     defaultConfig {
         applicationId = if (peer) "dev.gist.checkin.peer" else "dev.gist.checkin"

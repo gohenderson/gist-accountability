@@ -57,9 +57,70 @@ jobs:
             echo "### Nothing Android-related changed: build and tests skipped" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  # The Easy Connect experiment: Syncthing's program built for Android (debug builds only),
+  # cached per Syncthing version and passed to the jobs below.
+  syncthing:
+    name: Syncthing for Android
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Syncthing version
+        id: v
+        run: echo "version=$(tr -d '[:space:]' < android/syncthing.version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cached build
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: android/syncthing/jniLibs
+          key: syncthing-${{ steps.v.outputs.version }}-${{ hashFiles('.github/scripts/build-syncthing.sh') }}
+
+      - name: Syncthing's source
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: git clone -q --depth 1 --branch "$VERSION" https://github.com/syncthing/syncthing _syncthing-src
+
+      - name: Set up Go
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: _syncthing-src/go.mod
+          cache: false
+
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash .github/scripts/build-syncthing.sh _syncthing-src android/syncthing/jniLibs arm64-v8a x86_64
+
+      - name: Sizes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          {
+            echo "### Syncthing $VERSION for Android"
+            echo '```'
+            ls -l android/syncthing/jniLibs/*/libsyncthing.so | awk '{printf "%-50s %6.1f MB\n", $9, $5/1048576}'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: syncthing-native
+          path: android/syncthing/jniLibs
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: Build, unit tests, lint
-    needs: changes
+    needs: [changes, syncthing]
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -85,6 +146,12 @@ jobs:
           cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
           gradle-version: ${{ env.GRADLE_VERSION }}
 
+      - name: Syncthing (debug builds)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: syncthing-native
+          path: android/syncthing/jniLibs
+
       - name: Environment info
         run: |
           set -x
@@ -104,6 +171,14 @@ jobs:
 
       - name: Build debug APK
         run: bash .github/scripts/run-gradle.sh assembleDebug
+
+      - name: Syncthing is in the debug APK
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          for abi in arm64-v8a x86_64; do
+            unzip -l "$apk" | grep -q "lib/$abi/libsyncthing.so" || { echo "::error title=Syncthing::Not in the debug APK for $abi"; exit 1; }
+          done
+          echo "Debug APK (with Syncthing for arm64-v8a and x86_64): $(du -m "$apk" | cut -f1) MB" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Library API levels
         # Libraries are built for a Java version, not an Android one: check they don't call
@@ -176,7 +251,7 @@ jobs:
 
   ui-tests:
     name: UI tests (emulator)
-    needs: changes
+    needs: [changes, syncthing]
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -202,6 +277,12 @@ jobs:
           cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
           cache-read-only: true   # the build job saves the cache; avoid both saving at once
           gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Syncthing (debug builds)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: syncthing-native
+          path: android/syncthing/jniLibs
 
       - name: Build app and test APKs
         run: bash .github/scripts/run-gradle.sh assembleDebug assembleDebugAndroidTest
