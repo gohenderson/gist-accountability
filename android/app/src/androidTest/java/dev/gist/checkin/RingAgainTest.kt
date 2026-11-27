@@ -49,6 +49,7 @@ class RingAgainTest {
     fun ringInAddsATimeThatRingsOnce() {
         TestEnv.reset(listOf(TestEnv.checkin("turkey", "Baste the turkey", listOf(basted))))
         ActivityScenario.launch<CheckinEditActivity>(CheckinEditActivity.intent(TestEnv.ctx, "turkey")).use {
+            TestEnv.openSection(CheckinEditActivity.SECTION_SCHEDULE)
             onView(tagged("ring-in")).perform(scrollTo(), click())
             onView(tagged("ring-in:30")).inRoot(isDialog()).perform(click())
             TestEnv.eventually { assertEquals(1, ahead("turkey").size) }
