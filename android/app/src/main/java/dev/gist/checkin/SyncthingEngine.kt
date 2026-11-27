@@ -65,13 +65,16 @@ class SyncthingEngine(context: Context) {
         }
         process = pb.start()
         val end = System.currentTimeMillis() + timeoutMs
+        var last: Throwable? = null
         while (System.currentTimeMillis() < end) {
             if (!running) throw IllegalStateException("Syncthing exited (${process?.exitValue()}): ${tail()}")
-            if (runCatching { ping() }.getOrDefault(false)) return
+            val answer = runCatching { ping() }
+            if (answer.getOrDefault(false)) return
+            last = answer.exceptionOrNull() ?: last
             Thread.sleep(250)
         }
         stop()
-        throw IllegalStateException("Syncthing didn't answer within ${timeoutMs / 1000} s: ${tail()}")
+        throw IllegalStateException("Syncthing didn't answer within ${timeoutMs / 1000} s (last: $last): ${tail()}")
     }
 
     /** Asks Syncthing to shut down, and makes sure it has (up to [timeoutMs]). */
