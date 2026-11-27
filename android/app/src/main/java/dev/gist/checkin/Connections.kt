@@ -503,6 +503,13 @@ class Connections(
         const val DONE_KEY = "~done"
         private val LOCK = Any()
 
+        /** Runs [sync] now, on this thread (the background service). True when what's shared with you changed. */
+        fun syncNow(context: android.content.Context): Boolean {
+            val links = Connections(context)
+            if (links.here.isEmpty()) return false
+            return synchronized(SYNC) { links.sync() }
+        }
+
         /** Runs [sync] off the main thread, then [then] on it when what's shared with you changed. */
         fun syncInBackground(activity: android.app.Activity, then: () -> Unit = {}) {
             val links = Connections(Profiles.scoped(activity, Profiles.of(activity)))

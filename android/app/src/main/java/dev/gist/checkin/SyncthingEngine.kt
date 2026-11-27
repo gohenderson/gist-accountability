@@ -162,6 +162,24 @@ class SyncthingEngine(
         }
     }
 
+    /** Stops sharing folder [id] (its files stay where they are). */
+    fun removeFolder(id: String) {
+        call("DELETE", "/rest/config/folders/$id")
+    }
+
+    /** Forgets device [id]. */
+    fun removeDevice(id: String) {
+        call("DELETE", "/rest/config/devices/$id")
+    }
+
+    /** Each folder's devices: folder id → device ids. */
+    fun folderDevices(): Map<String, List<String>> = JSONArray(call("GET", "/rest/config/folders")).let { a ->
+        (0 until a.length()).map { a.getJSONObject(it) }.associate { f ->
+            val d = f.optJSONArray("devices") ?: JSONArray()
+            f.getString("id") to (0 until d.length()).map { d.getJSONObject(it).getString("deviceID") }
+        }
+    }
+
     /** Devices that tried to connect and aren't known yet: id → the name they gave. */
     fun pendingDevices(): Map<String, String> = JSONObject(call("GET", "/rest/cluster/pending/devices")).let { o ->
         o.keys().asSequence().associateWith { o.optJSONObject(it)?.optString("name").orEmpty() }

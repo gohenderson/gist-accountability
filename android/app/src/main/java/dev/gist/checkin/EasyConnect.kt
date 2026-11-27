@@ -5,22 +5,28 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Easy Connect: your devices in step with nothing to set up but a QR code. Gist runs Syncthing
- * itself ([SyncthingEngine], [SyncthingService]) and has it share My devices between them.
+ * Easy Connect: your devices, and the people you share with, connected with nothing to set up
+ * but a QR code. Gist runs Syncthing itself ([SyncthingEngine], [SyncthingService]) and has it
+ * share My devices between your devices, and a connection's folder (People/Jess) between you
+ * and that person.
  *
- * - **Show the code** (a device with My devices): Gist shares My devices in its Syncthing and
- *   shows a QR code: a devices invite (the same one Add a device shows), its Syncthing device
- *   ID and the folder's Syncthing id ([Code]).
- * - **Scan it** (the new device): Gist names its Syncthing after the invite ([tag]), adds the
- *   first device and the folder, and waits for My devices to arrive, then joins with the
- *   invite as usual (GistFolder.waiting).
+ * - **Show the code**: for your devices (this one has My devices), Gist shares My devices in
+ *   its Syncthing; for a person, it makes their folder (People/<name>) and a connection invite,
+ *   as Invite does, and shares that. The QR code holds the invite, this device's Syncthing ID,
+ *   the folder's Syncthing id, and for a person, your name ([Code]).
+ * - **Scan it** (the other device): Gist names its Syncthing after the invite ([tag]), adds the
+ *   first device and the folder (for a person: People/<their name>), and waits for the folder
+ *   to arrive, then joins with the invite as usual (GistFolder.waiting, [finishJoins]).
  * - The first device accepts a device asking to connect only while its invite is open, and
- *   only one going by that invite's tag (which only the code reveals). Gist's own join proof
+ *   only one going by that invite's tag (which only the code reveals), and shares only that
+ *   folder with it: a person never gets My devices. Gist's own join proof
  *   and encryption still apply on top: a device is let in only once it proves it had the
  *   invite, and everything in My devices is encrypted for the group.
  *
@@ -30,29 +36,35 @@ import javax.crypto.spec.SecretKeySpec
  */
 object EasyConnect {
     private const val PREFS = "gist-easy"
-    private const val K_TAG = "offerTag"
-    private const val K_FOLDER = "offerFolder"
-    private const val K_UNTIL = "offerUntil"
+    /** Codes shown and still open: [{"tag", "folder", "until"}]. */
+    private const val K_OFFERS = "offers"
     private const val K_ON = "easyConnect"
 
-    /** What the QR code holds: "GISTEC1:<invite code>:<Syncthing device ID>:<folder id>". */
-    data class Code(val invite: LinkInvite, val deviceId: String, val folderId: String) {
-        val qr: String get() = "$PREFIX${invite.code.replace("-", "")}:${deviceId.replace("-", "")}:$folderId"
+    /**
+     * What the QR code holds: "GISTEC1:<invite code>:<Syncthing device ID>:<folder id>", and for a
+     * person ([LinkInvite.kind] 'c') ":<your name>" (base64url), to name their folder for you.
+     */
+    data class Code(val invite: LinkInvite, val deviceId: String, val folderId: String, val name: String? = null) {
+        val qr: String get() = "$PREFIX${invite.code.replace("-", "")}:${deviceId.replace("-", "")}:$folderId" +
+            (name?.let { ":" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray()) } ?: "")
 
         companion object {
             const val PREFIX = "GISTEC1:"
             private val FOLDER = Regex("[A-Za-z0-9-]{1,64}")
 
-            /** A scanned Easy Connect code (for your devices), or null if it isn't one. */
+            /** A scanned Easy Connect code (for your devices or a person), or null if it isn't one. */
             fun parse(text: String): Code? {
                 val t = text.trim()
                 if (!t.startsWith(PREFIX, ignoreCase = true)) return null
                 val parts = t.substring(PREFIX.length).split(':')
-                if (parts.size != 3) return null
-                val invite = LinkInvite.parse(parts[0])?.takeIf { it.kind == 'd' } ?: return null
+                if (parts.size !in 3..4) return null
+                val invite = LinkInvite.parse(parts[0]) ?: return null
                 val id = deviceId(parts[1]) ?: return null
                 val folder = parts[2].takeIf { FOLDER.matches(it) } ?: return null
-                return Code(invite, id, folder)
+                val name = parts.getOrNull(3)?.let {
+                    runCatching { String(java.util.Base64.getUrlDecoder().decode(it)) }.getOrNull()?.trim()?.take(64) ?: return null
+                }
+                return Code(invite, id, folder, name?.ifEmpty { null })
             }
 
             /** A Syncthing device ID in its usual form (8 groups of 7), from any spacing or case; null if it isn't one. */
@@ -76,6 +88,9 @@ object EasyConnect {
 
     /** The Syncthing folder id for My devices of group [groupId]. */
     fun folderId(groupId: String): String = "gist-devices-${groupId.filter { it.isLetterOrDigit() }.take(40)}"
+
+    /** The Syncthing folder id for connection [linkId]'s folder. */
+    fun linkFolderId(linkId: String): String = "gist-link-${linkId.filter { it.isLetterOrDigit() }.take(40)}"
 
     // ---------------------------------------------------------------- Syncthing side
 
@@ -131,9 +146,27 @@ object EasyConnect {
     /** The label Syncthing shows for My devices of [context]'s profile. */
     private fun label(context: Context) = "Gist · My devices (${Profiles.name(context, Profiles.of(context))})"
 
+    /** A code [tag] for [folder] stays open until [until] (several can be: your devices, people). */
+    private fun addOffer(context: Context, tag: String, folder: String, until: Long) {
+        val prefs = Profiles.prefs(context, PREFS)
+        val now = System.currentTimeMillis()
+        val list = openOffers(context, now).filter { it.optString("folder") != folder } +
+            JSONObject().put("tag", tag).put("folder", folder).put("until", until)
+        prefs.edit().putString(K_OFFERS, JSONArray(list).toString()).commit()
+    }
+
+    /** The codes shown and still open (the rest are dropped). */
+    private fun openOffers(context: Context, now: Long = System.currentTimeMillis()): List<JSONObject> {
+        val prefs = Profiles.prefs(context, PREFS)
+        val all = runCatching { JSONArray(prefs.getString(K_OFFERS, "[]")) }.getOrDefault(JSONArray())
+        val open = (0 until all.length()).map { all.getJSONObject(it) }.filter { it.optLong("until") > now }
+        if (open.size != all.length()) prefs.edit().putString(K_OFFERS, JSONArray(open).toString()).commit()
+        return open
+    }
+
     /**
-     * The code for another device to scan (this one has My devices, ready): shares My devices in
-     * Syncthing, and remembers the invite's tag to accept it. Blocks (starts Syncthing).
+     * The code for another of your devices to scan (this one has My devices, ready): shares My
+     * devices in Syncthing, and remembers the invite's tag to accept it. Blocks (starts Syncthing).
      */
     fun offer(context: Context): Pair<Code, Long> {
         val devices = Devices(context)
@@ -144,49 +177,111 @@ object EasyConnect {
         engine.start()
         val folder = folderId(group)
         offerFolder(engine, folder, label(context), path)
-        Profiles.prefs(context, PREFS).edit()
-            .putString(K_TAG, tag(invite.token)).putString(K_FOLDER, folder).putLong(K_UNTIL, until).commit()
+        addOffer(context, tag(invite.token), folder, until)
         setOn(context, true)
         return Code(invite, engine.deviceId(), folder) to until
     }
 
-    /** The scanning side: sets up Syncthing for [code], then waits for My devices. Blocks (starts Syncthing). */
-    fun join(context: Context, code: Code) {
-        val path = GistFolder(context).path(GistFolder.DEVICES) ?: throw IllegalStateException("No Gist folder")
+    /**
+     * The code for [person] to scan: makes their folder (People/<person>) and a connection
+     * invite, as Invite does, shares the folder in Syncthing, and remembers the invite's tag.
+     * Blocks (starts Syncthing).
+     */
+    fun offerPerson(context: Context, person: String): Pair<Code, Long> {
+        val gf = GistFolder(context)
+        val loc = gf.newPerson(person) ?: throw IllegalStateException("No Gist folder")
+        val links = Connections(context)
+        val link = links.invite(loc)
+        val (invite, until) = links.invitation(link) ?: throw IllegalStateException("No invite")
         val engine = SyncthingEngine.shared(context)
         engine.start()
-        joinFolder(engine, code.deviceId, code.folderId, label(context), path, tag(code.invite.token))
-        GistFolder(context).waiting = "d:${code.invite.code}"
+        val folder = linkFolderId(link.id)
+        offerFolder(engine, folder, "Gist · ${loc.substringAfterLast('/')}", gf.pathOf(loc))
+        addOffer(context, tag(invite.token), folder, until)
+        setOn(context, true)
+        return Code(invite, engine.deviceId(), folder, links.myName.trim().ifEmpty { null }) to until
+    }
+
+    /**
+     * The scanning side: sets up Syncthing for [code] (for a person, making People/<their
+     * name>), then waits for the folder to arrive ([finishJoins]). Blocks (starts Syncthing).
+     */
+    fun join(context: Context, code: Code) {
+        val (path, label) = prepareJoin(context, code)
+        val engine = SyncthingEngine.shared(context)
+        engine.start()
+        joinFolder(engine, code.deviceId, code.folderId, label, path, tag(code.invite.token))
         setOn(context, true)
     }
 
     /**
-     * What the background service does every few seconds, for each profile: accept the device
-     * an open code was shown to, and keep your devices in step.
+     * Gist's part of joining with [code]: where the folder goes (My devices, or People/<their
+     * name> for a person), and waiting for it. Its path and Syncthing label.
+     */
+    fun prepareJoin(context: Context, code: Code): Pair<String, String> {
+        val gf = GistFolder(context)
+        val result = if (code.invite.kind == 'd') {
+            (gf.path(GistFolder.DEVICES) ?: throw IllegalStateException("No Gist folder")) to label(context)
+        } else {
+            val loc = gf.newPerson(code.name ?: "Someone") ?: throw IllegalStateException("No Gist folder")
+            gf.pathOf(loc) to "Gist · ${loc.substringAfterLast('/')}"
+        }
+        gf.waiting = "${code.invite.kind}:${code.invite.code}"
+        return result
+    }
+
+    /**
+     * A code scanned here: join with it as soon as its folder has arrived (My devices, or the
+     * person's folder in People). True once joined (or it's no longer waiting).
+     */
+    fun finishJoins(context: Context): Boolean {
+        val gf = GistFolder(context)
+        val waiting = gf.waiting ?: return true
+        val invite = LinkInvite.parse(waiting.substring(2)) ?: run { gf.waiting = null; return true }
+        val joined = runCatching {
+            if (invite.kind == 'd') {
+                if (Devices(context).folder != null) return@runCatching true
+                val loc = gf.devices() ?: return@runCatching false
+                Devices(context).join(loc, invite) == null
+            } else {
+                val links = Connections(context)
+                val loc = links.findInvited(gf.people().values, invite) ?: return@runCatching false
+                links.join(loc, invite).second == null
+            }
+        }.getOrDefault(false)
+        if (joined) gf.waiting = null
+        return joined
+    }
+
+    /**
+     * What the background service does every few seconds, for each profile: accept the devices
+     * open codes were shown to, finish a join waiting for its folder, and keep your devices and
+     * connections in step.
      */
     fun tick(context: Context, engine: SyncthingEngine) {
         for (p in Profiles.contexts(context)) {
-            val prefs = Profiles.prefs(p, PREFS)
-            val tag = prefs.getString(K_TAG, null)
-            val folder = prefs.getString(K_FOLDER, null)
-            if (tag != null && folder != null) {
-                if (prefs.getLong(K_UNTIL, 0) < System.currentTimeMillis()) {
-                    prefs.edit().remove(K_TAG).remove(K_FOLDER).remove(K_UNTIL).commit()
-                } else {
-                    runCatching { acceptPending(engine, tag, folder) }
-                }
-            }
-            // Scanned a code: join as soon as My devices has arrived.
-            val gf = GistFolder(p)
-            val waiting = gf.waiting
-            if (waiting != null && waiting.startsWith("d:") && Devices(p).folder == null) {
-                val invite = LinkInvite.parse(waiting.substring(2))
-                val loc = gf.devices()
-                if (invite != null && loc != null && runCatching { Devices(p).join(loc, invite) == null }.getOrDefault(false)) {
-                    gf.waiting = null
-                }
-            }
+            for (o in openOffers(p)) runCatching { acceptPending(engine, o.getString("tag"), o.getString("folder")) }
+            finishJoins(p)
             runCatching { Devices.syncNow(p) }
+            runCatching { Connections.syncNow(p) }
+        }
+    }
+
+    /**
+     * Stops sharing [folderId] through Syncthing (a connection removed, this device leaving your
+     * devices), and forgets devices it no longer shares anything with. Its files stay.
+     */
+    fun unshare(context: Context, folderId: String) {
+        val engine = SyncthingEngine.shared(context)
+        if (!engine.available || !isOn(context)) return
+        runCatching {
+            engine.start()
+            val before = engine.folderDevices()
+            val theirs = before[folderId] ?: return
+            engine.removeFolder(folderId)
+            val still = before.filterKeys { it != folderId }.values.flatten().toSet()
+            val me = engine.deviceId()
+            theirs.filter { it != me && it !in still }.forEach { engine.removeDevice(it) }
         }
     }
 
