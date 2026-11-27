@@ -178,7 +178,13 @@ class CheckinEditActivity : BaseActivity() {
         }
         c.times.forEachIndexed { i, tm -> col.add(timeTriggerCard(c, i, tm, i), dp(10)) }
         c.events.forEachIndexed { j, ev -> col.add(eventTriggerCard(c, j, ev, c.times.size + j), dp(10)) }
-        col.add(button("+ Add trigger") { addTrigger(c) }.apply { tag = "add-trigger" }, dp(10))
+        val adds = row()
+        adds.addWeighted(button("+ Add trigger") { addTrigger(c) }.apply { tag = "add-trigger" })
+        adds.addWeighted(outlineButton("⏱ Ring in…") { pickRingIn() }.apply {
+            tag = "ring-in"
+            contentDescription = "Ring in a few minutes, once"
+        }, startMargin = dp(8))
+        col.add(adds, dp(10))
         if (c.enabled && total > 0) {
             col.add(label("Rings ${CheckinText.whenText(c)}", 14f).apply { tag = "trigger-summary" }, dp(8))
             if (c.times.isNotEmpty()) col.add(label("Next: ${CheckinText.next(c)}", 14f).apply { tag = "next-ring" }, dp(2))
@@ -688,7 +694,18 @@ class CheckinEditActivity : BaseActivity() {
         field(card, "When", kindText(Trigger.TIME), "trigger-when:$n") { pickKind(c, n) }
         field(card, "Time", Days.time(tm.hour, tm.minute), "trigger-time:$n") { pickTime(c, i) }
         field(card, "Days", c.daysFor(tm).describe(), "trigger-days:$n") {
-            pickRepeat(c.daysFor(tm), forTime = tm) { rule -> setTime(i) { it.copy(days = rule) } }
+            pickRepeat(c.daysFor(tm), forTime = tm) { rule ->
+                val now = java.time.LocalTime.now()
+                if (rule.kind == Repeat.ONCE && rule.date == java.time.LocalDate.now() &&
+                    !java.time.LocalTime.of(tm.hour, tm.minute).isAfter(now)) {
+                    // Today, but its time has passed: pick the time, starting a few minutes from now.
+                    val start = now.plusMinutes(5 + (5 - now.minute % 5L) % 5L)
+                    TimePickerDialog(this, { _, h, m -> setTime(i) { it.copy(hour = h, minute = m, days = rule) } },
+                        start.hour, start.minute, DateFormat.is24HourFormat(this)).show()
+                } else {
+                    setTime(i) { it.copy(days = rule) }
+                }
+            }
         }
         field(card, "Where", Trigger.whereText(tm.where, tm.place).replaceFirstChar { it.uppercase() }, "trigger-where:$n") {
             pickWhere(tm) { where ->
@@ -781,6 +798,23 @@ class CheckinEditActivity : BaseActivity() {
 
     private fun setEvent(j: Int, f: (Trigger) -> Trigger) = change { cur ->
         if (j !in cur.events.indices) cur else cur.copy(events = cur.events.toMutableList().apply { this[j] = f(this[j]) })
+    }
+
+    /** "Ring in…": a one-off time a while from now ([QuickTime]). */
+    private fun pickRingIn() {
+        val choices = QuickTime.CHOICES
+        val last = store.quickMinutes
+        val options = choices.map { m ->
+            DialogOption("In ${QuickTime.text(m)}", "at ${QuickTime.at(m).let { Days.time(it.hour, it.minute) }}", "ring-in:$m")
+        } + DialogOption("Other…", "Any number of minutes, up to a day", "ring-in:other")
+        pickDialog("Ring once, in…", options, choices.indexOf(last),
+            message = "Adds a time that rings once. Times like this that have passed are cleared.") { k ->
+            fun add(m: Int) {
+                toast(QuickTime.said(m, QuickTime.add(this, checkinId, m)))
+                render()
+            }
+            if (k < choices.size) add(choices[k]) else QuickTime.askOther(this) { add(it) }
+        }
     }
 
     /** A new trigger: a time an hour after the last one, every day (change anything after). */
@@ -1094,7 +1128,9 @@ class CheckinEditActivity : BaseActivity() {
                 2 -> onPick(Repeat.weekly(Repeat.WEEKENDS))
                 3 -> pickWeekdays(cur, onPick)
                 4 -> pickMonthDays(cur, onPick)
-                5 -> pickDate(cur.date ?: nextDate(forTime)) { onPick(Repeat.once(it)) }
+                5 -> pickDate(cur.date?.takeIf { !it.isBefore(java.time.LocalDate.now()) } ?: java.time.LocalDate.now()) {
+                    onPick(Repeat.once(it))
+                }
             }
         }
     }

@@ -352,7 +352,15 @@ on **One-time task** on any check-in's page.
 - Tasks don't count toward the overall score (each still has its own History).
 
 **On a specific date** works on any time trigger, not just tasks: a daily check-in can have
-one extra time that rings once.
+one extra time that rings once. Picking today when the time has already passed asks for the
+time, starting a few minutes from now.
+
+**Ring in…** (Android), next to **+ Add trigger**, is the quick way: *In 5 min* up to *In 2
+hours*, or **Other…** for any number of minutes. It adds a time that rings once, then. When a
+time like that rings and you've checked in, Gist offers **Again in 30 min** (the last
+interval you picked), other intervals, or **Done**, so a series like basting the turkey
+every half hour is one tap each time. Adding one clears the check-in's one-off times that
+have already passed.
 
 Backups with a task, a time on a specific date or a pick-tasks step are version 5 (both
 apps read them); backups without them stay version 4.
