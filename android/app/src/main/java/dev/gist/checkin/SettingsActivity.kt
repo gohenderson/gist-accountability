@@ -103,6 +103,7 @@ class SettingsActivity : BaseActivity() {
         col.add(conn, dp(12))
 
         col.add(profilesCard(), dp(12))
+        if (SyncthingEngine.shared(this).available) col.add(syncthingCard(), dp(12))
 
         // CSV
         val csv = card()
@@ -119,6 +120,52 @@ class SettingsActivity : BaseActivity() {
         col.add(about, dp(12))
 
         setContentView(screen(col))
+    }
+
+    /** What the Easy Connect experiment last said (kept across re-renders). */
+    private var syncthingStatus: String? = null
+
+    /**
+     * The Easy Connect experiment (debug builds with Syncthing in them only): start and stop
+     * Syncthing inside Gist, and see that it runs on this phone. It shares nothing yet.
+     */
+    private fun syncthingCard() = card().apply {
+        tag = "syncthing-experiment"
+        val engine = SyncthingEngine.shared(this@SettingsActivity)
+        add(sectionTitle("Easy Connect (experiment)"))
+        add(label("Syncthing running inside Gist. Debug builds only, and it doesn't share anything yet: " +
+            "this checks it starts, answers and stops on this phone.", 15f), dp(6))
+        val status = muted(syncthingStatus ?: if (engine.running) "Running" else "Stopped", 13f).apply {
+            tag = "syncthing-status"
+            setTextIsSelectable(true)
+        }
+        add(status, dp(6))
+        val button = outlineButton(if (engine.running) "Stop Syncthing" else "Start Syncthing") {}.apply { tag = "syncthing-toggle" }
+        button.setOnClickListener {
+            button.isEnabled = false
+            status.text = if (engine.running) "Stopping…" else "Starting…"
+            Thread {
+                val text = try {
+                    if (engine.running) {
+                        engine.stop()
+                        "Stopped"
+                    } else {
+                        val t0 = System.currentTimeMillis()
+                        engine.start()
+                        "Running Syncthing ${engine.version()}, started in ${System.currentTimeMillis() - t0} ms\n" +
+                            "Device ID: ${engine.deviceId()}\n" +
+                            "Program: ${engine.binary.length() / (1024 * 1024)} MB"
+                    }
+                } catch (e: Exception) {
+                    "Couldn't: ${e.message}"
+                }
+                runOnUiThread {
+                    syncthingStatus = text
+                    render()
+                }
+            }.start()
+        }
+        add(button, dp(10))
     }
 
     /**

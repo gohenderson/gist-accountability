@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY (the Easy Connect experiment). Gist talks to the Syncthing it runs through
+  its API on 127.0.0.1, which is plain HTTP; Android blocks plain HTTP unless it's allowed.
+  This allows it to 127.0.0.1 only. (Syncthing's connections to other devices are its own,
+  encrypted with TLS.)
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
