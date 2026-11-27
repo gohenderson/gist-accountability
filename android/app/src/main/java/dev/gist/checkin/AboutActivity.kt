@@ -25,8 +25,10 @@ class AboutActivity : BaseActivity() {
         val privacy = card()
         privacy.add(sectionTitle("Privacy"))
         privacy.add(label(
-            "Gist has no internet permission. Your check-ins and answers stay on this phone, and only " +
-                "leave it when you export a backup or a CSV yourself. The buttons below open your browser.", 15f), dp(6))
+            "Gist has no servers and no accounts. Your check-ins and answers stay on this phone, and only " +
+                "leave it when you export a backup or a CSV, share a folder yourself, or turn on Easy Connect. " +
+                "Easy Connect runs Syncthing inside Gist: it sends your shared folders only to the devices you " +
+                "connect, encrypted, and sends no usage or crash reports. The buttons below open your browser.", 15f), dp(6))
         col.add(privacy, dp(12))
 
         val support = card()
@@ -50,6 +52,11 @@ class AboutActivity : BaseActivity() {
                 "GNU General Public License, version 3 or (at your option) any later version. It comes " +
                 "with ABSOLUTELY NO WARRANTY.", 15f).apply { tag = "license-notice" }, dp(6))
         license.add(outlineButton("Read the license") { open(Links.LICENSE) }.apply { tag = "license" }, dp(12))
+        if (SyncthingEngine.shared(this).available) {
+            license.add(muted("Easy Connect uses Syncthing (syncthing.net), © the Syncthing contributors, under the " +
+                "Mozilla Public License 2.0, unchanged. Its source and license:", 13f).apply { tag = "syncthing-notice" }, dp(14))
+            license.add(outlineButton("Syncthing on GitHub") { open(Links.SYNCTHING) }.apply { tag = "syncthing-source" }, dp(8))
+        }
         col.add(license, dp(12))
 
         setContentView(screen(col))

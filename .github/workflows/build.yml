@@ -57,8 +57,8 @@ jobs:
             echo "### Nothing Android-related changed: build and tests skipped" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # The Easy Connect experiment: Syncthing's program built for Android (debug builds only),
-  # cached per Syncthing version and passed to the jobs below.
+  # Easy Connect: Syncthing's program built for Android, cached per Syncthing version and
+  # passed to the jobs below (and to the release job, when release.yml calls this workflow).
   syncthing:
     name: Syncthing for Android
     needs: changes
@@ -170,6 +170,21 @@ jobs:
             unzip -l "$apk" | grep -q "lib/$abi/libsyncthing.so" || { echo "::error title=Syncthing::Not in the debug APK for $abi"; exit 1; }
           done
           echo "Debug APK (with Syncthing for arm64-v8a and x86_64): $(du -m "$apk" | cut -f1) MB" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The release build (unsigned here) has Syncthing for phones only, so a release doesn't
+      # find out after its approval.
+      - name: Build release APK (unsigned)
+        run: |
+          set -euo pipefail
+          bash .github/scripts/run-gradle.sh assembleRelease
+          apk="$(ls android/app/build/outputs/apk/release/*.apk | head -n1)"
+          libs="$(unzip -l "$apk" | awk '{print $4}' | grep '^lib/' || true)"
+          grep -qx "lib/arm64-v8a/libsyncthing.so" <<< "$libs" \
+            || { echo "::error title=Syncthing::Not in the release APK"; exit 1; }
+          if grep -v '^lib/arm64-v8a/' <<< "$libs" | grep -q .; then
+            echo "::error title=Syncthing::The release APK has libraries for other ABIs:"; echo "$libs"; exit 1
+          fi
+          echo "Release APK (with Syncthing for arm64-v8a): $(du -m "$apk" | cut -f1) MB" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Library API levels
         # Libraries are built for a Java version, not an Android one: check they don't call

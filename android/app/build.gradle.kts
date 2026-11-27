@@ -21,10 +21,10 @@ android {
     sourceSets["androidTest"].assets.srcDir("../../shared/backups")
     // Sync test files shared with the iOS app (shared/sync): SyncVectorsTest.
     sourceSets["androidTest"].assets.srcDir("../../shared/sync/files")
-    // Syncthing's program, in debug builds only (the Easy Connect experiment): built by CI
-    // (.github/scripts/build-syncthing.sh) into android/syncthing/jniLibs/<abi>/. Without it
-    // the app builds as before and Easy Connect says it isn't there.
-    sourceSets["debug"].jniLibs.srcDir("../syncthing/jniLibs")
+    // Syncthing's program (Easy Connect): built by CI (.github/scripts/build-syncthing.sh) into
+    // android/syncthing/jniLibs/<abi>/. Without it the app still builds, and Easy Connect isn't
+    // offered (the release workflow checks the signed APK has it).
+    sourceSets["main"].jniLibs.srcDir("../syncthing/jniLibs")
 
     // Unpacked on install (not run from inside the APK): Android only lets an app run a
     // program from its native library folder.
@@ -59,6 +59,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Phones only: Syncthing for 64-bit ARM. (Debug builds also have x86_64, for the
+            // emulator.)
+            ndk { abiFilters += "arm64-v8a" }
             if (signingStoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
     }

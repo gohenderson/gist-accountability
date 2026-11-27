@@ -11,7 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 
 /**
- * Keeps Syncthing running while Easy Connect is on (debug builds for now), as a foreground
+ * Keeps Syncthing running while Easy Connect is on, as a foreground
  * service with its notification. Every few seconds it lets in the device a code was shown to,
  * finishes a join waiting for My devices, and keeps your devices in step ([EasyConnect.tick]).
  *

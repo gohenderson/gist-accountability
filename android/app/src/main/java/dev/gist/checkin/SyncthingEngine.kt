@@ -11,7 +11,7 @@ import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
 
 /**
- * Syncthing inside Gist: the Easy Connect experiment (debug builds only for now).
+ * Syncthing inside Gist, for Easy Connect.
  *
  * Syncthing's own program (built for Android by CI, .github/scripts/build-syncthing.sh) is
  * installed with the app as libsyncthing.so in its native library folder, the one place
@@ -37,7 +37,7 @@ class SyncthingEngine(
         private set
     private var apiKey = ""
 
-    /** Whether this build has Syncthing (debug builds from CI do). */
+    /** Whether this build has Syncthing (CI's builds do; release builds for 64-bit ARM phones). */
     val available: Boolean get() = binary.isFile
 
     val running: Boolean get() = process?.isAlive == true
@@ -73,7 +73,10 @@ class SyncthingEngine(
         while (System.currentTimeMillis() < end) {
             if (!running) throw IllegalStateException("Syncthing exited (${process?.exitValue()}): ${tail()}")
             val answer = runCatching { ping() }
-            if (answer.getOrDefault(false)) return
+            if (answer.getOrDefault(false)) {
+                noReports()
+                return
+            }
             last = answer.exceptionOrNull() ?: last
             Thread.sleep(250)
         }
@@ -93,6 +96,15 @@ class SyncthingEngine(
             }
         }
         process = null
+    }
+
+    /**
+     * Syncthing sends nothing about you to anyone: no usage reports (declined, so it doesn't
+     * ask) and no crash reports. Its connections are only to devices you've added, through
+     * Syncthing's discovery and relay servers when they aren't on your network.
+     */
+    private fun noReports() {
+        runCatching { setOptions(JSONObject().put("urAccepted", -1).put("crashReportingEnabled", false)) }
     }
 
     fun ping(): Boolean = JSONObject(call("GET", "/rest/system/ping")).optString("ping") == "pong"

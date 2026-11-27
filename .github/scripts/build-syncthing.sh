@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds Syncthing's program for Android, for Gist's debug builds (the Easy Connect
-# experiment): one executable per ABI, named lib*.so so Android installs it in the app's
-# native library folder, the only place an app may run a program from.
+# Builds Syncthing's program for Android, for Gist's Easy Connect: one executable per ABI,
+# named lib*.so so Android installs it in the app's native library folder, the only place
+# an app may run a program from.
 #
 #   build-syncthing.sh <syncthing source> <out dir> <abi>...
 #

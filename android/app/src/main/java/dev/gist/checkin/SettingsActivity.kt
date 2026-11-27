@@ -80,7 +80,8 @@ class SettingsActivity : BaseActivity() {
         col.add(alarm, dp(12))
 
         col.add(profilesCard(), dp(12))
-        if (SyncthingEngine.shared(this).available) col.add(syncthingCard(), dp(12))
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable && SyncthingEngine.shared(this).available) col.add(syncthingCard(), dp(12))
 
         setContentView(screen(col))
     }
@@ -89,15 +90,15 @@ class SettingsActivity : BaseActivity() {
     private var syncthingStatus: String? = null
 
     /**
-     * The Easy Connect experiment (debug builds with Syncthing in them only): start and stop
-     * Syncthing inside Gist, and see that it runs on this phone. It shares nothing yet.
+     * Debug builds only: start and stop Gist's Syncthing by hand, and see its version, device
+     * ID and size (Easy Connect itself is in Connections).
      */
     private fun syncthingCard() = card().apply {
         tag = "syncthing-experiment"
         val engine = SyncthingEngine.shared(this@SettingsActivity)
-        add(sectionTitle("Easy Connect (experiment)"))
-        add(label("Syncthing running inside Gist. Debug builds only, and it doesn't share anything yet: " +
-            "this checks it starts, answers and stops on this phone.", 15f), dp(6))
+        add(sectionTitle("Syncthing (debug)"))
+        add(label("Debug builds only: checks Gist's Syncthing starts, answers and stops on this phone. " +
+            "Easy Connect itself is in Connections.", 15f), dp(6))
         val status = muted(syncthingStatus ?: if (engine.running) "Running" else "Stopped", 13f).apply {
             tag = "syncthing-status"
             setTextIsSelectable(true)

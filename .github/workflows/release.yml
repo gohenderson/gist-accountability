@@ -124,6 +124,13 @@ jobs:
           fi
           echo "SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
+      # Easy Connect: Syncthing's program, built by the Tests run above (build.yml's syncthing job).
+      - name: Syncthing for Android
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: syncthing-native
+          path: android/syncthing/jniLibs
+
       - name: Build signed release APK
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -143,6 +150,17 @@ jobs:
           fi
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
           "$apksigner" verify --print-certs "$apk" | tee build-logs/signature.txt
+          # Easy Connect: Syncthing for 64-bit ARM phones, and nothing for other ABIs (tags from
+          # before it was in release builds are left as they were).
+          if grep -q 'sourceSets\["main"\].jniLibs' "$ANDROID_DIR/app/build.gradle.kts"; then
+            libs="$(unzip -l "$apk" | awk '{print $4}' | grep '^lib/' || true)"
+            echo "$libs"
+            grep -qx "lib/arm64-v8a/libsyncthing.so" <<< "$libs" \
+              || { echo "::error title=Syncthing::Not in the release APK (lib/arm64-v8a/libsyncthing.so)"; exit 1; }
+            if grep -v '^lib/arm64-v8a/' <<< "$libs" | grep -q .; then
+              echo "::error title=Syncthing::The release APK has libraries for other ABIs"; exit 1
+            fi
+          fi
           mkdir -p dist
           out="dist/gist-${TAG}.apk"
           cp "$apk" "$out"
@@ -154,7 +172,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          notes="Gist for Android: signed APK for Android 10+. Verify the download with the .sha256 file."
+          notes="Gist for Android: signed APK for Android 10+ on 64-bit phones (it includes Syncthing, for Easy Connect). Verify the download with the .sha256 file."
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG exists; replacing its files."
             gh release upload "$TAG" dist/* --clobber
