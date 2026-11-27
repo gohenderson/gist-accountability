@@ -500,7 +500,7 @@ class GroupingTest {
             onView(withText(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d"))))
                 .check(doesNotExist())
             onView(tagged("profile")).check(matches(withContentDescription("Profile: Personal. Switch profile")))
-            onView(tagged("drawer")).check(matches(org.hamcrest.Matchers.not(isDisplayed())))
+            onView(tagged("drawer")).check(doesNotExist())
             onView(tagged("menu")).perform(click())
             TestEnv.eventually { onView(tagged("nav:settings")).check(matches(isDisplayed())) }
             onView(tagged("nav:settings")).perform(click())

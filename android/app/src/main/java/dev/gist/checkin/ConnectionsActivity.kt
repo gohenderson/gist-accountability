@@ -275,6 +275,7 @@ class ConnectionsActivity : BaseActivity() {
             requestAccess()
             return
         }
+        if (!SyncthingEngine.shared(this).networkAllowed()) return networkBlocked()
         if (!EasyConnect.canReachFiles()) {
             AlertDialog.Builder(this)
                 .setTitle("Allow All files access")
@@ -289,6 +290,29 @@ class ConnectionsActivity : BaseActivity() {
             return
         }
         then()
+    }
+
+    /** Easy Connect couldn't start: why, and what to do about it if we know. */
+    private fun easyFailed(e: Throwable) {
+        if ((e.message ?: "").contains("EPERM") || e is SecurityException) networkBlocked()
+        else toast("Couldn't start Easy Connect: ${e.message}")
+    }
+
+    /** Android won't let Gist use the network (an app setting on some phones): where to allow it. */
+    private fun networkBlocked() {
+        AlertDialog.Builder(this)
+            .setTitle("Allow network access")
+            .setMessage("Easy Connect needs the network to reach your other device, but this phone doesn't let Gist " +
+                "use it. In Gist's App info, allow it: Permissions → Network on GrapheneOS, or Mobile data & Wi-Fi " +
+                "(or a firewall app) on other phones. Then come back and tap again.")
+            .setPositiveButton("Open App info") { _, _ ->
+                runCatching {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", packageName, null)))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /** Shows the code for another device to scan (setting up My devices first, if it isn't). */
@@ -310,7 +334,7 @@ class ConnectionsActivity : BaseActivity() {
                     showInvite("Easy Connect", "On the other device, open Connections and tap Scan a code under Easy " +
                         "Connect. It connects by itself; keep Gist open on both until it says it's in.", code.invite, until,
                         qrText = code.qr, typable = false)
-                }.onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                }.onFailure { easyFailed(it) }
                 render()
             }
         }.start()
@@ -326,7 +350,7 @@ class ConnectionsActivity : BaseActivity() {
                     showInvite("Easy Connect", "On their phone, in Gist: Connections → New connection → Scan a code. " +
                         "It connects by itself; keep Gist open on both until you see each other.", code.invite, until,
                         qrText = code.qr, typable = false)
-                }.onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                }.onFailure { easyFailed(it) }
                 render()
             }
         }.start()
@@ -352,7 +376,7 @@ class ConnectionsActivity : BaseActivity() {
                     toast(if (code.invite.kind == 'd') "Connecting: this device joins your devices as soon as My devices arrives."
                     else "Connecting with ${code.name ?: "them"}: you're connected as soon as their folder arrives.")
                 }
-                    .onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                    .onFailure { easyFailed(it) }
                 render()
             }
         }.start()
