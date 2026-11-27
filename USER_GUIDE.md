@@ -467,10 +467,7 @@ they see what you share, but only you can change it, and the other way round.
   Both phones then show the same **code** (like `4F7A-91C2`), which you can still compare.
 - **Between phones** the folders have to be kept in step by an app that shares folders
   between devices, such as [Syncthing](https://syncthing.net). Gist never goes online
-  itself, and works with whatever keeps the folders in step. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
-  page): a second copy with its own data, which needs access to the Gist folder too. Its
-  first profile has the same folder as Gist's (Gist/Personal - …), so the
-  two meet there just as two phones sharing the folder would.
+  itself, and works with whatever keeps the folders in step.
 - **Share with…** on a check-in's or task's page (Details) picks which connections see
   it. Changes go out the next time Gist is opened or you leave the page.
 - **What they share** shows on your start page under **From Jess**, on the tab it belongs

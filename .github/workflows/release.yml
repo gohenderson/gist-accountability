@@ -149,32 +149,12 @@ jobs:
           (cd dist && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
           cat dist/*.sha256
 
-      # Gist B: a second copy (its own app id and data) to try connections with on one phone.
-      - name: Build signed Gist B APK
-        env:
-          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          bash .github/scripts/run-gradle.sh assembleRelease -Ppeer=true \
-            -PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE"
-          apk="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
-          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
-          "$apksigner" verify --print-certs "$apk" | tee build-logs/signature-gist-b.txt
-          aapt="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)aapt2"
-          "$aapt" dump badging "$apk" | grep -q "package: name='dev.gist.checkin.peer'" \
-            || { echo "::error title=Gist B::Not built as dev.gist.checkin.peer"; exit 1; }
-          out="dist/gist-b-${TAG}.apk"
-          cp "$apk" "$out"
-          (cd dist && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
-
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          notes="Gist for Android: signed APK for Android 10+. Verify the download with the .sha256 file. gist-b-*.apk is Gist B, a second copy with its own data for trying connections on one phone."
+          notes="Gist for Android: signed APK for Android 10+. Verify the download with the .sha256 file."
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG exists; replacing its files."
             gh release upload "$TAG" dist/* --clobber
