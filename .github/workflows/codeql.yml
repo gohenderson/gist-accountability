@@ -4,9 +4,8 @@ name: CodeQL
 # workflow files. Findings show under Security → Code scanning, and the weekly Security
 # report emails a summary (as an issue assigned to the repo owner).
 
+# Runs on pull requests (before merging) and weekly, not on pushes to main.
 on:
-  push:
-    branches: [main]
   pull_request:
   schedule:
     - cron: "17 13 * * 1"   # Mondays 13:17 UTC

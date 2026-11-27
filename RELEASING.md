@@ -7,10 +7,10 @@ touches the repository, and every release waits for the owner's approval.
 
 | Workflow | Runs | Does |
 |---|---|---|
-| **Build** (`build.yml`) | every push to `main`, every pull request, on demand | debug APK, unit tests, lint, and UI tests on an emulator. The debug APK and all logs and reports are attached to the run. A first job checks what changed: if nothing in `android/`, `shared/` or `.github/` did, the build and tests are skipped (shown as skipped, which still satisfies required checks). |
+| **Build** (`build.yml`) | every pull request (not pushes to `main`), each release, on demand | debug APK, unit tests, lint, and UI tests on an emulator. The debug APK and all logs and reports are attached to the run. A first job checks what changed: if nothing in `android/`, `shared/` or `.github/` did, the build and tests are skipped (shown as skipped, which still satisfies required checks). |
 | **Release** (`release.yml`) | on demand, or when an `android-v*` tag is pushed | the whole Build workflow first; if it passes, and once you approve, a signed APK published as a GitHub release with a `.sha256` checksum |
 | **Screenshots** (`screenshots.yml`) | after each release, or on demand | the app on an emulator with demo data, captured page by page |
-| **CodeQL** (`codeql.yml`) | every push, every pull request, weekly | security scanning; see [SECURITY.md](SECURITY.md) |
+| **CodeQL** (`codeql.yml`) | every pull request, weekly, on demand | security scanning; see [SECURITY.md](SECURITY.md) |
 | **Security report** (`security-report.yml`) | Mondays, or on demand | outdated and vulnerable dependencies; see [SECURITY.md](SECURITY.md) |
 | **Combine Dependabot PRs** (`combine-dependabot.yml`) | on demand | merges the open Dependabot PRs you list (or all of them) into one PR, so they need one round of checks and one merge. Takes only PRs Dependabot opened whose commits are all its own; skips any that conflict or are already in `main`, and lists them in the PR. Needs a `COMBINE_TOKEN` secret, see below. |
 

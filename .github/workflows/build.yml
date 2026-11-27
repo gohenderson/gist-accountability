@@ -5,9 +5,8 @@ name: Build
 # .github/); if not (say, a docs-only or iOS-only PR), the jobs report as skipped, which
 # still satisfies required checks.
 
+# Runs on pull requests (before merging), not on pushes to main; a release runs it again.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:   # the Release workflow runs this first and only releases if it passes
@@ -40,7 +39,7 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          # Pushes to main, manual runs and releases (workflow_call) always build.
+          # Manual runs and releases (workflow_call) always build.
           if [[ "$EVENT" == "pull_request" ]]; then
             files="$(git diff --name-only "$BASE"...HEAD)"
           elif [[ "$EVENT" == "push" && -n "$BEFORE" && "$BEFORE" != 0000000000000000000000000000000000000000 ]] \

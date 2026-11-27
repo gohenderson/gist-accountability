@@ -45,7 +45,7 @@ Gist is designed to have as little to protect as possible:
 - **Dependabot** (`.github/dependabot.yml`) opens a pull request each week when a library
   or GitHub Action has an update or a security fix. Each PR runs the full test suite.
 - **CodeQL** (`.github/workflows/codeql.yml`) scans the Kotlin code and the workflows for
-  security issues on every push, every pull request, and weekly. Results are under
+  security issues on every pull request (before it is merged) and weekly. Results are under
   **Security → Code scanning**.
 - **Security report** (`.github/workflows/security-report.yml`) runs on Mondays and
   checks:
