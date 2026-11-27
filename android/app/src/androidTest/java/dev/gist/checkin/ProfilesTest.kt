@@ -59,8 +59,9 @@ class ProfilesTest {
         assertEquals(listOf("job"), Store(workCtx).checkins.map { it.id })
         assertNotEquals(TestEnv.store.pauseSeconds, Store(workCtx).pauseSeconds)
         // Its own Gist folder and devices.
-        assertNotEquals(Profiles.prefsName(GistFolder.PREFS, Profiles.DEFAULT), Profiles.prefsName(GistFolder.PREFS, work.id))
-        assertEquals(GistFolder.PREFS, Profiles.prefsName(GistFolder.PREFS, Profiles.DEFAULT)) // the first one's are where they were
+        Profiles.prefs(workCtx, GistFolder.PREFS).edit().putString("root", "work-folder").commit()
+        assertNull(Profiles.prefs(ctx, GistFolder.PREFS).getString("root", null))
+        assertEquals("work-folder", Profiles.prefs(workCtx, GistFolder.PREFS).getString("root", null))
         // Its own files (photos, clips).
         assertEquals(ctx.filesDir, Profiles.filesDir(ctx))
         assertEquals(File(ctx.filesDir, "profiles/${work.id}"), Profiles.filesDir(workCtx))
@@ -101,10 +102,22 @@ class ProfilesTest {
         // Saved in Work; Personal untouched, and still the one you're on.
         val w = Store(workCtx)
         assertTrue(w.pending.isEmpty())
-        assertEquals(true, w.results(Days.today(), "job").values.single().answers["calls"])
-        assertTrue(TestEnv.store.results(Days.today(), "job").isEmpty())
+        // (Whatever day it was logged on: before 4 AM it's still the day before.)
+        val saved = w.allResults("job").values.flatMap { it.values }
+        assertEquals("one result in Work; all results: ${dump()}", 1, saved.size)
+        assertEquals(true, saved.single().answers["calls"])
+        assertTrue(TestEnv.store.allResults("job").isEmpty())
         assertEquals(Profiles.DEFAULT, Profiles.current(ctx))
     }
+
+    /** Every result and waiting row in the database, to say where something went. */
+    private fun dump(): String = listOf("slot_result", "answer", "pending").joinToString(" | ") { t ->
+        t + ": " + Db.get(ctx).read.query(t, null, null, null, null, null, null).use { c ->
+            buildList {
+                while (c.moveToNext()) add((0 until c.columnCount).joinToString(",") { "${c.getColumnName(it)}=${c.getString(it)}" })
+            }.joinToString("; ")
+        }
+    } + " | work=${work.id}"
 
     @Test
     fun theStartPageSwitchesAndShowsOtherProfilesWaiting() {
@@ -135,7 +148,12 @@ class ProfilesTest {
         assertTrue(Profiles.remove(ctx, work.id))
         assertEquals(listOf("Personal"), Profiles.all(ctx).map { it.name })
         assertFalse(File(ctx.filesDir, "profiles/${work.id}").exists())
-        assertFalse("its check-ins are gone", File(ctx.applicationInfo.dataDir, "shared_prefs/gist@${work.id}.xml").exists())
+        // Nothing of it is left in the database.
+        val left = Db.PROFILE_TABLES.sumOf { t ->
+            Db.get(ctx).read.query(t, null, "profile_id = ?", arrayOf(work.id), null, null, null).use { it.count }
+        }
+        assertEquals("rows left", 0, left)
+        assertTrue("its check-ins are gone", Store(Profiles.scoped(ctx, work.id)).checkins == Store.DEFAULT_CHECKINS)
         assertNull(PendingIntent.getBroadcast(
             workCtx, (Profiles.hash(workCtx, "job") and 0x3FFFFFFF) * 2,
             Profiles.distinct(Intent(workCtx, AlarmReceiver::class.java), workCtx, "ring/job/false"),

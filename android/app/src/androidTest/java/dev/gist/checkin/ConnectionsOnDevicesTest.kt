@@ -58,8 +58,8 @@ class ConnectionsOnDevicesTest {
     }
 
     private fun clear() {
-        ctx.getSharedPreferences("gist-devices", Context.MODE_PRIVATE).edit().clear().commit()
-        ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(ctx, "gist-devices").edit().clear().commit()
+        Profiles.prefs(ctx, "gist-links").edit().clear().commit()
         store.tracking = false
     }
 
@@ -215,7 +215,7 @@ class ConnectionsOnDevicesTest {
         val seq = links.get(link.id)!!.sentSeq
         assertTrue(seq >= 2)
         val item = JSONObject(links.deviceItems("tabside", "Tablet").getValue("l:${link.id}")).put("home", tab).put("at", link.homeAt)
-        ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(ctx, "gist-links").edit().clear().commit()
         links.myName = "Alex"
         assertTrue(links.takeDeviceItems(mapOf("l:${link.id}" to item.toString()), "phone"))
         assertFalse(links.get(link.id)!!.isHere)

@@ -46,7 +46,7 @@ class GistFolderTest {
     }
 
     private fun clear() {
-        for (p in listOf("gist-folder", "gist-links", "gist-devices")) ctx.getSharedPreferences(p, Context.MODE_PRIVATE).edit().clear().commit()
+        for (p in listOf("gist-folder", "gist-links", "gist-devices")) Profiles.prefs(ctx, p).edit().clear().commit()
         Store(ctx).tracking = false
     }
 

@@ -49,14 +49,14 @@ class ConnectionsLinkedTest {
 
     @Before
     fun setUp() {
-        TestEnv.ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(TestEnv.ctx, "gist-links").edit().clear().commit()
         dir = File(TestEnv.ctx.cacheDir, "link-${System.nanoTime()}").apply { mkdirs() }
         links.myName = "Alex"
     }
 
     @After
     fun tearDown() {
-        TestEnv.ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
+        Profiles.prefs(TestEnv.ctx, "gist-links").edit().clear().commit()
         dir.deleteRecursively()
         TestEnv.reset(emptyList())
     }

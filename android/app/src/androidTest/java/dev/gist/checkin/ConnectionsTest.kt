@@ -53,7 +53,7 @@ class ConnectionsTest {
         TestEnv.reset(emptyList())
     }
 
-    private fun clearLinks() = TestEnv.ctx.getSharedPreferences("gist-links", Context.MODE_PRIVATE).edit().clear().commit()
+    private fun clearLinks() = Profiles.prefs(TestEnv.ctx, "gist-links").edit().clear().commit()
 
     /** Jess, the other copy: her side id and keys. */
     private class Peer(val side: String = "jess", val name: String = "Jess") {
