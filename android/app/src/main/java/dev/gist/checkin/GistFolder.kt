@@ -68,10 +68,11 @@ class GistFolder(
      * Folder [sub]'s path on the phone's storage (/storage/emulated/0/PublicAppData/Gist/<profile>/
      * [sub]), for programs that reach folders by path (Syncthing); null without a Gist folder.
      */
-    fun path(sub: String): String? {
-        val r = root ?: return null
-        return if (r.startsWith("content://")) "${PublicAppData.PATH}/${PublicAppData.GIST}/${folderName()}/$sub" else "$r/$sub"
-    }
+    fun path(sub: String): String? = root?.let { pathOf(at(it, sub)) }
+
+    /** A folder in the Gist folder (as [at] gives it) by its path on the phone's storage. */
+    fun pathOf(location: String): String =
+        if (location.startsWith("content://")) "${PublicAppData.PATH}/${location.substringAfter('#')}" else location
 
     /** Where your devices sync. */
     fun devices(): String? = location(DEVICES)

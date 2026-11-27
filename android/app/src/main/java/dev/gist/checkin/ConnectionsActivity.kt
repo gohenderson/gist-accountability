@@ -108,6 +108,16 @@ class ConnectionsActivity : BaseActivity() {
         r.addWeighted(primaryButton("Invite…") { invite() }.apply { tag = "invite" })
         r.addWeighted(outlineButton("Join…") { askForInvite('c') }.apply { tag = "join" }, startMargin = dp(8))
         add.add(r, dp(12))
+        if (SyncthingEngine.shared(this).available) {
+            add.add(sectionTitle("Easy Connect (experiment)"), dp(14))
+            add.add(muted("No folder to share by hand: Gist connects your device and theirs itself. One of you shows a " +
+                "code, the other scans it.", 13f), dp(4))
+            val e = row()
+            e.addWeighted(primaryButton("Show a code") { easyReady { if (needName()) askWhoFor(easy = true) } }.apply { tag = "easy-person-offer" })
+            e.addWeighted(outlineButton("Scan a code") { easyReady { if (needName()) easyScan() } }.apply { tag = "easy-person-join" },
+                startMargin = dp(8))
+            add.add(e, dp(8))
+        }
         col.add(add, dp(12))
 
         // Each connection
@@ -193,8 +203,15 @@ class ConnectionsActivity : BaseActivity() {
         }
     }
 
-    /** Who's the new connection for: the folder's named for them. */
-    private fun askWhoFor() {
+    /** You've a name to show them (it's in your invite and on your side of the folder). */
+    private fun needName(): Boolean {
+        if (links.myName.isNotBlank()) return true
+        toast("Add your name first, so they know it's you.")
+        return false
+    }
+
+    /** Who's the new connection for: the folder's named for them. [easy]: show an Easy Connect code. */
+    private fun askWhoFor(easy: Boolean = false) {
         val field = EditText(this).apply {
             hint = "e.g. Jess"
             tag = "invite-who"
@@ -205,7 +222,8 @@ class ConnectionsActivity : BaseActivity() {
             .setTitle("Who's it for?")
             .setMessage("Gist makes a folder for it in People in your Gist folder, named for them.")
             .setView(column().apply { setPadding(dp(24), dp(8), dp(24), dp(8)); add(field) })
-            .setPositiveButton("Invite") { _, _ ->
+            .setPositiveButton(if (easy) "Show the code" else "Invite") { _, _ ->
+                if (easy) return@setPositiveButton easyOfferPerson(field.text.toString())
                 val loc = GistFolder(this).newPerson(field.text.toString()) ?: return@setPositiveButton
                 try {
                     val l = links.invite(loc)
@@ -298,6 +316,22 @@ class ConnectionsActivity : BaseActivity() {
         }.start()
     }
 
+    /** Shows the Easy Connect code for [person]: their folder, invite and this device's Syncthing. */
+    private fun easyOfferPerson(person: String) {
+        toast("Starting Easy Connect…")
+        Thread {
+            val result = runCatching { EasyConnect.offerPerson(this, person) }
+            runOnUiThread {
+                result.onSuccess { (code, until) ->
+                    showInvite("Easy Connect", "On their phone, in Gist: Connections → New connection → Scan a code. " +
+                        "It connects by itself; keep Gist open on both until you see each other.", code.invite, until,
+                        qrText = code.qr, typable = false)
+                }.onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                render()
+            }
+        }.start()
+    }
+
     @Suppress("DEPRECATION")
     private fun easyScan() {
         startActivityForResult(Intent(this, ScanActivity::class.java)
@@ -308,12 +342,16 @@ class ConnectionsActivity : BaseActivity() {
     private fun easyScanned(text: String) {
         val code = EasyConnect.Code.parse(text) ?: return toast(
             if (LinkInvite.parse(text) != null) "That's an ordinary invite: use Join instead." else "That isn't an Easy Connect code.")
-        if (Devices(this).folder != null) return toast("This device already syncs with your devices.")
+        if (code.invite.kind == 'd' && Devices(this).folder != null) return toast("This device already syncs with your devices.")
+        if (code.invite.kind == 'c' && !needName()) return
         toast("Connecting…")
         Thread {
             val result = runCatching { EasyConnect.join(this, code) }
             runOnUiThread {
-                result.onSuccess { toast("Connecting: this device joins your devices as soon as My devices arrives.") }
+                result.onSuccess {
+                    toast(if (code.invite.kind == 'd') "Connecting: this device joins your devices as soon as My devices arrives."
+                    else "Connecting with ${code.name ?: "them"}: you're connected as soon as their folder arrives.")
+                }
                     .onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
                 render()
             }
@@ -375,7 +413,11 @@ class ConnectionsActivity : BaseActivity() {
                     .setTitle("Stop syncing here?")
                     .setMessage("Everything stays on this device; it stops keeping in step with your others, and they " +
                         "stop listing it.")
-                    .setPositiveButton("Stop") { _, _ -> devices.leave(); render() }
+                    .setPositiveButton("Stop") { _, _ ->
+                        devices.group?.let { g -> Thread { EasyConnect.unshare(this@ConnectionsActivity, EasyConnect.folderId(g)) }.start() }
+                        devices.leave()
+                        render()
+                    }
                     .setNegativeButton("Cancel", null)
                     .show()
             }.apply { tag = "devices-leave" }, dp(4))
@@ -480,6 +522,7 @@ class ConnectionsActivity : BaseActivity() {
                 "The folder is left as it is.")
             .setPositiveButton("Remove") { _, _ ->
                 links.remove(l.id)
+                Thread { EasyConnect.unshare(this, EasyConnect.linkFolderId(l.id)) }.start()
                 render()
             }
             .setNegativeButton("Cancel", null)

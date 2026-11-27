@@ -29,8 +29,21 @@ class EasyConnectCodeTest {
         assertNull(EasyConnect.Code.parse("GISTEC1:nope"))
         assertNull(EasyConnect.Code.parse(good.replace("gist-devices-abc", "../x")))
         assertNull(EasyConnect.Code.parse(good.replace(id.replace("-", ""), "TOOSHORT")))
+        assertNull("not a name", EasyConnect.Code.parse("$good:!!!not-base64!!!"))
+        assertNull("too many parts", EasyConnect.Code.parse("$good:QQ:QQ"))
+    }
+
+    @Test
+    fun aPersonsCodeCarriesTheirName() {
         val connection = LinkInvite('c', invite.fingerprint, invite.token)
-        assertNull("a connection invite isn't for your devices", EasyConnect.Code.parse(EasyConnect.Code(connection, id, "f").qr))
+        for (name in listOf("Greg", "Jess: the one from work", "Zoë 🙂")) {
+            val back = EasyConnect.Code.parse(EasyConnect.Code(connection, id, "gist-link-abc", name).qr)!!
+            assertEquals('c', back.invite.kind)
+            assertEquals(name, back.name)
+            assertEquals("gist-link-abc", back.folderId)
+        }
+        assertNull("no name: none", EasyConnect.Code.parse(EasyConnect.Code(connection, id, "gist-link-abc").qr)!!.name)
+        assertEquals("gist-link-ab12", EasyConnect.linkFolderId("ab/12"))
     }
 
     @Test
