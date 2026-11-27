@@ -7,6 +7,9 @@
 #
 # Needs Go (the version in Syncthing's go.mod) and the Android NDK (ANDROID_NDK_LATEST_HOME
 # or ANDROID_NDK_HOME, as on GitHub's runners). Writes <out>/<abi>/libsyncthing.so.
+#
+# -checklinkname=0: on Android, Syncthing lists network interfaces with
+# github.com/wlynxg/anet, which links to Go's net internals; Go 1.23+ refuses that unless told.
 set -euo pipefail
 
 src="$(cd "$1" && pwd)"
@@ -31,7 +34,7 @@ for abi in "$@"; do
 		cd "$src"
 		CGO_ENABLED=1 GOOS=android GOARCH="$goarch" GOARM="$goarm" CC="$bin/$cc" \
 			go build -trimpath -tags noupgrade,noassets \
-			-ldflags "-s -w \
+			-ldflags "-s -w -checklinkname=0 \
 				-X github.com/syncthing/syncthing/lib/build.Version=$version \
 				-X github.com/syncthing/syncthing/lib/build.Stamp=$(git log -1 --format=%ct) \
 				-X github.com/syncthing/syncthing/lib/build.User=gist \
