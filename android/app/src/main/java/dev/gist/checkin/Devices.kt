@@ -39,6 +39,9 @@ class Devices(
     val folder: String? get() = prefs.getString(K_FOLDER, null)
     val side: String get() = prefs.getString(K_SIDE, null) ?: Store.newId().also { prefs.edit().putString(K_SIDE, it).commit() }
     private val groupId: String? get() = prefs.getString(K_GROUP, null)
+
+    /** The group's id (the same on all your devices), once set up or joined. */
+    val group: String? get() = groupId
     private val publicKey: String? get() = prefs.getString(K_PUB, null)
     private val privateKey: String? get() = prefs.getString(K_PRIV, null)
     private val groupKey: ByteArray? get() = prefs.getString(K_KEY, null)?.let { unb64.decode(it) }
@@ -481,6 +484,13 @@ class Devices(
             } catch (e: Exception) {
                 null
             }
+        }
+
+        /** Syncs your devices now, on this thread (the background service). True when anything changed. */
+        fun syncNow(context: android.content.Context): Boolean {
+            val devices = Devices(context)
+            if (devices.folder == null) return false
+            return synchronized(SYNC) { devices.sync() }
         }
 
         /** Syncs your devices off the main thread; then [then] on it when anything here changed. */

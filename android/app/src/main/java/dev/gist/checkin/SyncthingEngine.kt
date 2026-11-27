@@ -1,6 +1,7 @@
 package dev.gist.checkin
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -16,15 +17,18 @@ import java.util.concurrent.TimeUnit
  * installed with the app as libsyncthing.so in its native library folder, the one place
  * Android lets an app run a program from. Gist runs it as a separate process with its own
  * folder (files/syncthing: its keys, settings and database), and talks to it only through its
- * REST API on 127.0.0.1 with a random key made for that run. Nothing here touches your
- * folders yet: this proves it starts, answers and stops on a phone.
+ * REST API on 127.0.0.1 with a random key made for that run. Which folders it shares, with
+ * which devices, is up to [EasyConnect].
  *
  * Calls block (network and process waits): call them off the main thread.
  */
-class SyncthingEngine(context: Context) {
+class SyncthingEngine(
+    context: Context,
+    /** Its own folder: keys, settings, database (tests run a second one elsewhere). */
+    val home: File = File(context.applicationContext.filesDir, "syncthing"),
+) {
     private val app = context.applicationContext
     val binary = File(app.applicationInfo.nativeLibraryDir, "libsyncthing.so")
-    val home = File(app.filesDir, "syncthing")
     val log = File(home, "syncthing.log")
 
     private var process: Process? = null
@@ -98,6 +102,80 @@ class SyncthingEngine(context: Context) {
 
     /** Syncthing's version, e.g. "v2.1.7". */
     fun version(): String = JSONObject(call("GET", "/rest/system/version")).getString("version")
+
+    // ------------------------------------------------------------ configuration
+
+    /** Changes its options (a JSON object of the ones to change), e.g. listen addresses. */
+    fun setOptions(changes: JSONObject) {
+        call("PATCH", "/rest/config/options", changes.toString())
+    }
+
+    /** Names this device (what other devices see while it waits to be accepted). */
+    fun setName(name: String) {
+        call("PATCH", "/rest/config/devices/${deviceId()}", JSONObject().put("name", name).toString())
+    }
+
+    /** The devices it knows: id → name. */
+    fun devices(): Map<String, String> = JSONArray(call("GET", "/rest/config/devices")).let { a ->
+        (0 until a.length()).map { a.getJSONObject(it) }.associate { it.getString("deviceID") to it.optString("name") }
+    }
+
+    /** Adds (or replaces) device [id], reached at [addresses] ("dynamic": found by discovery). */
+    fun addDevice(id: String, name: String, addresses: List<String> = listOf("dynamic")) {
+        call("PUT", "/rest/config/devices/$id", JSONObject()
+            .put("deviceID", id)
+            .put("name", name)
+            .put("addresses", JSONArray(addresses))
+            .put("autoAcceptFolders", false)
+            .toString())
+    }
+
+    /** Folder [id]'s settings, or null if it hasn't got it. */
+    fun folder(id: String): JSONObject? = try {
+        JSONObject(call("GET", "/rest/config/folders/$id"))
+    } catch (e: IllegalStateException) {
+        if (e.message?.contains("HTTP 404") == true) null else throw e
+    }
+
+    /**
+     * Adds folder [id] at [path] (send and receive), shared with [devices], or adds [devices]
+     * to it if it's there already (keeping the ones it has).
+     */
+    fun shareFolder(id: String, label: String, path: String, devices: List<String> = emptyList()) {
+        val existing = folder(id)
+        val have = existing?.optJSONArray("devices")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("deviceID") } }
+            ?: emptyList()
+        val all = (have + devices).distinct()
+        val list = JSONArray(all.map { JSONObject().put("deviceID", it) })
+        if (existing != null) {
+            call("PATCH", "/rest/config/folders/$id", JSONObject().put("devices", list).toString())
+        } else {
+            call("PUT", "/rest/config/folders/$id", JSONObject()
+                .put("id", id)
+                .put("label", label)
+                .put("path", path)
+                .put("type", "sendreceive")
+                .put("devices", list)
+                .put("fsWatcherEnabled", true)
+                .put("rescanIntervalS", 60)
+                .toString())
+        }
+    }
+
+    /** Devices that tried to connect and aren't known yet: id → the name they gave. */
+    fun pendingDevices(): Map<String, String> = JSONObject(call("GET", "/rest/cluster/pending/devices")).let { o ->
+        o.keys().asSequence().associateWith { o.optJSONObject(it)?.optString("name").orEmpty() }
+    }
+
+    /** The devices it's connected to right now. */
+    fun connected(): Set<String> = JSONObject(call("GET", "/rest/system/connections")).optJSONObject("connections")?.let { o ->
+        o.keys().asSequence().filter { o.optJSONObject(it)?.optBoolean("connected") == true }.toSet()
+    } ?: emptySet()
+
+    /** Asks it to look at folder [id] now (rather than when it next notices a change). */
+    fun scan(id: String) {
+        call("POST", "/rest/db/scan?folder=$id")
+    }
 
     /** A REST API call; its response body. */
     fun call(method: String, path: String, body: String? = null): String {
