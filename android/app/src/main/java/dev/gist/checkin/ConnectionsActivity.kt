@@ -46,6 +46,35 @@ class ConnectionsActivity : BaseActivity() {
         render()
         Connections.syncInBackground(this) { render() }
         Devices.syncInBackground(this) { render() }
+        if (EasyConnect.isOn(this)) {
+            SyncthingService.start(this)
+            refresher.run()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(refresher)
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** While Easy Connect is on: the status line, and a join waiting for My devices, every few seconds. */
+    private val refresher = object : Runnable {
+        override fun run() {
+            handler.removeCallbacks(this)
+            Thread {
+                val status = EasyConnect.status(this@ConnectionsActivity)
+                runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
+                    val changed = status != easyStatus || GistFolder(this@ConnectionsActivity).waiting != null
+                    easyStatus = status
+                    if (GistFolder(this@ConnectionsActivity).waiting != null) tryWaiting(quiet = true)
+                    else if (changed) render()
+                }
+            }.start()
+            handler.postDelayed(this, 3_000)
+        }
     }
 
     private fun render() {
@@ -190,6 +219,107 @@ class ConnectionsActivity : BaseActivity() {
             .show()
     }
 
+    /**
+     * Easy Connect (builds with Syncthing in them): Gist shares My devices through its own
+     * Syncthing, so another device only scans a code. [setUp]: this device has My devices.
+     */
+    private fun easyConnect(card: android.widget.LinearLayout, setUp: Boolean) {
+        if (!SyncthingEngine.shared(this).available) return
+        card.add(sectionTitle("Easy Connect (experiment)"), dp(14))
+        card.add(muted("Gist keeps your devices in step itself, with Syncthing built in: show a code on one device, " +
+            "scan it on the other. My devices stays in your Gist folder, so anything else can still share it too.", 13f), dp(4))
+        val ready = Devices(this).ready
+        val r = row()
+        if (!setUp || ready) {
+            r.addWeighted(primaryButton("Show a code") { easyReady { easyOffer() } }.apply { tag = "easy-offer" })
+        }
+        if (!setUp) {
+            r.addWeighted(outlineButton("Scan a code") { easyReady { easyScan() } }.apply { tag = "easy-join" }, startMargin = dp(8))
+        }
+        card.add(r, dp(8))
+        if (EasyConnect.isOn(this)) {
+            card.add(muted(easyStatus ?: "Easy Connect is on.", 13f).apply { tag = "easy-status" }, dp(6))
+            card.add(textButton("Turn off Easy Connect") {
+                EasyConnect.setOn(this, false)
+                easyStatus = null
+                render()
+            }.apply { tag = "easy-off" }, dp(2))
+        }
+    }
+
+    /** The last status line from Syncthing (read off the main thread). */
+    private var easyStatus: String? = null
+
+    /** Access to PublicAppData, and All files access for Syncthing; then [then]. */
+    private fun easyReady(then: () -> Unit) {
+        if (GistFolder(this).root == null) {
+            toast("First allow access to ${PublicAppData.NAME}.")
+            requestAccess()
+            return
+        }
+        if (!EasyConnect.canReachFiles()) {
+            AlertDialog.Builder(this)
+                .setTitle("Allow All files access")
+                .setMessage("Syncthing, built into Gist, reaches My devices in ${PublicAppData.NAME} by its path, which " +
+                    "Android calls All files access. Gist only uses it for its folders in ${PublicAppData.NAME}. " +
+                    "Turn it on for Gist, then come back and tap again.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    runCatching { startActivity(EasyConnect.filesAccessIntent(this)) }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        then()
+    }
+
+    /** Shows the code for another device to scan (setting up My devices first, if it isn't). */
+    private fun easyOffer() {
+        if (Devices(this).folder == null) {
+            val loc = GistFolder(this).devices() ?: return
+            try {
+                Devices(this).setUp(loc)
+            } catch (e: Exception) {
+                toast("Couldn't make My devices in your Gist folder.")
+                return
+            }
+        }
+        toast("Starting Easy Connect…")
+        Thread {
+            val result = runCatching { EasyConnect.offer(this) }
+            runOnUiThread {
+                result.onSuccess { (code, until) ->
+                    showInvite("Easy Connect", "On the other device, open Connections and tap Scan a code under Easy " +
+                        "Connect. It connects by itself; keep Gist open on both until it says it's in.", code.invite, until,
+                        qrText = code.qr, typable = false)
+                }.onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                render()
+            }
+        }.start()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun easyScan() {
+        startActivityForResult(Intent(this, ScanActivity::class.java)
+            .putExtra(ScanActivity.EXTRA_TITLE, "Scan the Easy Connect code")
+            .putExtra(ScanActivity.EXTRA_TEXT, "Point the camera at the code the other device shows."), REQ_SCAN_EASY)
+    }
+
+    private fun easyScanned(text: String) {
+        val code = EasyConnect.Code.parse(text) ?: return toast(
+            if (LinkInvite.parse(text) != null) "That's an ordinary invite: use Join instead." else "That isn't an Easy Connect code.")
+        if (Devices(this).folder != null) return toast("This device already syncs with your devices.")
+        toast("Connecting…")
+        Thread {
+            val result = runCatching { EasyConnect.join(this, code) }
+            runOnUiThread {
+                result.onSuccess { toast("Connecting: this device joins your devices as soon as My devices arrives.") }
+                    .onFailure { toast("Couldn't start Easy Connect: ${it.message}") }
+                render()
+            }
+        }.start()
+    }
+
     /** Your own devices: everything kept in step between them; whether this one rings. */
     private fun devicesCard() = card().apply {
         val devices = Devices(this@ConnectionsActivity)
@@ -203,6 +333,7 @@ class ConnectionsActivity : BaseActivity() {
             r.addWeighted(primaryButton("Set up…") { setUpDevices() }.apply { tag = "devices-setup" })
             r.addWeighted(outlineButton("Join…") { askForInvite('d') }.apply { tag = "devices-join" }, startMargin = dp(8))
             add(r, dp(12))
+            easyConnect(this, setUp = false)
         } else {
             add(EditText(context).apply {
                 setText(devices.name)
@@ -238,6 +369,7 @@ class ConnectionsActivity : BaseActivity() {
                     }
                 }.apply { tag = "devices-add" }, dp(8))
             }
+            easyConnect(this, setUp = true)
             add(textButton("Stop syncing on this device", colorOf(R.color.bad)) {
                 AlertDialog.Builder(this@ConnectionsActivity)
                     .setTitle("Stop syncing here?")
@@ -380,16 +512,16 @@ class ConnectionsActivity : BaseActivity() {
     }
 
     /** Shows [inv] as a QR code and a code to type, until [until]. */
-    private fun showInvite(title: String, how: String, inv: LinkInvite, until: Long) {
+    private fun showInvite(title: String, how: String, inv: LinkInvite, until: Long, qrText: String = inv.qr, typable: Boolean = true) {
         val col = column()
         col.add(label(how, 15f))
         col.add(ImageView(this).apply {
             adjustViewBounds = true
-            setImageBitmap(qr(inv.qr, dp(240)))
+            setImageBitmap(qr(qrText, dp(240)))
             contentDescription = "Invite QR code"
             tag = "invite-qr"
         }, dp(12))
-        col.add(label(inv.code, 18f, bold = true).apply {
+        if (typable) col.add(label(inv.code, 18f, bold = true).apply {
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
             tag = "invite-code"
@@ -399,11 +531,11 @@ class ConnectionsActivity : BaseActivity() {
             .setTitle(title)
             .setView(android.widget.ScrollView(this).apply { addView(col.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) }) })
             .setPositiveButton("Done") { _, _ -> render() }
-            .setNeutralButton("Copy code") { _, _ ->
+            .apply { if (typable) setNeutralButton("Copy code") { _, _ ->
                 val cm = getSystemService(android.content.ClipboardManager::class.java)
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("Gist invite", inv.code))
                 toast("Copied")
-            }
+            } }
             .show()
     }
 
@@ -492,6 +624,11 @@ class ConnectionsActivity : BaseActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SCAN_EASY) {
+            val text = data?.getStringExtra(ScanActivity.EXTRA_CODE)
+            if (resultCode == RESULT_OK && text != null) easyScanned(text)
+            return
+        }
         if (requestCode == REQ_SCAN_JOIN || requestCode == REQ_SCAN_DEVICES) {
             val code = data?.getStringExtra(ScanActivity.EXTRA_CODE)
             if (resultCode == RESULT_OK && code != null) gotInvite(if (requestCode == REQ_SCAN_JOIN) 'c' else 'd', code)
@@ -532,6 +669,7 @@ class ConnectionsActivity : BaseActivity() {
         private const val REQ_SCAN_DEVICES = 26
         private const val STATE_AFTER = "afterAccess"
         private const val REQ_ACCESS = 28
+        private const val REQ_SCAN_EASY = 29
         private const val AFTER_INVITE = "invite"
         private const val AFTER_DEVICES = "devices"
 

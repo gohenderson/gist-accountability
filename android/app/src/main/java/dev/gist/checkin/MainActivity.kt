@@ -38,6 +38,9 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Easy Connect: Syncthing runs in the background while it's on (and stops after Android's
+        // daily limit for it; opening Gist starts it again).
+        if (EasyConnect.isOn(this)) SyncthingService.start(this)
         // An unanswered alarm always takes priority, whichever profile it's from (it's
         // answered in its own profile; you stay on this one).
         store.prunePending()
