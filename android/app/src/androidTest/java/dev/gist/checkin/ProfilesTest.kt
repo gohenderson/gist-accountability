@@ -10,6 +10,7 @@ import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -124,13 +125,13 @@ class ProfilesTest {
         Store(workCtx).checkins = listOf(TestEnv.checkin("job", "Job one").copy(soundUri = Checkin.QUIET))
         Store(workCtx).addPending(Pending("job", Days.today(), "12:00"))
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(tagged("profile")).check(matches(withText("Personal ▾")))
+            onView(tagged("profile")).check(matches(withContentDescription("Profile: Personal. Switch profile")))
             onView(tagged("profile-waiting:${work.id}")).check(matches(isDisplayed()))
             onView(tagged("profile-switch:${work.id}")).perform(click())
             TestEnv.eventually(10_000) { assertEquals(work.id, Profiles.current(ctx)) }
         }
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(tagged("profile")).check(matches(withText("Work ▾")))
+            onView(tagged("profile")).check(matches(withContentDescription("Profile: Work. Switch profile")))
             onView(tagged("checkin-title:job")).check(matches(isDisplayed()))
             onView(tagged("checkin-title:home")).check(doesNotExist())
         }
@@ -142,7 +143,7 @@ class ProfilesTest {
         Profiles.setCurrent(ctx, work.id)
         fun shows(i: Intent) {
             ActivityScenario.launch<android.app.Activity>(i.putExtra(Profiles.EXTRA, work.id)).use { scenario ->
-                onView(tagged("profile")).check(matches(withText("Work ▾")))
+                onView(tagged("profile")).check(matches(withContentDescription("Profile: Work. Switch profile")))
                 scenario.onActivity { a ->
                     val v = a.window.decorView.findViewWithTag<android.view.View>("profile")
                     val at = IntArray(2).also { v.getLocationOnScreen(it) }
@@ -155,6 +156,7 @@ class ProfilesTest {
         shows(Intent(ctx, MainActivity::class.java))
         shows(Intent(ctx, SettingsActivity::class.java))
         shows(Intent(ctx, ConnectionsActivity::class.java))
+        shows(BackupActivity.intent(ctx))
         shows(Intent(ctx, AboutActivity::class.java))
         shows(HistoryActivity.intent(ctx, "job"))
         shows(CheckinEditActivity.intent(ctx, "job"))
