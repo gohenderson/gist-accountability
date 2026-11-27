@@ -3,20 +3,20 @@ package dev.gist.checkin
 import android.content.Context
 
 /**
- * A profile's Gist folder: PublicAppData/Gist/<profile> ([PublicAppData]), holding every folder
- * the profile syncs through.
+ * A profile's folder in the Gist folder (/storage/emulated/0/Gist, [GistRoot]), holding every
+ * folder the profile syncs through.
  *
- *     PublicAppData/Gist/
+ *     Gist/
  *       Personal - 7xq2/       one per profile ([folderName])
  *         My devices/          shared with your own devices
  *         People/
  *           Jess/              shared with Jess only, one folder per connection
  *       Work - k3f9/
  *
- * Nothing is picked but access to PublicAppData, once per device. The profile's folder itself
- * isn't shared; each folder in it is, on its own. Gist makes the folders when you set up or
- * invite, and finds them when you join (by the invite's code). A folder in it is reached as
- * "<PublicAppData>#Gist/<profile>/People/Jess" (plain paths, in tests: "<root>/People/Jess").
+ * Nothing is picked but access to the Gist folder, once per device. The profile's folder
+ * itself isn't shared; each folder in it is, on its own. Gist makes the folders when you set up
+ * or invite, and finds them when you join (by the invite's code). A folder in it is reached as
+ * "<Gist folder>#<profile>/People/Jess" (plain paths, in tests: "<root>/People/Jess").
  */
 class GistFolder(
     private val context: Context,
@@ -26,15 +26,15 @@ class GistFolder(
     private val prefs = Profiles.prefs(context, PREFS)
 
     /**
-     * This profile's Gist folder, or null until you've allowed access to PublicAppData. (Tests
+     * This profile's folder, or null until you've allowed access to the Gist folder. (Tests
      * set a plain folder instead.)
      */
     var root: String?
-        get() = prefs.getString(K_TEST_ROOT, null) ?: PublicAppData.gist(context)?.let { at(it, folderName()) }
+        get() = prefs.getString(K_TEST_ROOT, null) ?: GistRoot.tree(context)?.let { at(it, folderName()) }
         internal set(v) { prefs.edit().putString(K_TEST_ROOT, v).commit() }
 
     /**
-     * This profile's folder name under PublicAppData/Gist: its name when the folder was first
+     * This profile's folder name in the Gist folder: its name when the folder was first
      * needed, made safe for a folder name, and a short code from the profile's id ("John - k3f9"
      * for "John:"). The code keeps two profiles from ever sharing a folder (names that differ
      * only in characters a folder can't have, or in case). It isn't renamed with the profile,
@@ -65,14 +65,14 @@ class GistFolder(
     fun location(sub: String): String? = root?.let { at(it, sub) }
 
     /**
-     * Folder [sub]'s path on the phone's storage (/storage/emulated/0/PublicAppData/Gist/<profile>/
+     * Folder [sub]'s path on the phone's storage (/storage/emulated/0/Gist/<profile>/
      * [sub]), for programs that reach folders by path (Syncthing); null without a Gist folder.
      */
     fun path(sub: String): String? = root?.let { pathOf(at(it, sub)) }
 
     /** A folder in the Gist folder (as [at] gives it) by its path on the phone's storage. */
     fun pathOf(location: String): String =
-        if (location.startsWith("content://")) "${PublicAppData.PATH}/${location.substringAfter('#')}" else location
+        if (location.startsWith("content://")) GistRoot.pathOf(location) else location
 
     /** Where your devices sync. */
     fun devices(): String? = location(DEVICES)
@@ -96,7 +96,7 @@ class GistFolder(
 
     companion object {
         const val PREFS = "gist-folder"
-        /** A plain folder used instead (tests). (Before PublicAppData, "root" was the picked folder.) */
+        /** A plain folder used instead (tests). (Before, "root" was a picked folder.) */
         private const val K_TEST_ROOT = "testRoot"
         private const val K_FOLDER = "folderName"
         private const val K_WAITING = "waiting"

@@ -421,24 +421,24 @@ apps read them); backups without them stay version 4.
 Share check-ins and tasks with another copy of Gist, your partner's say, **read-only**:
 they see what you share, but only you can change it, and the other way round.
 
-- **Your Gist folder.** On Android, Gist keeps everything it syncs in
-  **/storage/emulated/0/PublicAppData/Gist**, with a folder for each profile:
+- **Your Gist folder.** On Android, Gist keeps everything it syncs in a folder named
+  **Gist** at the top of your phone's storage (**/storage/emulated/0/Gist**; any case,
+  gist or GIST, will do), with a folder for each profile:
 
   ```
-  PublicAppData/
-    Gist/
-      Personal - 7xq2/   one per profile: its name and a short code
-        My devices/      shared with your own devices
-        People/
-          Jess/          shared with Jess only (one folder per connection)
-      Work - k3f9/
+  Gist/
+    Personal - 7xq2/   one per profile: its name and a short code
+      My devices/      shared with your own devices
+      People/
+        Jess/          shared with Jess only (one folder per connection)
+    Work - k3f9/
   ```
 
-  You don't pick it. Android needs you to **allow access to PublicAppData** once on each
-  device (Settings → Connections → **Allow access to PublicAppData…**, or when you first
+  You don't pick it. Android needs you to **allow access to the Gist folder** once on each
+  device (Settings → Connections → **Allow access to the Gist folder…**, or when you first
   invite or join). If it isn't there yet, make it in the picker that opens: a new folder
-  at the top of your storage, named exactly **PublicAppData**, then **Use this folder** and
-  **Allow**. Any other folder is refused. After that Gist makes everything inside it, for
+  at the top of your storage named **Gist**, then **Use this folder** and **Allow**. Any
+  other folder is refused. After that Gist makes everything inside it, for
   every profile, with nothing more to do. A profile's folder is named when it's first
   needed and keeps its name if you rename the profile (the app you share folders with
   points there). Don't share a profile's folder itself; share each folder in it.
@@ -457,8 +457,8 @@ they see what you share, but only you can change it, and the other way round.
 - **Between phones** the folders have to be kept in step by an app that shares folders
   between devices, such as [Syncthing](https://syncthing.net). Gist never goes online
   itself, and works with whatever keeps the folders in step. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
-  page): a second copy with its own data, which needs access to PublicAppData too. Its
-  first profile has the same folder as Gist's (PublicAppData/Gist/Personal - …), so the
+  page): a second copy with its own data, which needs access to the Gist folder too. Its
+  first profile has the same folder as Gist's (Gist/Personal - …), so the
   two meet there just as two phones sharing the folder would.
 - **Share with…** on a check-in's or task's page (Details) picks which connections see
   it. Changes go out the next time Gist is opened or you leave the page.

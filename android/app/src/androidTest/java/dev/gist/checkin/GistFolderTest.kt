@@ -66,7 +66,7 @@ class GistFolderTest {
     }
 
     @Test
-    fun eachProfileHasItsOwnFolderUnderPublicAppDataGist() {
+    fun eachProfileHasItsOwnFolderInTheGistFolder() {
         assertEquals("content://x/tree/y#Gist/Work - abcd/People/Jess", GistFolder.at("content://x/tree/y#Gist/Work - abcd", "People/Jess"))
         // The name made safe for a folder, and a code from the profile's id: two names that
         // come out the same as folder names still get two folders.
@@ -86,20 +86,26 @@ class GistFolderTest {
     }
 
     @Test
-    fun onlyPublicAppDataItselfIsAccepted() {
+    fun onlyAGistFolderAtTheTopOfStorageIsAccepted() {
         fun tree(id: String, authority: String = "com.android.externalstorage.documents") =
             android.provider.DocumentsContract.buildTreeDocumentUri(authority, id)
-        assertTrue(PublicAppData.isIt(tree("primary:PublicAppData")))
-        for (other in listOf("primary:PublicAppData/Gist", "primary:Documents", "primary:publicappdata", "primary:", "1234-5678:PublicAppData")) {
-            assertFalse(other, PublicAppData.isIt(tree(other)))
+        for (gist in listOf("primary:Gist", "primary:gist", "primary:GIST")) assertTrue(gist, GistRoot.isIt(tree(gist)))
+        for (other in listOf("primary:Documents/Gist", "primary:Gist/Personal", "primary:Gists", "primary:PublicAppData",
+                "primary:", "1234-5678:Gist")) {
+            assertFalse(other, GistRoot.isIt(tree(other)))
         }
-        assertFalse(PublicAppData.isIt(tree("primary:PublicAppData", "com.example.docs")))
-        assertFalse("another folder isn't kept", PublicAppData.allow(ctx, tree("primary:Documents")))
-        assertNull(PublicAppData.tree(ctx))
+        assertFalse(GistRoot.isIt(tree("primary:Gist", "com.example.docs")))
+        assertFalse("another folder isn't kept", GistRoot.allow(ctx, tree("primary:Documents")))
+        assertNull(GistRoot.tree(ctx))
+        // Its path keeps the folder's own case.
+        assertEquals("/storage/emulated/0/gist/Work - k3f9/People/Jess",
+            GistRoot.pathOf(tree("primary:gist").toString() + "#Work - k3f9/People/Jess"))
+        assertEquals("/storage/emulated/0/Gist/Work - k3f9/My devices",
+            gist.pathOf(GistFolder.at(GistFolder.at(tree("primary:Gist").toString(), "Work - k3f9"), "My devices")))
     }
 
     @Test
-    fun withoutAccessGistAsksForPublicAppData() {
+    fun withoutAccessGistAsksForTheGistFolder() {
         gist.root = null
         assertNull(gist.root)
         assertNull(gist.devices())
@@ -107,7 +113,7 @@ class GistFolderTest {
         androidx.test.core.app.ActivityScenario.launch<ConnectionsActivity>(ConnectionsActivity.intent(ctx)).use {
             androidx.test.espresso.Espresso.onView(tagged("gist-folder-allow"))
                 .check(androidx.test.espresso.assertion.ViewAssertions.matches(
-                    androidx.test.espresso.matcher.ViewMatchers.withText("Allow access to PublicAppData…")))
+                    androidx.test.espresso.matcher.ViewMatchers.withText("Allow access to the Gist folder…")))
             androidx.test.espresso.Espresso.onView(tagged("gist-folder")).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
         }
     }

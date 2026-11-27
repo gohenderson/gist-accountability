@@ -89,7 +89,7 @@ class Db private constructor(private val context: Context) :
         if (ok) LegacyImport.deleteOldFiles(context)
     }
 
-    /** A device-wide value (which profile you're on, access to PublicAppData). */
+    /** A device-wide value (which profile you're on, access to the Gist folder). */
     fun state(key: String): String? =
         read.query("app_state", arrayOf("value"), "key = ?", arrayOf(key), null, null, null).rows { it.strOrNull("value") }.firstOrNull()
 
