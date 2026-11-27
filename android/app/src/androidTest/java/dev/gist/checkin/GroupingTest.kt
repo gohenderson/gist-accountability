@@ -1,5 +1,6 @@
 package dev.gist.checkin
 
+import androidx.test.espresso.assertion.PositionAssertions.isCompletelyLeftOf
 import android.content.Intent
 import android.view.View
 import androidx.test.core.app.ActivityScenario
@@ -495,7 +496,12 @@ class GroupingTest {
             onView(tagged("about")).check(doesNotExist()) // in Settings
             onView(tagged("donate")).check(doesNotExist())
             onView(withText("Settings · backup · appearance")).check(doesNotExist())
-            // 💲 ❓ ⚙️, with the gear at the far right.
+            // ☰ to the left of the title; no date under it, and no profile name with just one.
+            onView(tagged("settings")).check(matches(withText("☰")))
+            onView(tagged("settings")).check(isCompletelyLeftOf(withText("Gist")))
+            onView(withText(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d"))))
+                .check(doesNotExist())
+            onView(tagged("profile")).check(doesNotExist())
             onView(tagged("settings")).perform(click())
             TestEnv.eventually { onView(withText("Settings")).check(matches(isDisplayed())) }
         }

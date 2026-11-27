@@ -101,7 +101,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
   on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
   turned off), even if you've picked them since.
-- **Settings** (⚙️) is at the top right; **About** and **Donate** are in Settings.
+- **Settings** (☰) is at the top left, before the title; **About** and **Donate** are in Settings. (On the iPhone it's still ⚙️ at the top right, for now.)
 
 ## A check-in's page
 
@@ -387,7 +387,7 @@ apps read them); backups without them stay version 4.
 
 ## Settings, backups and export
 
-**Settings** is the ⚙️ at the top right of the start page.
+**Settings** is the ☰ at the top left of the start page (⚙️ at the top right on the iPhone, for now).
 
 - **Appearance:** same as the phone, Light or Dark.
 - **While you check in:** the pause length (15, 30, 45 or 60 seconds).
@@ -527,8 +527,8 @@ Nothing is shared between them.
 
 - **Making one.** Settings → Profiles → **New profile…**. It starts empty, and Gist
   switches to it. Your first profile is called Personal; rename any of them there.
-- **Switching.** Once you have more than one, the start page shows the profile you're on
-  under the date: tap it to switch (or to make a new one). Settings → Profiles has
+- **Switching.** Once you have more than one, every page shows the profile you're in at
+  its top right: tap it to switch (or to make a new one). Settings → Profiles has
   **Switch** too.
 - **Every profile rings.** Alarms, place and running triggers, and quiet reminders keep
   working for all your profiles, whichever one you're on. When another profile's alarm

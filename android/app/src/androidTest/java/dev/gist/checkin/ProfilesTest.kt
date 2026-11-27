@@ -137,6 +137,36 @@ class ProfilesTest {
     }
 
     @Test
+    fun everyPageSaysWhichProfileItIsAtTheTopRight() {
+        Store(workCtx).checkins = listOf(TestEnv.checkin("job", "Job one"))
+        Profiles.setCurrent(ctx, work.id)
+        fun shows(i: Intent) {
+            ActivityScenario.launch<android.app.Activity>(i.putExtra(Profiles.EXTRA, work.id)).use { scenario ->
+                onView(tagged("profile")).check(matches(withText("Work ▾")))
+                scenario.onActivity { a ->
+                    val v = a.window.decorView.findViewWithTag<android.view.View>("profile")
+                    val at = IntArray(2).also { v.getLocationOnScreen(it) }
+                    val width = a.window.decorView.width
+                    assertTrue("${a.javaClass.simpleName}: at the right (${at[0] + v.width} of $width)", at[0] + v.width > width * 0.85)
+                    assertTrue("${a.javaClass.simpleName}: at the top (${at[1]})", at[1] < a.window.decorView.height / 4)
+                }
+            }
+        }
+        shows(Intent(ctx, MainActivity::class.java))
+        shows(Intent(ctx, SettingsActivity::class.java))
+        shows(Intent(ctx, ConnectionsActivity::class.java))
+        shows(Intent(ctx, AboutActivity::class.java))
+        shows(HistoryActivity.intent(ctx, "job"))
+        shows(CheckinEditActivity.intent(ctx, "job"))
+        // Tapping it offers the profiles, from any page.
+        ActivityScenario.launch<android.app.Activity>(Intent(ctx, SettingsActivity::class.java).putExtra(Profiles.EXTRA, work.id)).use {
+            onView(tagged("profile")).perform(click())
+            onView(tagged("profile:default")).check(matches(isDisplayed()))
+        }
+        Profiles.setCurrent(ctx, Profiles.DEFAULT)
+    }
+
+    @Test
     fun deletingAProfileClearsItAndItsAlarms() {
         Store(workCtx).checkins = listOf(TestEnv.checkin("job"))
         AlarmScheduler.schedule(workCtx, Store(workCtx).checkin("job")!!)
