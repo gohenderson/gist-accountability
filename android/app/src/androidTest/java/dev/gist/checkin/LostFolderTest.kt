@@ -54,7 +54,7 @@ class LostFolderTest {
         Devices(ctx) { FileFolder(File(it)) }.setUp(File(dir, "My devices").path)
         Profiles.prefs(ctx, Devices.PREFS).edit().putString("folder", "$gone#Personal - 7xq2/My devices").commit()
         assertTrue(Devices(ctx).others().isEmpty())
-        assertTrue("syncing just finds nothing", runCatching { Devices.syncNow(ctx) }.isSuccess)
+        assertTrue("syncing just finds nothing", runCatching { Devices.syncNow(ctx) }.getOrNull() == false)
 
         ActivityScenario.launch<ConnectionsActivity>(ConnectionsActivity.intent(ctx)).use {
             // No access to the Gist folder: it asks for it again.

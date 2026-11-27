@@ -490,7 +490,8 @@ class Devices(
         fun syncNow(context: android.content.Context): Boolean {
             val devices = Devices(context)
             if (devices.folder == null) return false
-            return synchronized(SYNC) { devices.sync() }
+            // A folder it can't reach (deleted, access gone): nothing to do yet.
+            return try { synchronized(SYNC) { devices.sync() } } catch (e: Exception) { false }
         }
 
         /** Syncs your devices off the main thread; then [then] on it when anything here changed. */

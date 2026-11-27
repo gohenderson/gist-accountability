@@ -507,7 +507,7 @@ class Connections(
         fun syncNow(context: android.content.Context): Boolean {
             val links = Connections(context)
             if (links.here.isEmpty()) return false
-            return synchronized(SYNC) { links.sync() }
+            return try { synchronized(SYNC) { links.sync() } } catch (e: Exception) { false }
         }
 
         /** Runs [sync] off the main thread, then [then] on it when what's shared with you changed. */
