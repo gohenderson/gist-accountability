@@ -8,10 +8,8 @@ name: iOS
 #  - the app's UI tests (ios/GistUITests), on a simulator.
 # Runs only when ios/ or shared/ (or this file) changes.
 
+# Runs on pull requests (before merging), not on pushes to main.
 on:
-  push:
-    branches: [main]
-    paths: ["ios/**", "shared/**", ".github/workflows/ios.yml"]
   pull_request:
     paths: ["ios/**", "shared/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
