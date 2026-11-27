@@ -48,8 +48,7 @@ object Profiles {
 
     /** The profile you're looking at. */
     fun current(context: Context): String {
-        val id = Db.get(context).read.query("app_state", arrayOf("value"), "key = ?", arrayOf(K_CURRENT), null, null, null)
-            .rows { it.strOrNull("value") }.firstOrNull() ?: return DEFAULT
+        val id = Db.get(context).state(K_CURRENT) ?: return DEFAULT
         return if (all(context).any { it.id == id }) id else DEFAULT
     }
 

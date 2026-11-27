@@ -89,6 +89,20 @@ class Db private constructor(private val context: Context) :
         if (ok) LegacyImport.deleteOldFiles(context)
     }
 
+    /** A device-wide value (which profile you're on, access to PublicAppData). */
+    fun state(key: String): String? =
+        read.query("app_state", arrayOf("value"), "key = ?", arrayOf(key), null, null, null).rows { it.strOrNull("value") }.firstOrNull()
+
+    fun setState(key: String, value: String?) {
+        tx { w ->
+            if (value == null) w.delete("app_state", "key = ?", arrayOf(key))
+            else w.insertWithOnConflict("app_state", null, ContentValues().apply {
+                put("key", key)
+                put("value", value)
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
     /** Deletes everything profile [id] keeps here. */
     fun deleteProfile(id: String) = synchronized(this) {
         tx { db ->

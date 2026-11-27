@@ -25,23 +25,19 @@ import com.google.zxing.qrcode.QRCodeWriter
  */
 class ConnectionsActivity : BaseActivity() {
     private lateinit var links: Connections
-    /** The invite scanned or typed, waiting for its folder to be picked. */
-    private var pendingInvite: String? = null
-    /** The connection being taken over, waiting for its folder to be picked. */
-    private var pendingAdopt: String? = null
+    /** What to do once access to PublicAppData is allowed: [AFTER_INVITE] or [AFTER_DEVICES]. */
+    private var afterAccess: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         links = Connections(this)
-        pendingInvite = savedInstanceState?.getString(STATE_INVITE)
-        pendingAdopt = savedInstanceState?.getString(STATE_ADOPT)
+        afterAccess = savedInstanceState?.getString(STATE_AFTER)
         render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putString(STATE_INVITE, pendingInvite)
-        outState.putString(STATE_ADOPT, pendingAdopt)
+        outState.putString(STATE_AFTER, afterAccess)
     }
 
     override fun onResume() {
@@ -80,7 +76,7 @@ class ConnectionsActivity : BaseActivity() {
             "code, and Gist finds the folder once it's arrived. What you share is encrypted, and " +
             "only you can change it.", 15f), dp(6))
         val r = row()
-        r.addWeighted(primaryButton("Invite…") { pick(REQ_INVITE) }.apply { tag = "invite" })
+        r.addWeighted(primaryButton("Invite…") { invite() }.apply { tag = "invite" })
         r.addWeighted(outlineButton("Join…") { askForInvite('c') }.apply { tag = "join" }, startMargin = dp(8))
         add.add(r, dp(12))
         col.add(add, dp(12))
@@ -101,42 +97,35 @@ class ConnectionsActivity : BaseActivity() {
         setContentView(screen(col))
     }
 
-    /** The one folder everything syncs through, and a join waiting for its folder. */
+    /** Where this profile syncs (PublicAppData/Gist/<profile>), and a join waiting for its folder. */
     private fun gistFolderCard() = card().apply {
         val gf = GistFolder(this@ConnectionsActivity)
         add(sectionTitle("Your Gist folder"))
         val root = gf.root
         if (root == null) {
-            add(label("Pick one folder for Gist to sync through (say Documents/Gist). Gist keeps a folder in it for " +
-                "your devices (My devices) and one for each person you connect with (People/Jess). Share each of " +
-                "those with whatever you use to share folders, not the Gist folder itself.", 15f), dp(6))
-            add(primaryButton("Pick the Gist folder…") { startPick(REQ_ROOT) }.apply { tag = "gist-folder-pick" }, dp(10))
+            add(label("Gist syncs through folders in ${PublicAppData.NAME}/${PublicAppData.GIST}, at the top of your " +
+                "phone's storage, where the app you share folders with can reach them too. Android needs you to allow " +
+                "access to ${PublicAppData.NAME} once; Gist makes everything inside it, for every profile.", 15f), dp(6))
+            add(muted("If ${PublicAppData.NAME} isn't there yet: in the picker, make a new folder named exactly " +
+                "${PublicAppData.NAME} at the top of your storage and open it. Then tap Use this folder, and Allow.", 13f), dp(6))
+            add(primaryButton("Allow access to ${PublicAppData.NAME}…") { requestAccess() }.apply { tag = "gist-folder-allow" }, dp(10))
         } else {
-            add(label(folderName(root), 15f).apply { tag = "gist-folder" }, dp(6))
+            val shown = if (root.startsWith("content://")) "${PublicAppData.NAME}/${PublicAppData.GIST}/${gf.folderName()}" else root
+            add(label(shown, 15f).apply { tag = "gist-folder" }, dp(6))
             add(muted("My devices: share it with your other devices. People: one folder per connection, " +
                 "each shared with that person only.", 13f), dp(4))
-            add(textButton("Change…") { startPick(REQ_ROOT) }.apply { tag = "gist-folder-change" }, dp(4))
         }
         gf.waiting?.let { w ->
             val what = if (w.startsWith("d:")) "My devices" else "their folder"
-            add(label("Waiting for $what to arrive. Put the shared folder in " +
+            add(label("Waiting for $what to arrive. Share it into " +
                 (if (w.startsWith("d:")) "your Gist folder as My devices" else "People in your Gist folder") +
                 "; Gist joins as soon as it's there.", 15f, color = colorWarn).apply { tag = "join-waiting" }, dp(10))
             val r = row()
             r.addWeighted(outlineButton("Look again") { tryWaiting(quiet = false) }.apply { tag = "join-look" })
-            r.addWeighted(textButton("Pick it myself…") {
-                pendingInvite = w.substring(2)
-                gf.waiting = null
-                startPick(if (w.startsWith("d:")) REQ_DEVICES_JOIN else REQ_JOIN)
-            }.apply { tag = "join-pick" }, startMargin = dp(8))
+            r.addWeighted(textButton("Cancel") { gf.waiting = null; render() }.apply { tag = "join-cancel" }, startMargin = dp(8))
             add(r, dp(6))
-            add(textButton("Cancel") { gf.waiting = null; render() }.apply { tag = "join-cancel" }, dp(2))
         }
     }
-
-    private fun folderName(location: String): String = try {
-        android.provider.DocumentsContract.getTreeDocumentId(android.net.Uri.parse(location)).substringAfter(':').ifEmpty { "Your storage" }
-    } catch (e: Exception) { location }
 
     /** Joins with the invite waiting for its folder, if the folder's there now. */
     private fun tryWaiting(quiet: Boolean) {
@@ -332,7 +321,7 @@ class ConnectionsActivity : BaseActivity() {
             .setMessage("This device takes over reading and sharing for ${l.peerName.ifEmpty { "this connection" }}, " +
                 "and $home stops once it hears. Do this when $home is gone or won't be opening Gist: if both share " +
                 "at once before hearing, changes can clash. Its folder needs to be on this device too (in People in " +
-                "your Gist folder, or you'll be asked to pick it).")
+                "your Gist folder).")
             .setPositiveButton("Go ahead") { _, _ ->
                 val found = GistFolder(this).people().values.firstOrNull { loc ->
                     try { LinkProtocol.linkId(LinkFolder.open(this, loc)) == l.id } catch (e: Exception) { false }
@@ -343,9 +332,7 @@ class ConnectionsActivity : BaseActivity() {
                     Devices.syncInBackground(this) { render() }
                     Connections.syncInBackground(this) { render() }
                 } else {
-                    toast("Pick the connection's folder.")
-                    pendingAdopt = l.id
-                    startPick(REQ_ADOPT)
+                    toast("Its folder isn't in People in your Gist folder yet: share it there first, then try again.")
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -378,7 +365,7 @@ class ConnectionsActivity : BaseActivity() {
 
     private fun setUpDevices() {
         val gf = GistFolder(this)
-        val loc = gf.devices() ?: return startPick(REQ_DEVICES_SETUP)
+        val loc = gf.devices() ?: return requestAccess(AFTER_DEVICES)
         try {
             if (Devices.groupOf(LinkFolder.open(this, loc)) != null) {
                 toast("My devices is already set up in your Gist folder: tap Join instead.")
@@ -387,7 +374,7 @@ class ConnectionsActivity : BaseActivity() {
             Devices(this).setUp(loc)
             toast("Set up. Now share My devices (in your Gist folder) with your other devices.")
         } catch (e: Exception) {
-            toast("Couldn't make My devices: pick your Gist folder again.")
+            toast("Couldn't make My devices in your Gist folder: check Gist still has access to ${PublicAppData.NAME}.")
         }
         render()
     }
@@ -474,25 +461,31 @@ class ConnectionsActivity : BaseActivity() {
                 render()
             }
             else -> {
-                pendingInvite = inv.code
-                toast("Now pick the same folder they picked.")
-                pick(if (kind == 'c') REQ_JOIN else REQ_DEVICES_JOIN)
+                // Joined as soon as there's access and the folder has arrived.
+                GistFolder(this).waiting = "$kind:${inv.code}"
+                requestAccess()
             }
         }
     }
 
-    private fun pick(request: Int) {
-        if (links.myName.isBlank() && request in setOf(REQ_INVITE, REQ_JOIN)) {
+    private fun invite() {
+        if (links.myName.isBlank()) {
             toast("Add your name first, so they know it's you.")
             return
         }
-        if (request == REQ_INVITE && GistFolder(this).root != null) return askWhoFor()
-        startPick(request)
+        if (GistFolder(this).root == null) return requestAccess(AFTER_INVITE)
+        askWhoFor()
     }
 
+    /** Asks Android for access to PublicAppData (the only folder Gist uses); then does [then]. */
     @Suppress("DEPRECATION")
-    private fun startPick(request: Int) {
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), request)
+    private fun requestAccess(then: String? = null) {
+        afterAccess = then
+        try {
+            startActivityForResult(PublicAppData.pickIntent(), REQ_ACCESS)
+        } catch (e: android.content.ActivityNotFoundException) {
+            toast("This phone has no folder picker, so Gist can't get access to ${PublicAppData.NAME}.")
+        }
     }
 
     @Deprecated("Platform Activity API")
@@ -504,75 +497,30 @@ class ConnectionsActivity : BaseActivity() {
             if (resultCode == RESULT_OK && code != null) gotInvite(if (requestCode == REQ_SCAN_JOIN) 'c' else 'd', code)
             return
         }
+        if (requestCode != REQ_ACCESS) return
         val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) return
-        if (uri.scheme != "content" || uri.authority.orEmpty().startsWith(packageName)) {
-            toast("That folder isn't supported.")
+        if (resultCode != RESULT_OK || uri == null) {
+            afterAccess = null
             return
         }
-        contentResolver.takePersistableUriPermission(uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        try {
-            when (requestCode) {
-                REQ_ROOT -> {
-                    GistFolder(this).root = uri.toString()
-                    tryWaiting(quiet = true)
-                    render()
-                }
-                REQ_DEVICES_SETUP -> {
-                    val f = LinkFolder.open(this, uri.toString())
-                    if (Devices.groupOf(f) != null) {
-                        toast("Your devices are already set up in that folder: tap Join instead.")
-                        return
-                    }
-                    Devices(this).setUp(uri.toString())
-                    toast("Set up. Now tap Join on your other devices and pick the same folder.")
-                }
-                REQ_DEVICES_JOIN -> {
-                    val inv = pendingInvite?.let { LinkInvite.parse(it) } ?: return toast("Scan or type the invite first.")
-                    when (Devices(this).join(uri.toString(), inv)) {
-                        Devices.JoinProblem.NOT_DEVICES -> return toast("That folder isn't set up for your devices: tap Set up on one of them first.")
-                        Devices.JoinProblem.NOT_THEIR_INVITE -> return toast("That invite isn't from a device in that folder: check you picked the same folder.")
-                        null -> toast("Joined. Open Gist on the device that showed the invite to let this one in.")
-                    }
-                    pendingInvite = null
-                }
-                REQ_INVITE -> {
-                    if (LinkProtocol.linkId(LinkFolder.open(this, uri.toString())) != null) {
-                        toast("That folder already has a connection: tap Join to join it, or pick an empty folder.")
-                        return
-                    }
-                    val l = links.invite(uri.toString())
-                    render()
-                    showLinkInvite(l)
-                }
-                REQ_ADOPT -> {
-                    val id = pendingAdopt ?: return
-                    when (links.adopt(id, uri.toString())) {
-                        Connections.AdoptProblem.NOT_ITS_FOLDER -> return toast("That isn't this connection's folder: pick the one you share with the other person.")
-                        Connections.AdoptProblem.NOT_KEPT_ELSEWHERE -> toast("It's already kept here.")
-                        null -> toast("Kept on this device now.")
-                    }
-                    pendingAdopt = null
-                    Devices.syncInBackground(this) { render() } // tell your other devices
-                    Connections.syncInBackground(this) { render() }
-                }
-                REQ_JOIN -> {
-                    val inv = pendingInvite?.let { LinkInvite.parse(it) } ?: return toast("Scan or type the invite first.")
-                    val (l, problem) = links.join(uri.toString(), inv)
-                    when (problem) {
-                        Connections.JoinProblem.NOT_A_CONNECTION -> return toast("There's no invite to join in that folder.")
-                        Connections.JoinProblem.ALREADY_YOURS -> return toast("You're already in that connection.")
-                        Connections.JoinProblem.NOT_THEIR_INVITE -> return toast("That invite isn't for the connection in that folder: check you picked the same folder.")
-                        null -> toast("Connected with ${l?.peerName?.ifEmpty { "them" } ?: "them"}")
-                    }
-                    pendingInvite = null
-                }
-            }
-        } catch (e: Exception) {
-            toast("That folder can't be used: ${e.message}")
+        if (!PublicAppData.allow(this, uri)) {
+            AlertDialog.Builder(this)
+                .setTitle("That's not ${PublicAppData.NAME}")
+                .setMessage("Gist only uses ${PublicAppData.PATH}. Pick that folder (make it at the top of your " +
+                    "storage, named exactly ${PublicAppData.NAME}, if it isn't there), then Use this folder.")
+                .setPositiveButton("Try again") { _, _ -> requestAccess(afterAccess) }
+                .setNegativeButton("Cancel") { _, _ -> afterAccess = null }
+                .show()
+            return
         }
+        val then = afterAccess
+        afterAccess = null
+        tryWaiting(quiet = true)
         render()
+        when (then) {
+            AFTER_INVITE -> invite()
+            AFTER_DEVICES -> setUpDevices()
+        }
         Connections.syncInBackground(this) { render() }
         Devices.syncInBackground(this) { render() }
     }
@@ -580,16 +528,12 @@ class ConnectionsActivity : BaseActivity() {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     companion object {
-        private const val REQ_INVITE = 21
-        private const val REQ_JOIN = 22
-        private const val REQ_DEVICES_SETUP = 23
-        private const val REQ_DEVICES_JOIN = 24
         private const val REQ_SCAN_JOIN = 25
         private const val REQ_SCAN_DEVICES = 26
-        private const val STATE_INVITE = "pendingInvite"
-        private const val STATE_ADOPT = "pendingAdopt"
-        private const val REQ_ADOPT = 27
-        private const val REQ_ROOT = 28
+        private const val STATE_AFTER = "afterAccess"
+        private const val REQ_ACCESS = 28
+        private const val AFTER_INVITE = "invite"
+        private const val AFTER_DEVICES = "devices"
 
         fun intent(context: Context) = Intent(context, ConnectionsActivity::class.java)
     }

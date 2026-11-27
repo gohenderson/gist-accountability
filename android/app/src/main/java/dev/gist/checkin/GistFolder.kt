@@ -3,17 +3,20 @@ package dev.gist.checkin
 import android.content.Context
 
 /**
- * Your Gist folder: picked once on each device, it holds every folder Gist syncs through.
+ * A profile's Gist folder: PublicAppData/Gist/<profile> ([PublicAppData]), holding every folder
+ * the profile syncs through.
  *
- *     Gist/
- *       My devices/     shared (in Syncthing) with your own devices
- *       People/
- *         Jess/         shared with Jess only, one folder per connection
+ *     PublicAppData/Gist/
+ *       Personal - 7xq2/       one per profile ([folderName])
+ *         My devices/          shared with your own devices
+ *         People/
+ *           Jess/              shared with Jess only, one folder per connection
+ *       Work - k3f9/
  *
- * Gist folder itself isn't shared; each folder in it is shared on its own. Gist makes the
- * folders when you set up or invite, and finds them when you join (by the invite's code), so
- * there's nothing else to pick. A folder in it is reached as "<Gist folder>#People/Jess"
- * (plain paths, in tests: "<Gist folder>/People/Jess").
+ * Nothing is picked but access to PublicAppData, once per device. The profile's folder itself
+ * isn't shared; each folder in it is, on its own. Gist makes the folders when you set up or
+ * invite, and finds them when you join (by the invite's code). A folder in it is reached as
+ * "<PublicAppData>#Gist/<profile>/People/Jess" (plain paths, in tests: "<root>/People/Jess").
  */
 class GistFolder(
     private val context: Context,
@@ -22,10 +25,33 @@ class GistFolder(
 ) {
     private val prefs = Profiles.prefs(context, PREFS)
 
-    /** The Gist folder on this device, or null until picked. */
+    /**
+     * This profile's Gist folder, or null until you've allowed access to PublicAppData. (Tests
+     * set a plain folder instead.)
+     */
     var root: String?
-        get() = prefs.getString(K_ROOT, null)
-        set(v) { prefs.edit().putString(K_ROOT, v).commit() }
+        get() = prefs.getString(K_TEST_ROOT, null) ?: PublicAppData.gist(context)?.let { at(it, folderName()) }
+        internal set(v) { prefs.edit().putString(K_TEST_ROOT, v).commit() }
+
+    /**
+     * This profile's folder name under PublicAppData/Gist: its name when the folder was first
+     * needed, made safe for a folder name, and a short code from the profile's id ("John - k3f9"
+     * for "John:"). The code keeps two profiles from ever sharing a folder (names that differ
+     * only in characters a folder can't have, or in case). It isn't renamed with the profile,
+     * since whatever shares the folders inside points at it.
+     */
+    fun folderName(): String {
+        prefs.getString(K_FOLDER, null)?.let { return it }
+        val id = Profiles.of(context)
+        val base = safeName(Profiles.name(context, id)).ifEmpty { "Profile" }
+        val others = Profiles.all(context).filter { it.id != id }.mapNotNull {
+            Profiles.prefs(Profiles.scoped(context, it.id), PREFS).getString(K_FOLDER, null)?.lowercase()
+        }.toSet()
+        val name = sequenceOf(4, 6, 8, 12).map { "$base - ${code(id, it)}" }.firstOrNull { it.lowercase() !in others }
+            ?: "$base - ${code(id, 16)}"
+        prefs.edit().putString(K_FOLDER, name).commit()
+        return name
+    }
 
     /**
      * An invite scanned or typed whose folder hasn't arrived yet ("c:" or "d:" + its code):
@@ -60,12 +86,23 @@ class GistFolder(
 
     companion object {
         const val PREFS = "gist-folder"
-        private const val K_ROOT = "root"
+        /** A plain folder used instead (tests). (Before PublicAppData, "root" was the picked folder.) */
+        private const val K_TEST_ROOT = "testRoot"
+        private const val K_FOLDER = "folderName"
         private const val K_WAITING = "waiting"
         const val DEVICES = "My devices"
         const val PEOPLE = "People"
 
-        fun at(root: String, sub: String) = if (root.startsWith("content://")) "$root#$sub" else "$root/$sub"
+        /** Folder [sub] (one or more names, "/" between) of the folder at [root]. */
+        fun at(root: String, sub: String) =
+            if (root.startsWith("content://") && '#' !in root) "$root#$sub" else "$root/$sub"
+
+        /** [length] lowercase letters and digits from profile [id] (always the same for it). */
+        fun code(id: String, length: Int): String {
+            val alphabet = "abcdefghijkmnpqrstuvwxyz23456789" // no l, o, 0 or 1 to mix up
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest("gist-profile:$id".toByteArray())
+            return (0 until length).map { alphabet[(hash[it].toInt() and 0xff) % alphabet.length] }.joinToString("")
+        }
 
         private fun valid(name: String) = try { LinkPath.parts(name).size == 1 } catch (e: Exception) { false }
 

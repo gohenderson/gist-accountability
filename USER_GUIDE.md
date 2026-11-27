@@ -421,24 +421,34 @@ apps read them); backups without them stay version 4.
 Share check-ins and tasks with another copy of Gist, your partner's say, **read-only**:
 they see what you share, but only you can change it, and the other way round.
 
-- **Your Gist folder.** On each device, pick one folder once (say Documents/Gist) under
-  **Your Gist folder**. Gist keeps everything it syncs in there:
+- **Your Gist folder.** On Android, Gist keeps everything it syncs in
+  **/storage/emulated/0/PublicAppData/Gist**, with a folder for each profile:
 
   ```
-  Gist/
-    My devices/      shared with your own devices
-    People/
-      Jess/          shared with Jess only (one folder per connection)
+  PublicAppData/
+    Gist/
+      Personal - 7xq2/   one per profile: its name and a short code
+        My devices/      shared with your own devices
+        People/
+          Jess/          shared with Jess only (one folder per connection)
+      Work - k3f9/
   ```
 
-  Don't share the Gist folder itself; share each folder in it.
+  You don't pick it. Android needs you to **allow access to PublicAppData** once on each
+  device (Settings → Connections → **Allow access to PublicAppData…**, or when you first
+  invite or join). If it isn't there yet, make it in the picker that opens: a new folder
+  at the top of your storage, named exactly **PublicAppData**, then **Use this folder** and
+  **Allow**. Any other folder is refused. After that Gist makes everything inside it, for
+  every profile, with nothing more to do. A profile's folder is named when it's first
+  needed and keeps its name if you rename the profile (the app you share folders with
+  points there). Don't share a profile's folder itself; share each folder in it.
 - **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
   and says who it's for: Gist makes People/Jess and shows an **invite**, a QR code with a
   code under it (like `AFYW-…`). Share People/Jess with them. The other taps
   **Join…** and **scans** the QR code (or taps **Type the code**, for a device without a
   camera). Gist finds their folder under People once it has arrived; until then
-  it says it's waiting, and joins by itself as soon as it's there (or **Pick it myself…**
-  if the shared folder landed somewhere else).
+  it says it's waiting, and joins by itself as soon as it's there. Share it into People
+  in your profile's folder.
 - **The invite is the key to the door.** It never goes in the folder, so someone who can
   see the folder but not your screen can't join. It works **once**, for **15 minutes**;
   **Show the invite** (on a connection still waiting) shows it again, or a new one if it
@@ -447,8 +457,9 @@ they see what you share, but only you can change it, and the other way round.
 - **Between phones** the folders have to be kept in step by an app that shares folders
   between devices, such as [Syncthing](https://syncthing.net). Gist never goes online
   itself, and works with whatever keeps the folders in step. **To try it on one phone**, install **Gist B** (the `gist-b-…apk` on the release
-  page): a second copy with its own data. Both can pick the same folder, say
-  Documents/GistLink.
+  page): a second copy with its own data, which needs access to PublicAppData too. Its
+  first profile has the same folder as Gist's (PublicAppData/Gist/Personal - …), so the
+  two meet there just as two phones sharing the folder would.
 - **Share with…** on a check-in's or task's page (Details) picks which connections see
   it. Changes go out the next time Gist is opened or you leave the page.
 - **What they share** shows on your start page under **From Jess**, on the tab it belongs
