@@ -212,7 +212,7 @@ class BackupTest {
         assertEquals(listOf(keep), TestEnv.store.checkins)
     }
 
-    private fun settings() = ActivityScenario.launch<SettingsActivity>(Intent(TestEnv.ctx, SettingsActivity::class.java))
+    private fun settings() = ActivityScenario.launch<BackupActivity>(BackupActivity.intent(TestEnv.ctx))
 
     @Test
     fun exportDialogChoosesCheckinsAndHistory() {

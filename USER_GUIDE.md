@@ -101,7 +101,13 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
   on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
   turned off), even if you've picked them since.
-- **Settings** (☰) is at the top left, before the title; **About** and **Donate** are in Settings. (On the iPhone it's still ⚙️ at the top right, for now.)
+- **The menu** (☰) is at the top left, before the title. It slides out from the left with
+  your profiles down its side (tap one to switch to it, **+** for a new one) and
+  **Home**, **Connections**, **Backup**, **Settings** and **About · Donate**. Tap **✕**,
+  the dimmed page beside it or Back to close it. (On the iPhone it's still ⚙️ at the top
+  right, for now.)
+- **Your profile's picture** is at the top right of every page, or the first letter of its
+  name if it has no picture. Tap it to switch profile.
 
 ## A check-in's page
 
@@ -387,10 +393,15 @@ apps read them); backups without them stay version 4.
 
 ## Settings, backups and export
 
-**Settings** is the ☰ at the top left of the start page (⚙️ at the top right on the iPhone, for now).
+Both are in the menu (☰ at the top left of the start page; ⚙️ at the top right on the
+iPhone, for now). **Settings** has:
 
 - **Appearance:** same as the phone, Light or Dark.
 - **While you check in:** the pause length (15, 30, 45 or 60 seconds).
+- **Profiles** (see [Profiles](#profiles-android)).
+
+**Backup** has:
+
 - **Export backup…**
   - **Choosing what to include:** it asks which check-ins to include (all are ticked) and,
     for each, whether to **include its history**.
@@ -435,14 +446,14 @@ they see what you share, but only you can change it, and the other way round.
   ```
 
   You don't pick it. Android needs you to **allow access to the Gist folder** once on each
-  device (Settings → Connections → **Allow access to the Gist folder…**, or when you first
+  device (☰ → Connections → **Allow access to the Gist folder…**, or when you first
   invite or join). If it isn't there yet, make it in the picker that opens: a new folder
   at the top of your storage named **Gist**, then **Use this folder** and **Allow**. Any
   other folder is refused. After that Gist makes everything inside it, for
   every profile, with nothing more to do. A profile's folder is named when it's first
   needed and keeps its name if you rename the profile (the app you share folders with
   points there). Don't share a profile's folder itself; share each folder in it.
-- **Settings → Connections.** Add **your name** (what they see). One side taps **Invite…**
+- **☰ → Connections.** Add **your name** (what they see). One side taps **Invite…**
   and says who it's for: Gist makes People/Jess and shows an **invite**, a QR code with a
   code under it (like `AFYW-…`). Share People/Jess with them. The other taps
   **Join…** and **scans** the QR code (or taps **Type the code**, for a device without a
@@ -483,7 +494,7 @@ they see what you share, but only you can change it, and the other way round.
 
 ### Your devices
 
-**Settings → Connections → Your devices** keeps everything on your phone and tablet (say)
+**☰ → Connections → Your devices** keeps everything on your phone and tablet (say)
 in step: check-ins, tasks and answers. **Set up…** on one: Gist makes **My devices** in your
 Gist folder; share it with your other devices (into their Gist folders, as My
 devices). Then, for each of the others: tap **Add a device…** on one that's in, which shows
@@ -536,11 +547,15 @@ has its own check-ins and tasks, answers and history, settings (theme, pause len
 whether this device rings), Gist folder, devices and connections, and photos and clips.
 Nothing is shared between them.
 
-- **Making one.** Settings → Profiles → **New profile…**. It starts empty, and Gist
-  switches to it. Your first profile is called Personal; rename any of them there.
-- **Switching.** Once you have more than one, every page shows the profile you're in at
-  its top right: tap it to switch (or to make a new one). Settings → Profiles has
-  **Switch** too.
+- **Making one.** **+** in the menu's profile rail, or Settings → Profiles → **New
+  profile…**. It starts empty, and Gist switches to it. Your first profile is called
+  Personal; rename any of them in Settings → Profiles.
+- **Switching.** Every page shows the profile you're in at its top right: its picture, or
+  the first letter of its name. Tap it to switch (or to make a new one). The menu's rail
+  of profiles and Settings → Profiles → **Switch** do too.
+- **Pictures.** Settings → Profiles: tap a profile's picture (or letter) to choose a
+  photo; the middle square of it is used. Tap it again to change or remove it. Pictures
+  stay on this phone; they aren't synced or in backups.
 - **Every profile rings.** Alarms, place and running triggers, and quiet reminders keep
   working for all your profiles, whichever one you're on. When another profile's alarm
   rings, the alarm screen says which profile it's from, your answers are saved in that
@@ -555,7 +570,7 @@ Nothing is shared between them.
 
 ## About
 
-**About** (Settings → About) shows:
+**About** (☰ → About · Donate) shows:
 - the version;
 - privacy;
 - links to the source code and to report a problem;

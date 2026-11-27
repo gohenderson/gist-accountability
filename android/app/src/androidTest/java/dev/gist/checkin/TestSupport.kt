@@ -55,6 +55,8 @@ object TestEnv {
         // Only the first profile, and on it (ProfilesTest adds others).
         Profiles.setCurrent(ctx, Profiles.DEFAULT)
         Profiles.all(ctx).filter { it.id != Profiles.DEFAULT }.forEach { Profiles.remove(ctx, it.id) }
+        ProfilePicture.remove(ctx, Profiles.DEFAULT)
+        Profiles.rename(ctx, Profiles.DEFAULT, Profiles.DEFAULT_NAME)
         Store(ctx).checkins.forEach { AlarmScheduler.cancel(ctx, it.id) }
         ctx.stopService(Intent(ctx, AlarmService::class.java))
         // Stopping is asynchronous: wait, or the next test could mistake this alarm for its own.

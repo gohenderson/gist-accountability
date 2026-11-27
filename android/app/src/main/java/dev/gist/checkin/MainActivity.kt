@@ -25,6 +25,7 @@ import android.widget.Toast
 class MainActivity : BaseActivity() {
     private lateinit var store: Store
     private var scroll: ScrollView? = null
+    private val drawer = NavDrawer(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +49,12 @@ class MainActivity : BaseActivity() {
         render()
         Connections.syncInBackground(this) { render() } // what connections share with you
         Devices.syncInBackground(this) { if (!recreateForTheme()) render() } // your other devices
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (drawer.isOpen) drawer.close() else super.onBackPressed()
     }
 
     override fun onRequestPermissionsResult(
@@ -77,12 +84,11 @@ class MainActivity : BaseActivity() {
         }
         val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
-        // ☰ Settings (About and Donate are in there), the title, and the profile at the top
-        // right (with more than one; tap it to switch), as on every page.
+        // ☰ opens the menu (Connections, Backup, Settings, About; profiles down its side), then
+        // the title, and the profile's picture at the top right (tap it to switch), as on every page.
         val top = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-        top.addWrapped(iconButton("☰", "Settings", "settings") {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }.apply { setPadding(0, paddingTop, dp(10), paddingBottom) })
+        top.addWrapped(iconButton("☰", "Menu", "menu") { drawer.open() }
+            .apply { setPadding(0, paddingTop, dp(10), paddingBottom) })
         top.addWeighted(header("Gist"))
         col.add(top)
         if (Profiles.several(this)) otherProfilesWaiting(col)
@@ -218,6 +224,7 @@ class MainActivity : BaseActivity() {
 
         val sv = screen(col)
         setContentView(sv)
+        drawer.attach()
         scroll = sv
         sv.restoreScroll(oldY)
     }
