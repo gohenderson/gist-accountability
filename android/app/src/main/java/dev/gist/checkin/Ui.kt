@@ -1,5 +1,6 @@
 package dev.gist.checkin
 
+import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
@@ -19,8 +20,6 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.Switch
 import android.widget.TextView
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 /*
  * A small design system built from plain Android views (no XML layouts, no libraries).
@@ -62,10 +61,42 @@ fun Context.label(text: CharSequence, sizeSp: Float = 16f, bold: Boolean = false
 
 fun Context.muted(text: CharSequence, sizeSp: Float = 14f): TextView = label(text, sizeSp, color = colorMuted)
 
-/** Big screen title with an optional muted subtitle. */
-fun Context.header(title: String, subtitle: String? = null): LinearLayout = column().apply {
-    add(label(title, 30f, bold = true))
-    if (subtitle != null) add(muted(subtitle, 15f), dp(2))
+/**
+ * Big screen title with an optional muted subtitle, and the profile's name at the top right
+ * when you have more than one ([profileBadge]).
+ */
+fun Context.header(title: String, subtitle: String? = null): LinearLayout {
+    val text = column().apply {
+        add(label(title, 30f, bold = true))
+        if (subtitle != null) add(muted(subtitle, 15f), dp(2))
+    }
+    return withProfileBadge(text)
+}
+
+/** [content] with the profile badge across from it at the top right (if there is one). */
+fun Context.withProfileBadge(content: View): LinearLayout {
+    val badge = profileBadge() ?: return content as? LinearLayout ?: column().apply { add(content) }
+    return row().apply {
+        gravity = Gravity.TOP
+        addWeighted(content)
+        addWrapped(badge)
+    }
+}
+
+/**
+ * Which profile this page is in, when you have more than one: its name, at the top right of
+ * every page. Tap it to switch (or to make a new profile).
+ */
+fun Context.profileBadge(): View? {
+    val activity = this as? Activity ?: return null
+    if (!Profiles.several(this)) return null
+    val name = Profiles.name(this, Profiles.of(this))
+    return textButton("$name ▾") { ProfileUi.pick(activity) }.apply {
+        tag = "profile"
+        contentDescription = "Profile: $name. Switch profile"
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        setPadding(dp(8), paddingTop, 0, paddingBottom)
+    }
 }
 
 /** Small all-caps section label, e.g. "CHECK-INS". */
@@ -73,8 +104,6 @@ fun Context.sectionTitle(text: String): TextView = label(text.uppercase(), 12f, 
     typeface = MEDIUM
     letterSpacing = 0.08f
 }
-
-fun todayLong(): String = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d"))
 
 // ------------------------------------------------------------------ layout
 

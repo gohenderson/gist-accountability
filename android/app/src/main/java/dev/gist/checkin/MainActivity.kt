@@ -74,22 +74,15 @@ class MainActivity : BaseActivity() {
         }
         val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
-        // Title, with Settings across from it (About and Donate are in Settings).
-        val top = row().apply { gravity = android.view.Gravity.TOP }
-        top.addWeighted(header("Gist", todayLong()))
-        top.addWrapped(iconButton("⚙️", "Settings", "settings") {
+        // ☰ Settings (About and Donate are in there), the title, and the profile at the top
+        // right (with more than one; tap it to switch), as on every page.
+        val top = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        top.addWrapped(iconButton("☰", "Settings", "settings") {
             startActivity(Intent(this, SettingsActivity::class.java))
-        })
+        }.apply { setPadding(0, paddingTop, dp(10), paddingBottom) })
+        top.addWeighted(header("Gist"))
         col.add(top)
-        if (Profiles.several(this)) {
-            // Which profile this is; tap to switch.
-            col.add(textButton("${Profiles.name(this, profileId)} ▾") { ProfileUi.pick(this) }.apply {
-                tag = "profile"
-                contentDescription = "Profile: ${Profiles.name(this@MainActivity, profileId)}. Switch profile"
-                setPadding(0, paddingTop, dp(8), paddingBottom)
-            })
-            otherProfilesWaiting(col)
-        }
+        if (Profiles.several(this)) otherProfilesWaiting(col)
 
         // Scores: each check-in's on-track share over the last week; groups and the page
         // average them (off check-ins aren't counted).

@@ -67,7 +67,7 @@ class CheckinEditActivity : BaseActivity() {
         var col: LinearLayout = page // sections below swap this for their own card
 
         val title = label(c.name, 30f, bold = true)
-        col.add(title)
+        col.add(withProfileBadge(title))
         col.add(muted(CheckinText.oneLine(c), 15f), dp(2))
         // How on track it's been, like the overall score on the start page.
         Score.of(c, store.allResults(c.id))?.let { score ->
