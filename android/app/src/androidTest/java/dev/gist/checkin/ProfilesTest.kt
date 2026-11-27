@@ -102,10 +102,21 @@ class ProfilesTest {
         // Saved in Work; Personal untouched, and still the one you're on.
         val w = Store(workCtx)
         assertTrue(w.pending.isEmpty())
-        assertEquals(true, w.results(Days.today(), "job").values.single().answers["calls"])
+        val saved = w.results(Days.today(), "job")
+        assertEquals("one result in Work on ${Days.today()}; all results: ${dump()}", 1, saved.size)
+        assertEquals(true, saved.values.single().answers["calls"])
         assertTrue(TestEnv.store.results(Days.today(), "job").isEmpty())
         assertEquals(Profiles.DEFAULT, Profiles.current(ctx))
     }
+
+    /** Every result and waiting row in the database, to say where something went. */
+    private fun dump(): String = listOf("slot_result", "answer", "pending").joinToString(" | ") { t ->
+        t + ": " + Db.get(ctx).read.query(t, null, null, null, null, null, null).use { c ->
+            buildList {
+                while (c.moveToNext()) add((0 until c.columnCount).joinToString(",") { "${c.getColumnName(it)}=${c.getString(it)}" })
+            }.joinToString("; ")
+        }
+    } + " | work=${work.id}"
 
     @Test
     fun theStartPageSwitchesAndShowsOtherProfilesWaiting() {
