@@ -31,9 +31,15 @@ object GistRoot {
     /** Where the phone's storage is (/storage/emulated/0); tests can point it elsewhere. */
     internal var storage: File = File(STORAGE)
 
+    /**
+     * Tests say whether there's access (changing All files access restarts the app, so a test
+     * can't turn it on and off).
+     */
+    internal var accessForTests: Boolean? = null
+
     /** Whether Gist may reach the Gist folder (All files access, or Android 10's storage permission). */
     fun canReach(context: Context): Boolean =
-        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+        accessForTests ?: if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
         else context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
     /** The storage permissions Android 10 asks for in place of All files access. */

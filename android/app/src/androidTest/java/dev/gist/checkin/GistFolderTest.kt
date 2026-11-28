@@ -100,10 +100,14 @@ class GistFolderTest {
         // And opened by path.
         assertTrue(LinkFolder.open(ctx, tree("primary:Gist") + "#Work - k3f9/My devices") is FileFolder)
         assertTrue(LinkFolder.open(ctx, "${dir.path}/My devices") is FileFolder)
+        // The app's real access: not allowed in the tests.
+        assertFalse(GistRoot.canReach(ctx))
     }
 
-    private fun allFilesAccess(on: Boolean) =
-        TestEnv.shell("appops set ${ctx.packageName} MANAGE_EXTERNAL_STORAGE ${if (on) "allow" else "default"}")
+    /** As if All files access were on or off (changing it for real restarts the app). */
+    private fun allFilesAccess(on: Boolean?) {
+        GistRoot.accessForTests = on
+    }
 
     @Test
     fun withAllFilesAccessGistFindsOrMakesTheGistFolder() {
@@ -134,25 +138,8 @@ class GistFolderTest {
             storage.setWritable(true)
         } finally {
             GistRoot.storage = real
-            allFilesAccess(false)
+            allFilesAccess(null)
             storage.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun withAllFilesAccessTheRealGistFolderIsReached() {
-        val existed = File(GistRoot.PATH).exists()
-        try {
-            allFilesAccess(true)
-            val d = GistRoot.dir(ctx)!!
-            assertTrue(d.path, d.path.equals(GistRoot.PATH, ignoreCase = true))
-            val f = FileFolder(File(d, "test-${System.nanoTime()}"))
-            f.write("from-a/hello.json", "hi".toByteArray())
-            assertEquals("hi", String(f.read("from-a/hello.json")!!))
-        } finally {
-            if (!existed) File(GistRoot.PATH).deleteRecursively()
-            else File(GistRoot.PATH).listFiles()?.filter { it.name.startsWith("test-") }?.forEach { it.deleteRecursively() }
-            allFilesAccess(false)
         }
     }
 
