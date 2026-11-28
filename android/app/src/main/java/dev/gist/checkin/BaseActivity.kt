@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.View
 
 /**
  * Every screen extends this so the Light / Dark / System choice from Settings applies
@@ -13,9 +14,29 @@ import android.os.Bundle
  *
  * Each screen works in a profile (see [Profiles]): the one its intent names, else the one
  * you're on. Screens it opens are for the same profile. The theme is the one you're on's.
+ *
+ * Every page has the ☰ menu ([NavDrawer]): its button is left of the page's title (see
+ * [withProfileBadge]) and the menu goes over whatever [setContentView] shows. Not the alarm
+ * screen or the scanner ([hasMenu]).
  */
 open class BaseActivity : Activity(), ProfileScoped {
     private var appliedTheme = Store.THEME_SYSTEM
+
+    /** Whether this page has the ☰ menu. */
+    open val hasMenu: Boolean get() = true
+
+    val drawer: NavDrawer by lazy { NavDrawer(this) }
+
+    override fun setContentView(view: View?) {
+        super.setContentView(view)
+        if (hasMenu) drawer.attach()
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (hasMenu && drawer.isOpen) drawer.close() else super.onBackPressed()
+    }
 
     override val profileId: String
         get() = intent?.getStringExtra(Profiles.EXTRA) ?: Profiles.current(this)

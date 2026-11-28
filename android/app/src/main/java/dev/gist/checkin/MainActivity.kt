@@ -25,7 +25,6 @@ import android.widget.Toast
 class MainActivity : BaseActivity() {
     private lateinit var store: Store
     private var scroll: ScrollView? = null
-    private val drawer = NavDrawer(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,12 +48,6 @@ class MainActivity : BaseActivity() {
         render()
         Connections.syncInBackground(this) { render() } // what connections share with you
         Devices.syncInBackground(this) { if (!recreateForTheme()) render() } // your other devices
-    }
-
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        if (drawer.isOpen) drawer.close() else super.onBackPressed()
     }
 
     override fun onRequestPermissionsResult(
@@ -84,13 +77,8 @@ class MainActivity : BaseActivity() {
         }
         val doneTasks = if (tab == Store.TAB_TASKS) all.count { it.taskDone } else 0
 
-        // ☰ opens the menu (Connections, Backup, Settings, About; profiles down its side), then
-        // the title, and the profile's picture at the top right (tap it to switch), as on every page.
-        val top = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-        top.addWrapped(iconButton("☰", "Menu", "menu") { drawer.open() }
-            .apply { setPadding(0, paddingTop, dp(10), paddingBottom) })
-        top.addWeighted(header("Gist"))
-        col.add(top)
+        // ☰ (the menu), the title, and the profile's picture at the top right, as on every page.
+        col.add(header("Gist"))
         if (Profiles.several(this)) otherProfilesWaiting(col)
 
         // Scores: each check-in's on-track share over the last week; groups and the page
@@ -224,7 +212,6 @@ class MainActivity : BaseActivity() {
 
         val sv = screen(col)
         setContentView(sv)
-        drawer.attach()
         scroll = sv
         sv.restoreScroll(oldY)
     }
@@ -744,17 +731,6 @@ class MainActivity : BaseActivity() {
     /** A group's fold state is kept per tab (the Check-ins tab keeps the original keys). */
     private fun groupKey(tab: String, category: String) =
         if (tab == Store.TAB_CHECKINS) Grouping.key(category) else "$tab/${Grouping.key(category)}"
-
-    /** A small emoji button for the top of the page; [name] is read out. */
-    private fun iconButton(emoji: String, name: String, tag: String, onClick: () -> Unit) =
-        textButton(emoji) { onClick() }.apply {
-            this.tag = tag
-            contentDescription = name
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-            minWidth = dp(44)
-            minimumWidth = dp(44)
-            setPadding(dp(6), paddingTop, dp(6), paddingBottom)
-        }
 
     private fun openSettings(action: String) {
         try {

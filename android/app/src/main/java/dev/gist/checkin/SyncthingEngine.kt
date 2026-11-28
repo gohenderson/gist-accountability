@@ -43,6 +43,20 @@ class SyncthingEngine(
     val running: Boolean get() = process?.isAlive == true
 
     /**
+     * Whether Android lets Gist use the network at all. Some phones (GrapheneOS's Network
+     * permission, firewall settings) can turn it off for an app: then every socket fails with
+     * EPERM, Syncthing's included.
+     */
+    fun networkAllowed(): Boolean = try {
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).close()
+        true
+    } catch (e: java.net.SocketException) {
+        !(e.message ?: "").contains("EPERM")
+    } catch (e: SecurityException) {
+        false
+    }
+
+    /**
      * Starts Syncthing and waits (up to [timeoutMs]) until its API answers. Its GUI and API
      * listen only on 127.0.0.1, on a free port, with a key only this run knows.
      */

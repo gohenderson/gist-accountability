@@ -49,6 +49,8 @@ import android.util.TypedValue
  * When opened from history, it's a normal screen for filling in or fixing a past day's answers.
  */
 class CheckinActivity : BaseActivity() {
+    override val hasMenu get() = false // the alarm screen / the scanner: no menu
+
     private sealed class Step {
         data class Math(val count: Int, val level: Int) : Step()
         data class Scan(val code: String, val label: String) : Step()

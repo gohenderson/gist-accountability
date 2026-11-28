@@ -101,7 +101,7 @@ Then tap a check-in's **Test** button (it rings in 10 seconds) and lock the phon
   until you've answered some); on **Tasks**, how many tasks you've done in the last 7 days;
   on **Backlog**, how many went into the backlog in the last 7 days (new ones, or ones you
   turned off), even if you've picked them since.
-- **The menu** (☰) is at the top left, before the title. It slides out from the left with
+- **The menu** (☰) is at the top left of every page, before the title. It slides out from the left with
   your profiles down its side (tap one to switch to it, **+** for a new one) and
   **Home**, **Connections**, **Backup**, **Settings** and **About · Donate**. Tap **✕**,
   the dimmed page beside it or Back to close it. (On the iPhone it's still ⚙️ at the top
@@ -401,7 +401,7 @@ apps read them); backups without them stay version 4.
 
 ## Settings, backups and export
 
-Both are in the menu (☰ at the top left of the start page; ⚙️ at the top right on the
+Both are in the menu (☰ at the top left of every page; ⚙️ at the top right on the
 iPhone, for now). **Settings** has:
 
 - **Appearance:** same as the phone, Light or Dark.
@@ -558,6 +558,9 @@ code, the other scans it.
   for) on one phone and **Scan a code** on the other.
 - **Asked once:** access to the Gist folder, and **All files access**, which Syncthing needs
   to reach the folders in it by their path. Gist uses it only for its folders in Gist.
+- **Network access:** some phones can turn the network off for one app (GrapheneOS's
+  **Network** permission, a firewall app). Easy Connect needs it on for Gist; if it's off,
+  Gist says so and opens Gist's App info, where you allow it.
 - **While it's on**, Syncthing runs in the background (a notification says so) and keeps
   the folders in step whenever both phones can reach each other, on the same Wi-Fi or over
   the internet. **Turn off Easy Connect** stops it.

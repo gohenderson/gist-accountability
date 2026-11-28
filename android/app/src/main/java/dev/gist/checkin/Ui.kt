@@ -73,15 +73,34 @@ fun Context.header(title: String, subtitle: String? = null): LinearLayout {
     return withProfileBadge(text)
 }
 
-/** [content] with the profile badge across from it at the top right (if there is one). */
+/**
+ * [content] (a page's title) with ☰ before it, which opens the menu ([NavDrawer]), and the
+ * profile badge across from it at the top right, on pages that have them.
+ */
 fun Context.withProfileBadge(content: View): LinearLayout {
-    val badge = profileBadge() ?: return content as? LinearLayout ?: column().apply { add(content) }
+    val menu = (this as? BaseActivity)?.takeIf { it.hasMenu }?.let { a ->
+        iconButton("☰", "Menu", "menu") { a.drawer.open() }.apply { setPadding(0, paddingTop, dp(10), paddingBottom) }
+    }
+    val badge = profileBadge()
+    if (menu == null && badge == null) return content as? LinearLayout ?: column().apply { add(content) }
     return row().apply {
         gravity = Gravity.TOP
+        if (menu != null) addWrapped(menu)
         addWeighted(content)
-        addWrapped(badge, startMargin = dp(8))
+        if (badge != null) addWrapped(badge, startMargin = dp(8))
     }
 }
+
+/** A small emoji button for the top of a page; [name] is read out. */
+fun Context.iconButton(emoji: String, name: String, tag: String, onClick: () -> Unit): Button =
+    textButton(emoji) { onClick() }.apply {
+        this.tag = tag
+        contentDescription = name
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        minWidth = dp(44)
+        minimumWidth = dp(44)
+        setPadding(dp(6), paddingTop, dp(6), paddingBottom)
+    }
 
 /**
  * Which profile this page is in: its picture (or the first letter of its name), at the top

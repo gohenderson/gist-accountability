@@ -17,27 +17,67 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 
 /**
- * The menu that slides out from the left when you tap ☰ on the start page (like Outlook's):
+ * The menu that slides out from the left when you tap ☰ on any page (like Outlook's):
  * a rail of profile pictures down its left side (tap one to switch to it, + for a new profile),
  * and the places to go: Home, Connections, Backup, Settings, About · Donate. The page
  * behind is dimmed; tap it, ✕ or Back to close.
  *
- * Call [attach] after each setContentView (the menu stays open across rebuilds).
+ * [BaseActivity] calls [attach] after each setContentView (the menu stays open across rebuilds).
  */
 class NavDrawer(private val activity: Activity) {
     var isOpen = false
         private set
 
+    private var root: FrameLayout? = null
     private var scrim: View? = null
     private var panel: View? = null
     private var backCallback: Any? = null
 
     /**
-     * Puts the menu over the page that was just set with setContentView (open if it was). The
-     * page stays the content's first child; the menu is added after it.
+     * Puts the menu's layer over the page that was just set with setContentView (open if it
+     * was). The page stays the content's first child; the layer is added after it, and is empty
+     * while the menu is closed (so the page's views are the only ones there).
      */
     fun attach() {
-        val root = FrameLayout(activity)
+        val r = FrameLayout(activity)
+        activity.addContentView(r, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root = r
+        scrim = null
+        panel = null
+        if (isOpen) fill(animate = false)
+    }
+
+    fun open() {
+        if (isOpen) return
+        isOpen = true
+        fill(animate = true)
+        listenForBack(true)
+    }
+
+    fun close() {
+        if (!isOpen) return
+        isOpen = false
+        listenForBack(false)
+        val r = root
+        val s = scrim
+        val p = panel
+        if (r == null || s == null || p == null) return
+        s.animate().cancel()
+        p.animate().cancel()
+        s.animate().alpha(0f).setDuration(DURATION).start()
+        p.animate().translationX(-p.width.toFloat()).setDuration(DURATION).withEndAction {
+            if (!isOpen && root === r) {
+                r.removeAllViews()
+                scrim = null
+                panel = null
+            }
+        }.start()
+    }
+
+    /** Builds the scrim and the panel in the layer, sliding in if [animate]. */
+    private fun fill(animate: Boolean) {
+        val r = root ?: return
+        r.removeAllViews()
         val s = View(activity).apply {
             tag = "drawer-scrim"
             contentDescription = "Close menu"
@@ -45,28 +85,19 @@ class NavDrawer(private val activity: Activity) {
             isClickable = true
             setOnClickListener { close() }
         }
-        root.addView(s, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        r.addView(s, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val width = minOf(activity.dp(320), (activity.resources.displayMetrics.widthPixels * 0.85f).toInt())
         val p = build()
-        root.addView(p, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
+        r.addView(p, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
+        r.requestApplyInsets()
         scrim = s
         panel = p
-        show(isOpen, animate = false, width = width)
-        activity.addContentView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-    }
-
-    fun open() {
-        if (isOpen) return
-        isOpen = true
-        show(true, animate = true)
-        listenForBack(true)
-    }
-
-    fun close() {
-        if (!isOpen) return
-        isOpen = false
-        show(false, animate = true)
-        listenForBack(false)
+        if (animate) {
+            s.alpha = 0f
+            p.translationX = -width.toFloat()
+            s.animate().alpha(1f).setDuration(DURATION).start()
+            p.animate().translationX(0f).setDuration(DURATION).start()
+        }
     }
 
     /** Back closes the menu first (on Android 12 and older, the activity's onBackPressed asks). */
@@ -81,32 +112,6 @@ class NavDrawer(private val activity: Activity) {
         } else {
             (backCallback as? OnBackInvokedCallback)?.let { dispatcher.unregisterOnBackInvokedCallback(it) }
             backCallback = null
-        }
-    }
-
-    private fun show(open: Boolean, animate: Boolean, width: Int = panel?.layoutParams?.width ?: 0) {
-        val s = scrim ?: return
-        val p = panel ?: return
-        val shut = -width.toFloat()
-        s.animate().cancel()
-        p.animate().cancel()
-        if (!animate) {
-            s.visibility = if (open) View.VISIBLE else View.GONE
-            p.visibility = if (open) View.VISIBLE else View.GONE
-            s.alpha = 1f
-            p.translationX = if (open) 0f else shut
-            return
-        }
-        if (open) {
-            s.alpha = 0f
-            s.visibility = View.VISIBLE
-            p.translationX = shut
-            p.visibility = View.VISIBLE
-            s.animate().alpha(1f).setDuration(DURATION).start()
-            p.animate().translationX(0f).setDuration(DURATION).start()
-        } else {
-            s.animate().alpha(0f).setDuration(DURATION).withEndAction { s.visibility = View.GONE }.start()
-            p.animate().translationX(shut).setDuration(DURATION).withEndAction { p.visibility = View.GONE }.start()
         }
     }
 
@@ -184,13 +189,24 @@ class NavDrawer(private val activity: Activity) {
         })
         list.add(top)
 
-        fun item(icon: String, text: String, key: String, onClick: () -> Unit) {
+        /** [page]: the page it opens; the one you're on is highlighted and just closes the menu. */
+        fun item(icon: String, text: String, key: String, page: Class<*>, open: () -> Intent) {
+            val here = a.javaClass == page
+            val onClick = {
+                close()
+                if (!here) {
+                    a.startActivity(open())
+                    // From one of the menu's pages to another: Back goes to the start page, not here.
+                    if (a.javaClass in TOP && a.javaClass != MainActivity::class.java) a.finish()
+                }
+            }
             val r = a.row().apply {
                 tag = "nav:$key"
                 contentDescription = text
+                isSelected = here
                 minimumHeight = a.dp(52)
                 setPadding(a.dp(12), 0, a.dp(12), 0)
-                background = a.rounded(Color.TRANSPARENT, 12).let { bg ->
+                background = a.rounded(if (here) a.colorOf(R.color.primary_container) else Color.TRANSPARENT, 12).let { bg ->
                     android.graphics.drawable.RippleDrawable(
                         android.content.res.ColorStateList.valueOf(a.colorOf(R.color.ripple)), bg, a.rounded(Color.WHITE, 12))
                 }
@@ -202,12 +218,9 @@ class NavDrawer(private val activity: Activity) {
                 minWidth = a.dp(28)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             })
-            r.addWeighted(a.label(text, 16f), startMargin = a.dp(16))
+            r.addWeighted(a.label(text, 16f, bold = here, color = if (here) a.colorOf(R.color.on_primary_container) else null),
+                startMargin = a.dp(16))
             list.add(r, a.dp(2))
-        }
-        fun go(intent: Intent) {
-            close()
-            a.startActivity(intent)
         }
         fun divider() {
             list.addView(View(a).apply { setBackgroundColor(a.colorOf(R.color.outline)) },
@@ -218,12 +231,15 @@ class NavDrawer(private val activity: Activity) {
         }
 
         (top.layoutParams as LinearLayout.LayoutParams).bottomMargin = a.dp(12)
-        item("⌂", "Home", "home") { close() }
-        item("⇄", "Connections", "connections") { go(ConnectionsActivity.intent(a)) }
-        item("⤓", "Backup", "backup") { go(BackupActivity.intent(a)) }
+        item("⌂", "Home", "home", MainActivity::class.java) {
+            // Back to the start page under this one (or a new one), closing what's over it.
+            Intent(a, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        item("⇄", "Connections", "connections", ConnectionsActivity::class.java) { ConnectionsActivity.intent(a) }
+        item("⤓", "Backup", "backup", BackupActivity::class.java) { BackupActivity.intent(a) }
         divider()
-        item("⚙", "Settings", "settings") { go(Intent(a, SettingsActivity::class.java)) }
-        item("ⓘ", "About · Donate", "about") { go(AboutActivity.intent(a)) }
+        item("⚙", "Settings", "settings", SettingsActivity::class.java) { Intent(a, SettingsActivity::class.java) }
+        item("ⓘ", "About · Donate", "about", AboutActivity::class.java) { AboutActivity.intent(a) }
 
         val listScroll = ScrollView(a).apply { addView(list) }
         panel.addView(listScroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
@@ -243,5 +259,8 @@ class NavDrawer(private val activity: Activity) {
 
     companion object {
         private const val DURATION = 200L
+        /** The pages the menu opens. */
+        private val TOP = setOf<Class<*>>(MainActivity::class.java, ConnectionsActivity::class.java,
+            BackupActivity::class.java, SettingsActivity::class.java, AboutActivity::class.java)
     }
 }

@@ -10,6 +10,8 @@ import android.widget.Toast
 
 /** Registers a QR code / barcode: scans once and returns its text as [EXTRA_CODE]. */
 class ScanActivity : BaseActivity() {
+    override val hasMenu get() = false // the alarm screen / the scanner: no menu
+
     private lateinit var scanner: ScannerView
     private lateinit var status: TextView
 

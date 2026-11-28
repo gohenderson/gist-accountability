@@ -13,6 +13,7 @@ import androidx.test.espresso.action.Press
 import androidx.test.espresso.action.Tap
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -54,8 +55,8 @@ class NavDrawerTest {
     }
 
     private fun closed() = TestEnv.eventually {
-        onView(tagged("drawer")).check(matches(not(isDisplayed())))
-        onView(tagged("drawer-scrim")).check(matches(not(isDisplayed())))
+        onView(tagged("drawer")).check(doesNotExist())
+        onView(tagged("drawer-scrim")).check(doesNotExist())
     }
 
     /** A tap on the dimmed page, right of the menu. */
@@ -65,7 +66,7 @@ class NavDrawerTest {
     @Test
     fun theMenuOpensAndClosesWithTheXTheDimmedPageAndBack() {
         main().use { scenario ->
-            onView(tagged("drawer")).check(matches(not(isDisplayed())))
+            onView(tagged("drawer")).check(doesNotExist())
             openMenu()
             onView(tagged("drawer-scrim")).check(matches(isDisplayed()))
             onView(tagged("drawer-profile-name")).check(matches(withText("Personal")))
@@ -115,6 +116,55 @@ class NavDrawerTest {
             onView(tagged("import-backup")).check(matches(isDisplayed()))
             onView(tagged("export-csv")).perform(scrollTo()).check(matches(isDisplayed()))
         }
+    }
+
+    @Test
+    fun everyPageHasTheMenu() {
+        fun has(i: android.content.Intent) {
+            ActivityScenario.launch<android.app.Activity>(i).use {
+                onView(tagged("menu")).check(matches(isDisplayed()))
+                openMenu()
+                onView(tagged("drawer-close")).perform(click())
+                closed()
+            }
+        }
+        has(android.content.Intent(ctx, SettingsActivity::class.java))
+        has(ConnectionsActivity.intent(ctx))
+        has(BackupActivity.intent(ctx))
+        has(AboutActivity.intent(ctx))
+        has(HistoryActivity.intent(ctx, "c"))
+        has(CheckinEditActivity.intent(ctx, "c"))
+        has(LibraryActivity.intent(ctx))
+        has(DoneTasksActivity.intent(ctx))
+    }
+
+    @Test
+    fun fromOneMenuPageToAnotherBackGoesToTheStartPage() {
+        main().use { scenario ->
+            openMenu()
+            onView(tagged("nav:settings")).perform(click())
+            TestEnv.eventually { onView(withText("Dark")).check(matches(isDisplayed())) }
+            // The page you're on is highlighted; tapping it just closes the menu.
+            openMenu()
+            onView(tagged("nav:settings")).check(matches(androidx.test.espresso.matcher.ViewMatchers.isSelected()))
+            onView(tagged("nav:settings")).perform(click())
+            closed()
+            onView(withText("Dark")).check(matches(isDisplayed()))
+            // Settings → Connections, then Back: the start page.
+            openMenu()
+            onView(tagged("nav:connections")).perform(click())
+            TestEnv.eventually { onView(tagged("menu")).check(matches(isDisplayed())) }
+            TestEnv.eventually { onView(withText("Share check-ins and tasks with another copy of Gist")).check(matches(isDisplayed())) }
+            pressBack()
+            TestEnv.eventually { onView(tagged("tab:checkins")).check(matches(isDisplayed())) }
+            // Home from a page over the start page goes back to it.
+            onView(tagged("checkin-title:c")).check(matches(isDisplayed()))
+        }
+    }
+
+    @Test
+    fun networkIsAllowedHere() {
+        assertTrue("sockets work on the emulator", SyncthingEngine.shared(ctx).networkAllowed())
     }
 
     @Test
