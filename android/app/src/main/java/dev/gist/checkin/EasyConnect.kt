@@ -1,6 +1,8 @@
 package dev.gist.checkin
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
@@ -128,10 +130,18 @@ object EasyConnect {
 
     // ---------------------------------------------------------------- Gist side
 
-    /** Whether Syncthing can reach your folders by their path (Android's All files access). */
-    fun canReachFiles(): Boolean = Environment.isExternalStorageManager()
+    /**
+     * Whether Syncthing can reach your folders by their path: Android's All files access, or on
+     * Android 10 (which doesn't have it) the storage permission, with legacy storage.
+     */
+    fun canReachFiles(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+        else context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
-    /** Android's page for allowing Gist All files access. */
+    /** The storage permissions Android 10 asks for in place of All files access. */
+    val LEGACY_STORAGE = arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+
+    /** Android's page for allowing Gist All files access (Android 11+). */
     fun filesAccessIntent(context: Context): Intent =
         Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${context.packageName}"))
 
