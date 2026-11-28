@@ -453,12 +453,13 @@ they see what you share, but only you can change it, and the other way round.
     Work - k3f9/
   ```
 
-  You don't pick it. Android needs you to **allow access to the Gist folder** once on each
-  device (☰ → Connections → **Allow access to the Gist folder…**, or when you first
-  invite or join). If it isn't there yet, make it in the picker that opens: a new folder
-  at the top of your storage named **Gist**, then **Use this folder** and **Allow**. Any
-  other folder is refused. After that Gist makes everything inside it, for
-  every profile, with nothing more to do. A profile's folder is named when it's first
+  You don't pick it. Gist reaches it by its path, as Easy Connect and the apps you share
+  folders with do, which Android calls **All files access**: allow it once on each device
+  (☰ → Connections → **Allow access to the Gist folder…**, or when you first invite, join
+  or use Easy Connect; on Android 10, the storage permission instead). Gist uses an existing
+  Gist folder (any case) or makes one, and everything inside it, for every profile, with
+  nothing more to do. Gist only uses its Gist folder; on **GrapheneOS**, **Storage Scopes**
+  can hold it to just that (add the Gist folder there). A profile's folder is named when it's first
   needed and keeps its name if you rename the profile (the app you share folders with
   points there). Don't share a profile's folder itself; share each folder in it.
 - **☰ → Connections.** Add **your name** (what they see). One side taps **Invite…**
@@ -556,9 +557,8 @@ code, the other scans it.
   that's set up (it sets up My devices first if needed), then **Scan a code** on the new one.
 - **With someone else:** ☰ → Connections → Easy Connect → **Show a code** (say who it's
   for) on one phone and **Scan a code** on the other.
-- **Asked once:** access to the Gist folder, and **All files access**, which Syncthing needs
-  to reach the folders in it by their path (on Android 10, which doesn't have All files
-  access, the storage permission instead). Gist uses it only for its folders in Gist.
+- **Asked once:** access to the Gist folder (All files access, above), if it isn't allowed
+  yet. Syncthing reaches the folders in it by their path too.
 - **Network access:** some phones can turn the network off for one app (GrapheneOS's
   **Network** permission, a firewall app). Easy Connect needs it on for Gist; if it's off,
   Gist says so and opens Gist's App info, where you allow it.

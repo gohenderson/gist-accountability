@@ -62,8 +62,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Syncthing reaches the folders in the Gist folder by their path. Asked when you turn
-         Easy Connect on. -->
+    <!-- Gist and Syncthing (Easy Connect) reach the Gist folder, /storage/emulated/0/Gist, by its
+         path: All files access, asked for on the Connections page. (On GrapheneOS, Storage
+         Scopes can narrow it to the Gist folder.) -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />

@@ -86,22 +86,74 @@ class GistFolderTest {
     }
 
     @Test
-    fun onlyAGistFolderAtTheTopOfStorageIsAccepted() {
+    fun foldersReachedWithTheOldFolderPickerAreReachedByPath() {
         fun tree(id: String, authority: String = "com.android.externalstorage.documents") =
-            android.provider.DocumentsContract.buildTreeDocumentUri(authority, id)
-        for (gist in listOf("primary:Gist", "primary:gist", "primary:GIST")) assertTrue(gist, GistRoot.isIt(tree(gist)))
-        for (other in listOf("primary:Documents/Gist", "primary:Gist/Personal", "primary:Gists", "primary:PublicAppData",
-                "primary:", "1234-5678:Gist")) {
-            assertFalse(other, GistRoot.isIt(tree(other)))
-        }
-        assertFalse(GistRoot.isIt(tree("primary:Gist", "com.example.docs")))
-        assertFalse("another folder isn't kept", GistRoot.allow(ctx, tree("primary:Documents")))
-        assertNull(GistRoot.tree(ctx))
+            android.provider.DocumentsContract.buildTreeDocumentUri(authority, id).toString()
         // Its path keeps the folder's own case.
-        assertEquals("/storage/emulated/0/gist/Work - k3f9/People/Jess",
-            GistRoot.pathOf(tree("primary:gist").toString() + "#Work - k3f9/People/Jess"))
+        assertEquals("/storage/emulated/0/gist/Work - k3f9/People/Jess", GistRoot.pathOfTree(tree("primary:gist") + "#Work - k3f9/People/Jess"))
+        assertEquals("/storage/emulated/0/Gist", GistRoot.pathOfTree(tree("primary:Gist")))
         assertEquals("/storage/emulated/0/Gist/Work - k3f9/My devices",
-            gist.pathOf(GistFolder.at(GistFolder.at(tree("primary:Gist").toString(), "Work - k3f9"), "My devices")))
+            gist.pathOf(GistFolder.at(GistFolder.at(tree("primary:Gist"), "Work - k3f9"), "My devices")))
+        for (other in listOf("primary:Documents/Gist", "primary:Gists", "1234-5678:Gist")) assertNull(other, GistRoot.pathOfTree(tree(other)))
+        assertNull(GistRoot.pathOfTree(tree("primary:Gist", "com.example.docs")))
+        assertNull(GistRoot.pathOfTree("/storage/emulated/0/Gist"))
+        // And opened by path.
+        assertTrue(LinkFolder.open(ctx, tree("primary:Gist") + "#Work - k3f9/My devices") is FileFolder)
+        assertTrue(LinkFolder.open(ctx, "${dir.path}/My devices") is FileFolder)
+    }
+
+    private fun allFilesAccess(on: Boolean) =
+        TestEnv.shell("appops set ${ctx.packageName} MANAGE_EXTERNAL_STORAGE ${if (on) "allow" else "default"}")
+
+    @Test
+    fun withAllFilesAccessGistFindsOrMakesTheGistFolder() {
+        val storage = File(ctx.cacheDir, "storage-${System.nanoTime()}").apply { mkdirs() }
+        val real = GistRoot.storage
+        GistRoot.storage = storage
+        try {
+            allFilesAccess(false)
+            assertFalse(GistRoot.canReach(ctx))
+            assertNull("no access: nothing", GistRoot.dir(ctx))
+            allFilesAccess(true)
+            assertTrue(GistRoot.canReach(ctx))
+            // One there already, in any case, is used.
+            File(storage, "gIsT").mkdirs()
+            assertEquals(File(storage, "gIsT"), GistRoot.dir(ctx))
+            File(storage, "gIsT").delete()
+            // Otherwise Gist makes it.
+            assertEquals(File(storage, "Gist"), GistRoot.dir(ctx))
+            assertTrue(File(storage, "Gist").isDirectory)
+            assertNull(GistRoot.problem(ctx))
+            gist.root = null
+            assertEquals("${storage.path}/Gist/${gist.folderName()}", gist.root)
+            // Where it can't be made, Gist says so.
+            File(storage, "Gist").delete()
+            storage.setWritable(false)
+            assertNull(GistRoot.dir(ctx))
+            assertTrue(GistRoot.problem(ctx)!!.contains("couldn't make"))
+            storage.setWritable(true)
+        } finally {
+            GistRoot.storage = real
+            allFilesAccess(false)
+            storage.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun withAllFilesAccessTheRealGistFolderIsReached() {
+        val existed = File(GistRoot.PATH).exists()
+        try {
+            allFilesAccess(true)
+            val d = GistRoot.dir(ctx)!!
+            assertTrue(d.path, d.path.equals(GistRoot.PATH, ignoreCase = true))
+            val f = FileFolder(File(d, "test-${System.nanoTime()}"))
+            f.write("from-a/hello.json", "hi".toByteArray())
+            assertEquals("hi", String(f.read("from-a/hello.json")!!))
+        } finally {
+            if (!existed) File(GistRoot.PATH).deleteRecursively()
+            else File(GistRoot.PATH).listFiles()?.filter { it.name.startsWith("test-") }?.forEach { it.deleteRecursively() }
+            allFilesAccess(false)
+        }
     }
 
     @Test
