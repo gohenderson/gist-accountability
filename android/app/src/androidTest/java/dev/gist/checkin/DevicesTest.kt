@@ -212,7 +212,7 @@ class DevicesTest {
     fun theConnectionsPageSetsRingingForThisDevice() {
         TestEnv.reset(listOf(TestEnv.checkin("c", "Daily")))
         ActivityScenario.launch<ConnectionsActivity>(ConnectionsActivity.intent(TestEnv.ctx)).use {
-            onView(tagged("devices-setup")).check(matches(isDisplayed()))
+            onView(tagged("new-connection")).check(matches(isDisplayed()))
             onView(tagged("ring-here")).perform(scrollTo(), click())
             onView(withText(org.hamcrest.Matchers.startsWith("Check-ins don't ring here"))).perform(scrollTo())
                 .check(matches(isDisplayed()))

@@ -104,6 +104,11 @@ class Devices(
         return LinkInvite('d', LinkInvites.fingerprint(pub), unb64.decode(token)) to expires
     }
 
+    /** Withdraws the invite shown now: nobody can join with it any more. */
+    fun cancelInvitation() {
+        prefs.edit().remove(K_INV_TOKEN).remove(K_INV_EXPIRES).commit()
+    }
+
     /** Why a join didn't work. */
     enum class JoinProblem { NOT_DEVICES, NOT_THEIR_INVITE }
 

@@ -28,7 +28,7 @@ class SyncthingService : Service() {
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Easy Connect", NotificationManager.IMPORTANCE_LOW).apply {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Automatic connections", NotificationManager.IMPORTANCE_LOW).apply {
             description = "While Gist keeps your devices in step"
         })
     }
@@ -85,7 +85,7 @@ class SyncthingService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Gist: Easy Connect")
+            .setContentTitle("Gist: automatic connections")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)

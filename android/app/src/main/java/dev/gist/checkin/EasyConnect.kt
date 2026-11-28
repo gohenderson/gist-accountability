@@ -34,6 +34,8 @@ object EasyConnect {
     private const val PREFS = "gist-easy"
     /** Codes shown and still open: [{"tag", "folder", "until"}]. */
     private const val K_OFFERS = "offers"
+    /** Folder ids Easy Connect set up (a set). */
+    private const val K_AUTO = "auto"
     private const val K_ON = "easyConnect"
 
     /**
@@ -132,6 +134,29 @@ object EasyConnect {
         if (on) SyncthingService.start(context) else SyncthingService.stop(context)
     }
 
+    /**
+     * The Syncthing folders Easy Connect set up (My devices' and connections'), so the
+     * Connections page can say a connection is automatic. In [context]'s profile.
+     */
+    fun isAuto(context: Context, folderId: String): Boolean =
+        Profiles.prefs(context, PREFS).getStringSet(K_AUTO, emptySet())!!.contains(folderId)
+
+    private fun markAuto(context: Context, folderId: String, on: Boolean) {
+        val prefs = Profiles.prefs(context, PREFS)
+        val set = prefs.getStringSet(K_AUTO, emptySet())!!.toMutableSet()
+        if (if (on) set.add(folderId) else set.remove(folderId)) prefs.edit().putStringSet(K_AUTO, set).commit()
+    }
+
+    /**
+     * Withdraws the code shown for [folderId] at once: nobody can join with it any more. For a
+     * person, the connection waiting for them goes too.
+     */
+    fun cancelOffer(context: Context, folderId: String) {
+        val prefs = Profiles.prefs(context, PREFS)
+        val open = openOffers(context).filter { it.optString("folder") != folderId }
+        prefs.edit().putString(K_OFFERS, JSONArray(open).toString()).commit()
+    }
+
     /** The label Syncthing shows for My devices of [context]'s profile. */
     private fun label(context: Context) = "Gist · My devices (${Profiles.name(context, Profiles.of(context))})"
 
@@ -167,6 +192,7 @@ object EasyConnect {
         val folder = folderId(group)
         offerFolder(engine, folder, label(context), path)
         addOffer(context, tag(invite.token), folder, until)
+        markAuto(context, folder, true)
         setOn(context, true)
         return Code(invite, engine.deviceId(), folder) to until
     }
@@ -187,6 +213,7 @@ object EasyConnect {
         val folder = linkFolderId(link.id)
         offerFolder(engine, folder, "Gist · ${loc.substringAfterLast('/')}", gf.pathOf(loc))
         addOffer(context, tag(invite.token), folder, until)
+        markAuto(context, folder, true)
         setOn(context, true)
         return Code(invite, engine.deviceId(), folder, links.myName.trim().ifEmpty { null }) to until
     }
@@ -200,6 +227,7 @@ object EasyConnect {
         val engine = SyncthingEngine.shared(context)
         engine.start()
         joinFolder(engine, code.deviceId, code.folderId, label, path, tag(code.invite.token))
+        markAuto(context, code.folderId, true)
         setOn(context, true)
     }
 
@@ -261,6 +289,7 @@ object EasyConnect {
      * devices), and forgets devices it no longer shares anything with. Its files stay.
      */
     fun unshare(context: Context, folderId: String) {
+        markAuto(context, folderId, false)
         val engine = SyncthingEngine.shared(context)
         if (!engine.available || !isOn(context)) return
         runCatching {
@@ -280,8 +309,8 @@ object EasyConnect {
         if (!engine.running) return null
         return runCatching {
             val n = engine.connected().size
-            if (n == 0) "Easy Connect is on: not connected to another device right now"
-            else "Easy Connect is on: connected to $n other device${if (n == 1) "" else "s"}"
+            if (n == 0) "Automatic connections are on: not connected to another device right now"
+            else "Automatic connections are on: connected to $n other device${if (n == 1) "" else "s"}"
         }.getOrNull()
     }
 }

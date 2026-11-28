@@ -154,7 +154,7 @@ class NavDrawerTest {
             openMenu()
             onView(tagged("nav:connections")).perform(click())
             TestEnv.eventually { onView(tagged("menu")).check(matches(isDisplayed())) }
-            TestEnv.eventually { onView(withText("Share check-ins and tasks with another copy of Gist")).check(matches(isDisplayed())) }
+            TestEnv.eventually { onView(tagged("new-connection")).check(matches(isDisplayed())) }
             pressBack()
             TestEnv.eventually { onView(tagged("tab:checkins")).check(matches(isDisplayed())) }
             // Home from a page over the start page goes back to it.
