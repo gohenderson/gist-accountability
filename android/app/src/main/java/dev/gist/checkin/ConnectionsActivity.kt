@@ -103,6 +103,192 @@ class ConnectionsActivity : BaseActivity() {
         render()
     }
 
+    private fun render() {
+        val col = column()
+        col.add(header("Connections"))
+        col.add(primaryButton("+ New connection") { newConnection() }.apply { tag = "new-connection" }, dp(16))
+        accessCard()?.let { col.add(it, dp(12)) }
+        val cards = connectionCards()
+        if (cards.isEmpty()) col.add(muted("No connections yet.", 15f).apply { tag = "no-connections" }, dp(16))
+        cards.forEach { col.add(it, dp(10)) }
+        col.add(thisDeviceCard(), dp(20))
+        if (links.all.isNotEmpty() || Devices(this).folder != null) {
+            col.add(textButton("Check for changes now") {
+                Connections.syncInBackground(this) { render() }
+                Devices.syncInBackground(this) { render() }
+                toast("Checking…")
+            }.apply { tag = "sync-now" }, dp(8))
+        }
+        setContentView(screen(col))
+    }
+
+    /** Only when Gist can't reach the Gist folder: why, and the button to allow it. */
+    private fun accessCard(): android.widget.LinearLayout? {
+        if (GistFolder(this).root != null) return null
+        return card(colorOf(R.color.warn_container)).apply {
+            val problem = GistRoot.problem(this@ConnectionsActivity)
+            add(label(problem ?: "Gist needs access to the ${GistRoot.NAME} folder to connect.", 15f).apply { tag = "gist-folder-problem" })
+            add(primaryButton(if (problem != null) "Try again" else "Allow access to the ${GistRoot.NAME} folder…") {
+                if (problem != null) render() else requestAccess()
+            }.apply { tag = "gist-folder-allow" }, dp(10))
+        }
+    }
+
+    /** "Automatic" (Easy Connect set it up) or "Manual" (a folder you share yourself). */
+    private fun how(folderId: String) = if (EasyConnect.isAuto(this, folderId)) "Automatic" else "Manual"
+
+    /** Every connection, devices and people alike, as a list of cards (like tasks on the start page). */
+    private fun connectionCards(): List<android.widget.LinearLayout> {
+        val out = mutableListOf<android.widget.LinearLayout>()
+        val gf = GistFolder(this)
+        gf.waiting?.let { w ->
+            val kind = if (w.startsWith("d:")) "Your device" else "Person"
+            out += connectionCard(if (w.startsWith("d:")) "📱" else "👤", "Connecting…", "$kind · waiting for its folder to arrive",
+                "join-waiting") { waitingDetails() }
+        }
+        val devices = Devices(this)
+        val auto = devices.group?.let { how(EasyConnect.folderId(it)) } ?: "Manual"
+        if (devices.folder != null && !devices.ready) {
+            out += connectionCard("📱", "Your devices", "Waiting to be let in: open Gist on the device whose code you used",
+                "devices-waiting") { }
+        }
+        devices.others().forEach { (side, name, code) ->
+            out += connectionCard("📱", name, "Your device · $auto", "device:$side",
+                extra = code?.let { "Code $it" }) { deviceDetails(devices, side, name, code, auto) }
+        }
+        for (l in links.all) {
+            val type = "Person · ${how(EasyConnect.linkFolderId(l.id))}"
+            out += when {
+                l.connected -> {
+                    val mine = Store(this).checkins.count { l.id in it.sharedWith }
+                    val theirs = links.shared(l).size
+                    connectionCard("👤", l.peerName.ifEmpty { "Someone" }, type, "link:${l.id}",
+                        extra = "You share ${plural(mine, "item")} · they share ${plural(theirs, "item")}") { linkDetails(l) }
+                }
+                l.isHere -> connectionCard("👤", "Waiting for ${personOf(l) ?: "them"} to join", "$type · code open",
+                    "link:${l.id}") { pendingDetails(l) }
+                else -> connectionCard("👤", "Waiting for someone to join", "$type · code on ${l.homeName.ifEmpty { "your other device" }}",
+                    "link:${l.id}") { linkDetails(l) }
+            }
+        }
+        return out
+    }
+
+    /** People/<name>: who a connection's folder is for. */
+    private fun personOf(l: Link): String? =
+        l.folder.substringAfter('#', l.folder).substringAfter("${GistFolder.PEOPLE}/", "").ifEmpty { null }
+
+    /** A connection in the list: [icon], [title] (who), [type] (what kind, how), maybe [extra]. Tap for more. */
+    private fun connectionCard(
+        icon: String, title: String, type: String, key: String, extra: String? = null, onClick: () -> Unit,
+    ) = card().apply {
+        tag = key
+        isClickable = true
+        setOnClickListener { onClick() }
+        val r = row().apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        r.addWrapped(label(icon, 22f).apply {
+            gravity = android.view.Gravity.CENTER
+            minWidth = dp(40)
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        })
+        r.addWeighted(column().apply {
+            add(label(title, 18f, bold = true).apply {
+                tag = "$key:name"
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            add(muted(type, 14f).apply { tag = "$key:type" }, dp(2))
+            extra?.let { add(muted(it, 13f).apply { tag = "$key:extra" }, dp(2)) }
+        }, startMargin = dp(12))
+        r.addWrapped(label("›", 22f, color = colorMuted))
+        add(r)
+    }
+
+    /** This device: your name, its name, whether it rings, and how it syncs. */
+    private fun thisDeviceCard() = card().apply {
+        val devices = Devices(this@ConnectionsActivity)
+        val store = Store(this@ConnectionsActivity)
+        add(sectionTitle("This device"))
+        add(EditText(context).apply {
+            setText(links.myName)
+            hint = "Your name (people you connect with see it)"
+            tag = "my-name"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            isSingleLine = true
+            setOnFocusChangeListener { _, has -> if (!has) links.myName = text.toString() }
+        }, dp(4))
+        add(EditText(context).apply {
+            setText(devices.name)
+            hint = "This device's name"
+            tag = "device-name"
+            isSingleLine = true
+            setOnFocusChangeListener { _, has -> if (!has) devices.name = text.toString() }
+        }, dp(4))
+        add(styledSwitch("Ring on this device").apply {
+            isChecked = store.ringHere
+            tag = "ring-here"
+            setOnCheckedChangeListener { _, on ->
+                store.ringHere = on
+                render()
+            }
+        }, dp(10))
+        if (!store.ringHere) {
+            add(muted("Check-ins don't ring here: they remind quietly and wait on the start page, where you can still check in or dismiss them.", 13f), dp(2))
+        }
+        GistFolder(this@ConnectionsActivity).root?.let { root ->
+            add(muted("Folder: ${root.removePrefix(GistRoot.storage.path + "/")}", 13f).apply { tag = "gist-folder" }, dp(10))
+        }
+        if (EasyConnect.isOn(this@ConnectionsActivity)) {
+            add(muted(easyStatus ?: "Automatic connections are on.", 13f).apply { tag = "easy-status" }, dp(6))
+            add(textButton("Turn off automatic connections") {
+                EasyConnect.setOn(this@ConnectionsActivity, false)
+                easyStatus = null
+                render()
+            }.apply { tag = "easy-off" }, dp(2))
+        }
+        if (devices.folder != null) {
+            add(textButton("Stop syncing with your devices", colorOf(R.color.bad)) {
+                AlertDialog.Builder(this@ConnectionsActivity)
+                    .setTitle("Stop syncing here?")
+                    .setMessage("Everything stays on this device; it stops keeping in step with your others, and they " +
+                        "stop listing it.")
+                    .setPositiveButton("Stop") { _, _ ->
+                        devices.group?.let { g -> Thread { EasyConnect.unshare(this@ConnectionsActivity, EasyConnect.folderId(g)) }.start() }
+                        devices.leave()
+                        render()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }.apply { tag = "devices-leave" }, dp(4))
+        }
+    }
+
+    /** A join waiting for its folder: look again, or give up. */
+    private fun waitingDetails() {
+        AlertDialog.Builder(this)
+            .setTitle("Connecting…")
+            .setMessage("Waiting for the connection's folder to arrive in your ${GistRoot.NAME} folder. Gist joins as soon " +
+                "as it's there.")
+            .setPositiveButton("Look again") { _, _ -> tryWaiting(quiet = false) }
+            .setNegativeButton("Cancel it") { _, _ -> GistFolder(this).waiting = null; render() }
+            .setNeutralButton("Close", null)
+            .show()
+    }
+
+    /** One of your other devices: its code to compare, and Remove. */
+    private fun deviceDetails(devices: Devices, side: String, name: String, code: String?, how: String) {
+        val b = AlertDialog.Builder(this)
+            .setTitle(name)
+            .setView(dialogBody {
+                add(label("Your device · $how", 15f).apply { tag = "device-type" })
+                code?.let { add(muted("Code $it: the same on both devices when nobody swapped a key.", 14f), dp(6)) }
+                add(muted("Its files: from-$side in My devices.", 13f).apply { tag = "device-folder:$side" }, dp(4))
+            })
+            .setPositiveButton("Close", null)
+        if (devices.ready) b.setNegativeButton("Remove") { _, _ -> confirmRemoveDevice(devices, side, name) }
+        b.show()
+    }
+
     /** Joins with the invite waiting for its folder, if the folder's there now. */
     private fun tryWaiting(quiet: Boolean) {
         val gf = GistFolder(this)
