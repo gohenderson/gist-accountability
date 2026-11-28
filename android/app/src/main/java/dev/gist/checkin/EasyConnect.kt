@@ -17,9 +17,13 @@ import javax.crypto.spec.SecretKeySpec
  *   its Syncthing; for a person, it makes their folder (People/<name>) and a connection invite,
  *   as Invite does, and shares that. The QR code holds the invite, this device's Syncthing ID,
  *   the folder's Syncthing id, and for a person, your name ([Code]).
- * - **Scan it** (the other device): Gist names its Syncthing after the invite ([tag]), adds the
- *   first device and the folder (for a person: People/<their name>), and waits for the folder
- *   to arrive, then joins with the invite as usual (GistFolder.waiting, [finishJoins]).
+ * - **Scan it** (the other device): Gist names its Syncthing after the invite ([tag]) and adds
+ *   the first device with a small setup folder only ([reach]). The first device lets it in
+ *   and puts what it's connecting to there ([Handshake.OFFER]: its name, device and a few of
+ *   its check-ins). Once the scanning side has seen it and said yes ([answer]), the first
+ *   device shares the real folder (for a person: People/<their name>), and the scanning side
+ *   joins with the invite once it arrives (GistFolder.waiting, [finishJoins]). Said no, the
+ *   first device withdraws the code at once, and both drop the setup folder.
  * - The first device accepts a device asking to connect only while its invite is open, and
  *   only one going by that invite's tag (which only the code reveals), and shares only that
  *   folder with it: a person never gets My devices. Gist's own join proof
@@ -32,10 +36,12 @@ import javax.crypto.spec.SecretKeySpec
  */
 object EasyConnect {
     private const val PREFS = "gist-easy"
-    /** Codes shown and still open: [{"tag", "folder", "until"}]. */
+    /** Codes shown and still open: [{"tag", "folder", "until", "setup", "kind", "link"}]. */
     private const val K_OFFERS = "offers"
     /** Folder ids Easy Connect set up (a set). */
     private const val K_AUTO = "auto"
+    /** How codes shown ended, for the page that showed them: [{"folder", "answer", "at"}]. */
+    private const val K_RESULTS = "results"
     private const val K_ON = "easyConnect"
 
     /**
@@ -152,21 +158,91 @@ object EasyConnect {
      * person, the connection waiting for them goes too.
      */
     fun cancelOffer(context: Context, folderId: String) {
-        val prefs = Profiles.prefs(context, PREFS)
-        val open = openOffers(context).filter { it.optString("folder") != folderId }
-        prefs.edit().putString(K_OFFERS, JSONArray(open).toString()).commit()
+        val setup = openOffers(context).firstOrNull { it.optString("folder") == folderId }?.optString("setup").orEmpty()
+        dropOffer(context, folderId)
+        if (setup.isNotEmpty()) Thread {
+            val engine = SyncthingEngine.shared(context)
+            if (engine.running) {
+                val theirs = runCatching { engine.folderDevices()[setup] }.getOrNull().orEmpty()
+                dropSetup(context, engine, setup)
+                theirs.forEach { dropDeviceIfUnused(engine, it) }
+            } else setupDir(context, setup).deleteRecursively()
+        }.start()
     }
 
     /** The label Syncthing shows for My devices of [context]'s profile. */
     private fun label(context: Context) = "Gist · My devices (${Profiles.name(context, Profiles.of(context))})"
 
-    /** A code [tag] for [folder] stays open until [until] (several can be: your devices, people). */
-    private fun addOffer(context: Context, tag: String, folder: String, until: Long) {
+    /**
+     * A code [tag] for [folder] stays open until [until] (several can be: your devices, people),
+     * talking through setup folder [setup]. [kind] 'd' your devices, 'c' connection [link].
+     */
+    internal fun addOffer(context: Context, tag: String, folder: String, until: Long, setup: String, kind: Char, link: String? = null) {
         val prefs = Profiles.prefs(context, PREFS)
         val now = System.currentTimeMillis()
         val list = openOffers(context, now).filter { it.optString("folder") != folder } +
-            JSONObject().put("tag", tag).put("folder", folder).put("until", until)
+            JSONObject().put("tag", tag).put("folder", folder).put("until", until).put("setup", setup)
+                .put("kind", kind.toString()).put("link", link ?: "")
         prefs.edit().putString(K_OFFERS, JSONArray(list).toString()).commit()
+    }
+
+    private fun dropOffer(context: Context, folder: String) {
+        val prefs = Profiles.prefs(context, PREFS)
+        val open = openOffers(context).filter { it.optString("folder") != folder }
+        prefs.edit().putString(K_OFFERS, JSONArray(open).toString()).commit()
+    }
+
+    /** The setup folder's Syncthing id for the code going by [tag]. */
+    fun setupId(tag: String) = "gist-hs-" + tag.removePrefix("gist-ec-")
+
+    /** Where a setup folder is: Gist's own files (nothing else needs to reach it). */
+    fun setupDir(context: Context, id: String) = File(context.applicationContext.filesDir, "handshake/$id")
+
+    /** Makes setup folder [id] with [preview] in it, in [engine], shared with nobody yet. */
+    private fun makeSetup(context: Context, engine: SyncthingEngine, id: String, preview: ConnectPreview) =
+        makeSetup(engine, setupDir(context, id), id, preview)
+
+    /** Makes setup folder [id] at [dir] with [preview] in it, in [engine], shared with nobody yet. */
+    internal fun makeSetup(engine: SyncthingEngine, dir: File, id: String, preview: ConnectPreview) {
+        dir.deleteRecursively()
+        dir.mkdirs()
+        File(dir, Handshake.OFFER).writeText(preview.encode())
+        engine.shareFolder(id, "Gist · setting up", dir.path)
+    }
+
+    /** Drops setup folder [id] from [engine], and its files ([dir]). */
+    private fun dropSetup(context: Context, engine: SyncthingEngine, id: String) = dropSetup(engine, id, setupDir(context, id))
+
+    private fun dropSetup(engine: SyncthingEngine, id: String, dir: File) {
+        runCatching { engine.removeFolder(id) }
+        dir.deleteRecursively()
+    }
+
+    /** Forgets device [id] in [engine] if it shares no folder now. */
+    private fun dropDeviceIfUnused(engine: SyncthingEngine, id: String) = runCatching {
+        if (engine.folderDevices().values.none { id in it }) engine.removeDevice(id)
+    }
+
+    private fun addResult(context: Context, folder: String, answer: String) {
+        val prefs = Profiles.prefs(context, PREFS)
+        val now = System.currentTimeMillis()
+        val all = runCatching { JSONArray(prefs.getString(K_RESULTS, "[]")) }.getOrDefault(JSONArray())
+        val kept = (0 until all.length()).map { all.getJSONObject(it) }.filter { now - it.optLong("at") < 10 * 60_000L }
+        prefs.edit().putString(K_RESULTS, JSONArray(kept + JSONObject().put("folder", folder).put("answer", answer).put("at", now))
+            .toString()).commit()
+    }
+
+    /**
+     * How the code shown for [folder] ended, once: "yes" (they connected), "no" (they said it
+     * wasn't what they meant: the code is withdrawn), or null (not yet).
+     */
+    fun takeResult(context: Context, folder: String): String? {
+        val prefs = Profiles.prefs(context, PREFS)
+        val all = runCatching { JSONArray(prefs.getString(K_RESULTS, "[]")) }.getOrDefault(JSONArray())
+        val list = (0 until all.length()).map { all.getJSONObject(it) }
+        val hit = list.firstOrNull { it.optString("folder") == folder } ?: return null
+        prefs.edit().putString(K_RESULTS, JSONArray(list - hit).toString()).commit()
+        return hit.optString("answer")
     }
 
     /** The codes shown and still open (the rest are dropped). */
@@ -191,7 +267,9 @@ object EasyConnect {
         engine.start()
         val folder = folderId(group)
         offerFolder(engine, folder, label(context), path)
-        addOffer(context, tag(invite.token), folder, until)
+        val setup = setupId(tag(invite.token))
+        makeSetup(context, engine, setup, ConnectPreview.of(context, 'd'))
+        addOffer(context, tag(invite.token), folder, until, setup, 'd')
         markAuto(context, folder, true)
         setOn(context, true)
         return Code(invite, engine.deviceId(), folder) to until
@@ -212,7 +290,9 @@ object EasyConnect {
         engine.start()
         val folder = linkFolderId(link.id)
         offerFolder(engine, folder, "Gist · ${loc.substringAfterLast('/')}", gf.pathOf(loc))
-        addOffer(context, tag(invite.token), folder, until)
+        val setup = setupId(tag(invite.token))
+        makeSetup(context, engine, setup, ConnectPreview.of(context, 'c'))
+        addOffer(context, tag(invite.token), folder, until, setup, 'c', link.id)
         markAuto(context, folder, true)
         setOn(context, true)
         return Code(invite, engine.deviceId(), folder, links.myName.trim().ifEmpty { null }) to until
@@ -244,6 +324,7 @@ object EasyConnect {
             gf.pathOf(loc) to "Gist · ${loc.substringAfterLast('/')}"
         }
         gf.waiting = "${code.invite.kind}:${code.invite.code}"
+        gf.waitingConfirmed = true // seen and said yes to first ([answer])
         return result
     }
 
@@ -254,6 +335,8 @@ object EasyConnect {
     fun finishJoins(context: Context, open: (String) -> LinkFolder = { LinkFolder.open(context, it) }): Boolean {
         val gf = GistFolder(context, open)
         val waiting = gf.waiting ?: return true
+        // A manual join is confirmed on the Connections page when its folder arrives.
+        if (!gf.waitingConfirmed) return false
         val invite = LinkInvite.parse(waiting.substring(2)) ?: run { gf.waiting = null; return true }
         val joined = runCatching {
             if (invite.kind == 'd') {
@@ -271,13 +354,129 @@ object EasyConnect {
     }
 
     /**
+     * A code shown here: lets in the device that scanned it (going by its tag) to the setup
+     * folder only, then acts on its answer: yes, the real folder is shared with it; no, the code
+     * is withdrawn. Either way the setup folder goes.
+     */
+    internal fun tickOffers(context: Context, engine: SyncthingEngine, dirOf: (String) -> File = { setupDir(context, it) }) {
+        for (o in openOffers(context)) runCatching { tickOffer(context, engine, o, dirOf) }
+    }
+
+    private fun tickOffer(context: Context, engine: SyncthingEngine, o: JSONObject, dirOf: (String) -> File) {
+        val tag = o.getString("tag")
+        val folder = o.getString("folder")
+        val setup = o.optString("setup")
+        if (setup.isEmpty()) {
+            acceptPending(engine, tag, folder)
+            return
+        }
+        acceptPending(engine, tag, setup)
+        val members = engine.folderDevices()[setup].orEmpty().toSet()
+        val dir = dirOf(setup)
+        for (f in dir.listFiles().orEmpty().filter { it.name.startsWith("answer-") && it.name.endsWith(".json") }) {
+            val a = runCatching { JSONObject(f.readText()) }.getOrNull() ?: continue
+            val device = a.optString("device")
+            if (device !in members || f.name != Handshake.answerFile(device)) continue
+            if (a.optString("answer") == "yes") {
+                engine.shareFolder(folder, "", "", listOf(device))
+                addResult(context, folder, "yes")
+            } else {
+                when (o.optString("kind")) {
+                    "d" -> Devices(context).cancelInvitation()
+                    else -> o.optString("link").takeIf { it.isNotEmpty() }?.let { id ->
+                        Connections(context).remove(id)
+                        runCatching { engine.removeFolder(folder) }
+                        markAuto(context, folder, false)
+                    }
+                }
+                addResult(context, folder, "no")
+            }
+            dropOffer(context, folder)
+            dropSetup(engine, setup, dir)
+            if (a.optString("answer") != "yes") dropDeviceIfUnused(engine, device)
+            return
+        }
+    }
+
+    // ---------------------------------------------------------------- the scanning side
+
+    /**
+     * The scanning side, first: connects to the device that showed [code] through its setup
+     * folder only, nothing else. Blocks (starts Syncthing); [preview] is then what it says.
+     */
+    fun reach(context: Context, code: Code) {
+        val engine = SyncthingEngine.shared(context)
+        engine.start()
+        reach(engine, code, setupDir(context, setupId(tag(code.invite.token))))
+    }
+
+    internal fun reach(engine: SyncthingEngine, code: Code, dir: File, addresses: List<String> = listOf("dynamic")) {
+        val tag = tag(code.invite.token)
+        val id = setupId(tag)
+        dir.deleteRecursively()
+        dir.mkdirs()
+        engine.setName(tag)
+        engine.addDevice(code.deviceId, "Gist", addresses)
+        engine.shareFolder(id, "Gist · setting up", dir.path, listOf(code.deviceId))
+    }
+
+    /** What the device that showed [code] says it is, once it has arrived (after [reach]). */
+    fun preview(context: Context, code: Code): ConnectPreview? = previewIn(setupDir(context, setupId(tag(code.invite.token))))
+
+    internal fun previewIn(dir: File): ConnectPreview? =
+        runCatching { File(dir, Handshake.OFFER).readText() }.getOrNull()?.let { ConnectPreview.decode(it.trim()) }
+
+    /**
+     * The scanning side's answer to [code]: yes joins (as [join]); no leaves it. Either way the
+     * device that showed it hears (it withdraws the code on a no), then the setup folder goes.
+     * Blocks; true if the other device got the answer.
+     */
+    fun answer(context: Context, code: Code, yes: Boolean, waitMs: Long = 30_000): Boolean {
+        val engine = SyncthingEngine.shared(context)
+        engine.start()
+        return answer(engine, code, setupDir(context, setupId(tag(code.invite.token))), yes, waitMs) { join(context, code) }
+    }
+
+    internal fun answer(engine: SyncthingEngine, code: Code, dir: File, yes: Boolean, waitMs: Long, onYes: () -> Unit): Boolean {
+        val id = setupId(tag(code.invite.token))
+        val me = engine.deviceId()
+        File(dir, Handshake.answerFile(me))
+            .writeText(JSONObject().put("device", me).put("answer", if (yes) "yes" else "no").toString())
+        runCatching { engine.scan(id) }
+        if (yes) onYes()
+        val until = System.currentTimeMillis() + waitMs
+        var heard = false
+        Thread.sleep(1_500)
+        while (System.currentTimeMillis() < until) {
+            heard = runCatching { code.deviceId in engine.connected() && engine.completion(id, code.deviceId) >= 100.0 }.getOrDefault(false)
+            if (heard) break
+            Thread.sleep(1_000)
+        }
+        dropSetup(engine, id, dir)
+        if (!yes) dropDeviceIfUnused(engine, code.deviceId)
+        return heard
+    }
+
+    /** The scanning side gave up before answering (cancelled, or the other device never came). */
+    fun abandon(context: Context, code: Code) {
+        val engine = SyncthingEngine.shared(context)
+        val id = setupId(tag(code.invite.token))
+        if (!engine.running) {
+            setupDir(context, id).deleteRecursively()
+            return
+        }
+        dropSetup(context, engine, id)
+        dropDeviceIfUnused(engine, code.deviceId)
+    }
+
+    /**
      * What the background service does every few seconds, for each profile: accept the devices
      * open codes were shown to, finish a join waiting for its folder, and keep your devices and
      * connections in step.
      */
     fun tick(context: Context, engine: SyncthingEngine) {
         for (p in Profiles.contexts(context)) {
-            for (o in openOffers(p)) runCatching { acceptPending(engine, o.getString("tag"), o.getString("folder")) }
+            tickOffers(p, engine)
             finishJoins(p)
             runCatching { Devices.syncNow(p) }
             runCatching { Connections.syncNow(p) }

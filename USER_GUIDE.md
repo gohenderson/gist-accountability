@@ -472,11 +472,16 @@ they see what you share, but only you can change it, and the other way round.
   a folder you share yourself, with any app). For a person, Gist asks who it's with and
   makes People/Jess for it. A manual code also has a code to type under the QR code (like
   `AFYW-…`), for a device without a camera.
-- **Check before connecting.** The phone that scans shows who it's connecting to (their
-  name and device), how (automatic or manual), what you'll be able to change and, for
-  your own devices, a few of the check-ins and tasks there. **Not this one** forgets the
-  code at once; nothing is saved. On the phone that showed it, **Cancel the code** stops
-  it working straight away (it also runs out after 15 minutes).
+- **Check before connecting.** Before anything is saved, the phone that scans (or types)
+  the code shows who it's connecting to (their name and device), how (automatic or
+  manual), what you'll be able to change and, for your own devices, a few of the
+  check-ins and tasks there. That comes from the other phone itself: for an automatic
+  connection, through a small setup link between the two (nothing else goes through it),
+  a few seconds after scanning; for a manual one, from the connection's folder once it has
+  arrived, encrypted so only someone with the code can read it. **Not this one** saves
+  nothing and tells the other phone, which withdraws its code: at once for an automatic
+  connection, or when its folder catches up for a manual one. **Cancel the code**, on the
+  phone showing it, withdraws it straight away too (it also runs out after 15 minutes).
 - **The code is the key to the door.** It never goes in the folder, so someone who can
   see the folder but not your screen can't join. It works **once**, for **15 minutes**;
   **Show the code** (on a connection still waiting) shows it again, or a new one if it

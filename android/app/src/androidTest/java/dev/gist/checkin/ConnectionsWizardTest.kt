@@ -119,33 +119,39 @@ class ConnectionsWizardTest {
     }
 
     @Test
-    fun theScanningSideSeesWhatItsConnectingToAndCanSayNo() {
-        assumeTrue("automatic connections in this build", withSyncthing)
-        // What another of your devices shows: an automatic code, with its name and some of its check-ins.
-        val token = LinkInvites.newToken()
-        val code = EasyConnect.Code(LinkInvite('d', LinkInvites.fingerprint("their-key"), token),
-            EasyConnect.Code.deviceId("A".repeat(56))!!, "gist-devices-test")
-        val preview = ConnectPreview(name = "Alex", device = "Alex's tablet", sample = listOf("Morning pills", "Baste the turkey"), count = 7)
-        page().use { scenario ->
-            scenario.onActivity { a ->
-                ConnectionsActivity::class.java.getDeclaredMethod("scanned", String::class.java).apply { isAccessible = true }
-                    .invoke(a, ConnectPreview.withPreview(code.qr, preview))
-            }
-            onView(tagged("confirm-who")).inRoot(isDialog()).check(matches(withText("Alex's tablet")))
-            onView(tagged("confirm-how")).inRoot(isDialog()).check(matches(withText("Automatic connection")))
-            onView(tagged("confirm-control")).inRoot(isDialog()).check(matches(withText(containsString("Everything"))))
-            onView(tagged("confirm-sample")).inRoot(isDialog()).check(matches(withText("• Morning pills\n• Baste the turkey")))
-            onView(withText("Some of its check-ins and tasks (7 in all)")).inRoot(isDialog()).check(matches(isDisplayed()))
+    fun aManualCodeIsConfirmedWhenItsFolderArrivesAndNoWithdrawsIt() {
+        // Alex invited (manually) in a folder that has arrived here as People/Alex.
+        val alex = Connections(ctx) { FileFolder(File(it)) }
+        val theirs = File(dir, "People/Alex").apply { mkdirs() }
+        // (Alex's side of it, made as Alex's phone would: a connection with its invite, and its preview.)
+        val l = alex.invite(theirs.path)
+        val inv = alex.invitation(l)!!.first
+        Handshake.putPreview(FileFolder(theirs), inv.token, ConnectPreview(name = "Alex", device = "Alex's phone"))
+        Profiles.prefs(ctx, "gist-links").edit().clear().commit() // this phone is the other one
+        links.myName = "Sam"
+        page().use {
+            onView(tagged("new-connection")).perform(click())
+            tap("new-person")
+            tap("new-connect")
+            onView(withText("Type the code")).inRoot(isDialog()).perform(click())
+            onView(tagged("invite-field")).inRoot(isDialog()).perform(replaceText(inv.code))
+            onView(withText("Next")).inRoot(isDialog()).perform(click())
+            // Its folder's here: what Alex said, before anything's saved.
+            onView(tagged("confirm-who")).inRoot(isDialog()).check(matches(withText("Alex")))
+            onView(tagged("confirm-device")).inRoot(isDialog()).check(matches(withText("On Alex's phone")))
+            onView(tagged("confirm-how")).inRoot(isDialog()).check(matches(withText("Manual connection")))
+            onView(tagged("confirm-control")).inRoot(isDialog()).check(matches(withText(containsString("Read-only both ways"))))
             onView(withText("Not this one")).inRoot(isDialog()).perform(click())
         }
-        // Nothing saved: no join waiting, no devices, automatic connections not started.
-        assertNull(GistFolder(ctx).waiting)
-        assertNull(Devices(ctx).folder)
-        assertTrue(!EasyConnect.isOn(ctx))
+        assertNull("nothing saved", GistFolder(ctx).waiting)
+        assertTrue(links.all.isEmpty())
+        // The "no" is in the folder, and only the code could have made it: Alex's phone withdraws the code.
+        assertTrue(Handshake.declined(FileFolder(theirs), inv.token))
+        assertTrue(!Handshake.declined(FileFolder(theirs), LinkInvites.newToken()))
     }
 
     @Test
-    fun aTypedPersonCodeIsConfirmedToo() {
+    fun aManualCodeWaitsForItsFolderBeforeAsking() {
         links.myName = "Sam"
         val inv = LinkInvite('c', LinkInvites.fingerprint("their-key"), LinkInvites.newToken())
         page().use {
@@ -155,27 +161,38 @@ class ConnectionsWizardTest {
             onView(withText("Type the code")).inRoot(isDialog()).perform(click())
             onView(tagged("invite-field")).inRoot(isDialog()).perform(replaceText(inv.code))
             onView(withText("Next")).inRoot(isDialog()).perform(click())
-            onView(tagged("confirm-how")).inRoot(isDialog()).check(matches(withText("Manual connection")))
-            onView(tagged("confirm-control")).inRoot(isDialog()).check(matches(withText(containsString("Read-only both ways"))))
-            onView(withText("Not this one")).inRoot(isDialog()).perform(click())
+            TestEnv.eventually { onView(tagged("join-waiting")).check(matches(isDisplayed())) }
         }
-        assertNull("nothing saved", GistFolder(ctx).waiting)
-        assertTrue(links.all.isEmpty())
+        assertEquals("c:${inv.code}", GistFolder(ctx).waiting)
+        assertTrue("not confirmed: never joined in the background", !GistFolder(ctx).waitingConfirmed)
+        assertTrue(EasyConnect.finishJoins(ctx).not())
     }
 
     @Test
-    fun thePreviewRidesInTheQrCode() {
-        val inv = LinkInvite('d', LinkInvites.fingerprint("k"), LinkInvites.newToken())
+    fun theSideThatShowedAManualCodeWithdrawsItOnANo() {
+        links.myName = "Alex"
+        val l = links.invite(File(dir, "People/Jess").apply { mkdirs() }.path)
+        val inv = links.invitation(l)!!.first
+        Handshake.decline(FileFolder(File(dir, "People/Jess")), inv.token)
+        assertEquals(listOf("Jess"), Handshake.withdrawDeclined(ctx))
+        assertTrue("withdrawn", links.all.isEmpty())
+    }
+
+    @Test
+    fun aPreviewOnlyOpensWithItsCode() {
+        val token = LinkInvites.newToken()
+        val p = ConnectPreview(name = "Alex", device = "Pixel", sample = listOf("Morning pills"), count = 2)
+        assertEquals(p, Handshake.open(token, Handshake.seal(token, p)))
+        assertNull(Handshake.open(LinkInvites.newToken(), Handshake.seal(token, p)))
+    }
+
+    @Test
+    fun whatThisSideShows() {
         val p = ConnectPreview.of(ctx, 'd')
         assertEquals(4, p.count)
         assertEquals(listOf("Morning pills", "Baste the turkey", "Evening walk"), p.sample)
-        val (raw, back) = ConnectPreview.split(ConnectPreview.withPreview(inv.qr, p))
-        assertEquals(inv.qr, raw)
-        assertEquals(p, back)
-        assertEquals(inv.code, LinkInvite.parse(raw)!!.code)
-        // A person's code shows no check-ins: nothing is shared yet.
+        assertEquals(p, ConnectPreview.decode(p.encode()))
+        // A person's shows no check-ins: nothing is shared yet.
         assertTrue(ConnectPreview.of(ctx, 'c').sample.isEmpty())
-        // Without one, just the code.
-        assertEquals(inv.qr to null, ConnectPreview.split(inv.qr))
     }
 }

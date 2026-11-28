@@ -8,8 +8,8 @@ import org.json.JSONObject
  * What a connection code says about the side that showed it, so the side scanning it can check
  * it's connecting to the right device, the right way, before anything is saved: who (their
  * name, their device's), how (automatic or manual), what for (your devices, or a person) and, for
- * your own devices, a few of the check-ins and tasks there. It rides in the QR code beside the
- * invite ([withPreview], [split]); a typed code has none.
+ * your own devices, a few of the check-ins and tasks there. It goes through [Handshake] before
+ * the connection is made, not in the QR code.
  */
 data class ConnectPreview(
     /** Their name (a person), or the owner's (your devices). */
@@ -55,18 +55,5 @@ data class ConnectPreview(
                 .map { it.name.trim().let { n -> if (n.length > NAME_MAX) n.take(NAME_MAX - 1) + "…" else n } }
             return ConnectPreview(name = me, device = device, sample = shown, count = all.size)
         }
-
-        /** [qr] with [preview] after it ("<qr>~<preview>"). */
-        fun withPreview(qr: String, preview: ConnectPreview): String = qr + SEP + preview.encode()
-
-        /** A scanned code and the preview riding with it, if any. */
-        fun split(text: String): Pair<String, ConnectPreview?> {
-            val t = text.trim()
-            val i = t.indexOf(SEP)
-            return if (i < 0) t to null else t.substring(0, i) to decode(t.substring(i + 1))
-        }
-
-        /** Not in either code (letters, digits, ':' and '-' only) or in URL-safe base64. */
-        private const val SEP = '~'
     }
 }
