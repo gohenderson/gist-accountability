@@ -557,7 +557,8 @@ code, the other scans it.
 - **With someone else:** ☰ → Connections → Easy Connect → **Show a code** (say who it's
   for) on one phone and **Scan a code** on the other.
 - **Asked once:** access to the Gist folder, and **All files access**, which Syncthing needs
-  to reach the folders in it by their path. Gist uses it only for its folders in Gist.
+  to reach the folders in it by their path (on Android 10, which doesn't have All files
+  access, the storage permission instead). Gist uses it only for its folders in Gist.
 - **Network access:** some phones can turn the network off for one app (GrapheneOS's
   **Network** permission, a firewall app). Easy Connect needs it on for Gist; if it's off,
   Gist says so and opens Gist's App info, where you allow it.

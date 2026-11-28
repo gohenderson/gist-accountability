@@ -276,7 +276,13 @@ class ConnectionsActivity : BaseActivity() {
             return
         }
         if (!SyncthingEngine.shared(this).networkAllowed()) return networkBlocked()
-        if (!EasyConnect.canReachFiles()) {
+        if (!EasyConnect.canReachFiles(this) && android.os.Build.VERSION.SDK_INT < 30) {
+            // Android 10: no All files access; the storage permission (legacy storage) instead.
+            afterStorage = then
+            requestPermissions(EasyConnect.LEGACY_STORAGE, REQ_STORAGE)
+            return
+        }
+        if (!EasyConnect.canReachFiles(this)) {
             AlertDialog.Builder(this)
                 .setTitle("Allow All files access")
                 .setMessage("Syncthing, built into Gist, reaches the folders in your ${GistRoot.NAME} folder by their path, " +
@@ -290,6 +296,18 @@ class ConnectionsActivity : BaseActivity() {
             return
         }
         then()
+    }
+
+    /** What to do once Android 10's storage permission is allowed. */
+    private var afterStorage: (() -> Unit)? = null
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_STORAGE) return
+        val then = afterStorage
+        afterStorage = null
+        if (EasyConnect.canReachFiles(this)) then?.invoke()
+        else toast("Easy Connect needs storage access, for Syncthing to reach your ${GistRoot.NAME} folder.")
     }
 
     /** Easy Connect couldn't start: why, and what to do about it if we know. */
@@ -736,6 +754,7 @@ class ConnectionsActivity : BaseActivity() {
         private const val REQ_SCAN_DEVICES = 26
         private const val STATE_AFTER = "afterAccess"
         private const val REQ_ACCESS = 28
+        private const val REQ_STORAGE = 29
         private const val REQ_SCAN_EASY = 29
         private const val AFTER_INVITE = "invite"
         private const val AFTER_DEVICES = "devices"

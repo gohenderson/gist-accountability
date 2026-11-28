@@ -216,6 +216,16 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Lint's other findings are a report, but a call the oldest Android (minSdk) doesn't have
+      # crashes there (Easy Connect on Android 10 did), so these fail the build.
+      - name: No calls newer than minSdk
+        run: |
+          report=android/app/build/reports/lint-results-debug.txt
+          if grep -E ': Error: .*\[NewApi\]$' "$report"; then
+            echo "::error title=Lint NewApi::A call needs a newer Android than minSdk: guard it with Build.VERSION.SDK_INT"
+            exit 1
+          fi
+
       - name: Upload debug APK
 
         continue-on-error: true   # a storage hiccup shouldn't fail the run
