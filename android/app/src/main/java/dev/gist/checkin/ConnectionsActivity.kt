@@ -729,6 +729,21 @@ class ConnectionsActivity : BaseActivity() {
         }.start()
     }
 
+    private fun confirmRemoveDevice(devices: Devices, side: String, name: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove $name?")
+            .setMessage("It stops getting your changes, and your devices switch to a new key it doesn't have, so it " +
+                "can't read anything synced from now on. Use this for a device that's lost or that you can't open; " +
+                "on one you have, tap Stop syncing there instead. What's already on it stays on it.")
+            .setPositiveButton("Remove") { _, _ ->
+                devices.remove(side)
+                render()
+                Devices.syncInBackground(this) { render() }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** A person's connection: its code to compare, what's in its folder, and what you can do with it. */
     private fun linkDetails(l: Link) {
         var dialog: AlertDialog? = null
