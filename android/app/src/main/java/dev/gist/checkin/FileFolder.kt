@@ -2,7 +2,7 @@ package dev.gist.checkin
 
 import java.io.File
 
-/** A plain folder on disk, standing in for a picked one in tests. */
+/** A folder on the phone's storage, reached by path: the Gist folder's ([GistRoot]), or a plain one in tests. */
 class FileFolder(private val root: File) : LinkFolder {
     private val base = root.canonicalFile
 

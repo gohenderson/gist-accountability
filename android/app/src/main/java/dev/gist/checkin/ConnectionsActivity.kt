@@ -27,21 +27,29 @@ class ConnectionsActivity : BaseActivity() {
     private lateinit var links: Connections
     /** What to do once access to the Gist folder is allowed: [AFTER_INVITE] or [AFTER_DEVICES]. */
     private var afterAccess: String? = null
+    /** Sent to Android's All files access page: carry on when back, if it was allowed. */
+    private var askedAccess = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         links = Connections(this)
         afterAccess = savedInstanceState?.getString(STATE_AFTER)
+        askedAccess = savedInstanceState?.getBoolean(STATE_ASKED) == true
         render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_AFTER, afterAccess)
+        outState.putBoolean(STATE_ASKED, askedAccess)
     }
 
     override fun onResume() {
         super.onResume()
+        if (askedAccess) {
+            askedAccess = false
+            if (GistRoot.canReach(this)) accessAllowed() else afterAccess = null
+        }
         tryWaiting(quiet = true)
         render()
         Connections.syncInBackground(this) { render() }
@@ -142,14 +150,17 @@ class ConnectionsActivity : BaseActivity() {
         add(sectionTitle("Your Gist folder"))
         val root = gf.root
         if (root == null) {
+            val problem = GistRoot.problem(this@ConnectionsActivity)
             add(label("Gist syncs through folders in a folder named ${GistRoot.NAME} at the top of your phone's storage, " +
-                "where the app you share folders with can reach them too. Android needs you to allow access to it once; " +
-                "Gist makes everything inside it, for every profile.", 15f), dp(6))
-            add(muted("If it isn't there yet: in the picker, make a new folder named ${GistRoot.NAME} at the top of your " +
-                "storage and open it. Then tap Use this folder, and Allow.", 13f), dp(6))
-            add(primaryButton("Allow access to the ${GistRoot.NAME} folder…") { requestAccess() }.apply { tag = "gist-folder-allow" }, dp(10))
+                "where Easy Connect and any app you share folders with can reach them too. Android calls that All " +
+                "files access: allow it once and Gist makes the folder and everything inside it, for every profile.", 15f), dp(6))
+            if (problem != null) add(label(problem, 14f, color = colorBad).apply { tag = "gist-folder-problem" }, dp(6))
+            else add(muted("On GrapheneOS, Storage Scopes can limit Gist to the ${GistRoot.NAME} folder.", 13f), dp(6))
+            add(primaryButton(if (problem != null) "Try again" else "Allow access to the ${GistRoot.NAME} folder…") {
+                if (problem != null) render() else requestAccess()
+            }.apply { tag = "gist-folder-allow" }, dp(10))
         } else {
-            val shown = if (root.startsWith("content://")) GistRoot.pathOf(root).removePrefix("/storage/emulated/0/") else root
+            val shown = root.removePrefix(GistRoot.storage.path + "/")
             add(label(shown, 15f).apply { tag = "gist-folder" }, dp(6))
             add(muted("My devices: share it with your other devices. People: one folder per connection, " +
                 "each shared with that person only.", 13f), dp(4))
@@ -268,46 +279,14 @@ class ConnectionsActivity : BaseActivity() {
     /** The last status line from Syncthing (read off the main thread). */
     private var easyStatus: String? = null
 
-    /** Access to the Gist folder, and All files access for Syncthing; then [then]. */
+    /** Access to the Gist folder (which Syncthing reaches by path too) and the network; then [then]. */
     private fun easyReady(then: () -> Unit) {
         if (GistFolder(this).root == null) {
-            toast("First allow access to the ${GistRoot.NAME} folder.")
             requestAccess()
             return
         }
         if (!SyncthingEngine.shared(this).networkAllowed()) return networkBlocked()
-        if (!EasyConnect.canReachFiles(this) && android.os.Build.VERSION.SDK_INT < 30) {
-            // Android 10: no All files access; the storage permission (legacy storage) instead.
-            afterStorage = then
-            requestPermissions(EasyConnect.LEGACY_STORAGE, REQ_STORAGE)
-            return
-        }
-        if (!EasyConnect.canReachFiles(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Allow All files access")
-                .setMessage("Syncthing, built into Gist, reaches the folders in your ${GistRoot.NAME} folder by their path, " +
-                    "which Android calls All files access. Gist only uses it for its folders in ${GistRoot.NAME}. " +
-                    "Turn it on for Gist, then come back and tap again.")
-                .setPositiveButton("Open settings") { _, _ ->
-                    runCatching { startActivity(EasyConnect.filesAccessIntent(this)) }
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-            return
-        }
         then()
-    }
-
-    /** What to do once Android 10's storage permission is allowed. */
-    private var afterStorage: (() -> Unit)? = null
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_STORAGE) return
-        val then = afterStorage
-        afterStorage = null
-        if (EasyConnect.canReachFiles(this)) then?.invoke()
-        else toast("Easy Connect needs storage access, for Syncthing to reach your ${GistRoot.NAME} folder.")
     }
 
     /** Easy Connect couldn't start: why, and what to do about it if we know. */
@@ -694,15 +673,59 @@ class ConnectionsActivity : BaseActivity() {
         askWhoFor()
     }
 
-    /** Asks Android for access to the Gist folder (the only folder Gist uses); then does [then]. */
-    @Suppress("DEPRECATION")
+    /**
+     * Asks Android for access to the Gist folder (All files access; Android 10's storage
+     * permission); then does [then].
+     */
     private fun requestAccess(then: String? = null) {
         afterAccess = then
-        try {
-            startActivityForResult(GistRoot.pickIntent(), REQ_ACCESS)
-        } catch (e: android.content.ActivityNotFoundException) {
-            toast("This phone has no folder picker, so Gist can't get access to the ${GistRoot.NAME} folder.")
+        if (GistRoot.canReach(this)) {
+            // Allowed, but there's no Gist folder: say why.
+            render()
+            GistRoot.problem(this)?.let { toast(it) }
+            return
         }
+        if (android.os.Build.VERSION.SDK_INT < 30) {
+            requestPermissions(GistRoot.LEGACY_STORAGE, REQ_STORAGE)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Allow All files access")
+            .setMessage("Gist keeps its folders in ${GistRoot.NAME} at the top of your storage, and reaches them by " +
+                "path, as Easy Connect (Syncthing) and other apps do. Android calls that All files access. Gist only " +
+                "uses its ${GistRoot.NAME} folder (on GrapheneOS, Storage Scopes can hold it to just that).\n\n" +
+                "Turn on Allow access to manage all files, then come back.")
+            .setPositiveButton("Open settings") { _, _ ->
+                askedAccess = true
+                runCatching { startActivity(GistRoot.accessIntent(this)) }.onFailure { askedAccess = false }
+            }
+            .setNegativeButton("Cancel") { _, _ -> afterAccess = null }
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_STORAGE) return
+        if (GistRoot.canReach(this)) accessAllowed()
+        else {
+            afterAccess = null
+            toast("Gist needs storage access to reach your ${GistRoot.NAME} folder.")
+        }
+    }
+
+    /** Access to the Gist folder was just allowed: carry on with what asked for it. */
+    private fun accessAllowed() {
+        val then = afterAccess
+        afterAccess = null
+        tryWaiting(quiet = true)
+        render()
+        GistRoot.problem(this)?.let { return toast(it) }
+        when (then) {
+            AFTER_INVITE -> invite()
+            AFTER_DEVICES -> setUpDevices()
+        }
+        Connections.syncInBackground(this) { render() }
+        Devices.syncInBackground(this) { render() }
     }
 
     @Deprecated("Platform Activity API")
@@ -719,32 +742,6 @@ class ConnectionsActivity : BaseActivity() {
             if (resultCode == RESULT_OK && code != null) gotInvite(if (requestCode == REQ_SCAN_JOIN) 'c' else 'd', code)
             return
         }
-        if (requestCode != REQ_ACCESS) return
-        val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) {
-            afterAccess = null
-            return
-        }
-        if (!GistRoot.allow(this, uri)) {
-            AlertDialog.Builder(this)
-                .setTitle("That's not the ${GistRoot.NAME} folder")
-                .setMessage("Gist only uses ${GistRoot.PATH} (any case: gist will do). Pick that folder (make it at the " +
-                    "top of your storage if it isn't there), then Use this folder.")
-                .setPositiveButton("Try again") { _, _ -> requestAccess(afterAccess) }
-                .setNegativeButton("Cancel") { _, _ -> afterAccess = null }
-                .show()
-            return
-        }
-        val then = afterAccess
-        afterAccess = null
-        tryWaiting(quiet = true)
-        render()
-        when (then) {
-            AFTER_INVITE -> invite()
-            AFTER_DEVICES -> setUpDevices()
-        }
-        Connections.syncInBackground(this) { render() }
-        Devices.syncInBackground(this) { render() }
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
@@ -753,8 +750,8 @@ class ConnectionsActivity : BaseActivity() {
         private const val REQ_SCAN_JOIN = 25
         private const val REQ_SCAN_DEVICES = 26
         private const val STATE_AFTER = "afterAccess"
-        private const val REQ_ACCESS = 28
-        private const val REQ_STORAGE = 29
+        private const val STATE_ASKED = "askedAccess"
+        private const val REQ_STORAGE = 31
         private const val REQ_SCAN_EASY = 29
         private const val AFTER_INVITE = "invite"
         private const val AFTER_DEVICES = "devices"

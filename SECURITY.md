@@ -36,9 +36,13 @@ Gist is designed to have as little to protect as possible:
 - **Two dependencies**, both small, open-source and pure Java: ZXing core and SnakeYAML
   Engine. Backups are parsed as plain data only.
 - **Syncthing** (Easy Connect) is built by CI from Syncthing's own source, at the release
-  tag in `android/syncthing.version`, and runs as its own process. It needs **All files
-  access** to reach the folders in the Gist folder by path; Gist asks for it only when you
-  use Easy Connect.
+  tag in `android/syncthing.version`, and runs as its own process.
+- **All files access.** Gist and Syncthing reach the Gist folder
+  (`/storage/emulated/0/Gist`) by path, so other apps can share it too, which Android
+  only allows with All files access (Android 10: the storage permission). Gist asks for it
+  on the Connections page, only when you sync, and reads and writes only inside the Gist
+  folder (paths from connections are checked so they can't leave their folder). On
+  GrapheneOS, Storage Scopes can limit Gist to the Gist folder.
 
 ## Automated checks
 

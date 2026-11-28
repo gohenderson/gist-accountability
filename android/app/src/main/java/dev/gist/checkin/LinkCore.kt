@@ -55,10 +55,13 @@ interface LinkFolder {
 
     companion object {
         /**
-         * A folder picked with the folder picker ("content://…"), or a folder inside one
-         * ("content://…#People/Jess": see [GistFolder]).
+         * A folder by its path ("/storage/emulated/0/Gist/…": see [GistFolder]), or one picked
+         * with the folder picker ("content://…", or "content://…#People/Jess" inside one).
          */
         fun open(context: Context, location: String): LinkFolder {
+            if (location.startsWith("/")) return FileFolder(java.io.File(location))
+            // In the Gist folder, as it was reached with the folder picker: by its path now.
+            GistRoot.pathOfTree(location)?.let { return FileFolder(java.io.File(it)) }
             val base = location.substringBefore('#')
             val sub = location.substringAfter('#', "")
             require(base.startsWith("content://")) { "Not a folder picked for a connection" }
