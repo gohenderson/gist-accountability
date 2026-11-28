@@ -233,7 +233,8 @@ class InvitesTest {
         val link = links.invite(dir.path)
         val code = links.invitation(link)!!.first.code
         ActivityScenario.launch<ConnectionsActivity>(ConnectionsActivity.intent(TestEnv.ctx)).use {
-            onView(withTagValue(`is`("link-invite:${link.id}"))).perform(scrollTo(), click())
+            onView(withTagValue(`is`("link:${link.id}"))).perform(scrollTo(), click())
+            onView(withText("Show the code")).inRoot(isDialog()).perform(click())
             onView(withTagValue(`is`("invite-code"))).inRoot(isDialog()).check(matches(withText(code)))
             onView(withTagValue(`is`("invite-qr"))).inRoot(isDialog()).check(matches(isDisplayed()))
             onView(withText("Done")).inRoot(isDialog()).perform(click())

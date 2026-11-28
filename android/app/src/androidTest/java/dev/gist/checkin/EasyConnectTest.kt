@@ -106,4 +106,78 @@ class EasyConnectTest {
             .let { assertEquals("""{"from": "b"}""", it) }
         Log.i("EasyConnectTest", "connected and synced both ways in ${System.currentTimeMillis() - t0} ms")
     }
+
+    /** A shows a code; B scans it: they meet in a setup folder, and nothing else, until B answers. */
+    private fun meet(): Triple<EasyConnect.Code, File, File> {
+        a.start()
+        b.start()
+        val portA = local(a)
+        local(b)
+        val idA = a.deviceId()
+        val idB = b.deviceId()
+        val token = LinkInvites.newToken()
+        val tag = EasyConnect.tag(token)
+        val setup = EasyConnect.setupId(tag)
+        val folder = EasyConnect.folderId("testgroup")
+        val dirA = File(root, "a-setup")
+        val dirB = File(root, "b-setup")
+        // A: My devices (shared with nobody), the setup folder with what it is, and the open code.
+        EasyConnect.offerFolder(a, folder, "Gist · My devices", File(root, "a-gist/My devices").path)
+        EasyConnect.makeSetup(a, dirA, setup, ConnectPreview(name = "Alex", device = "Alex's phone",
+            sample = listOf("Morning pills", "Baste the turkey"), count = 5))
+        Profiles.prefs(ctx, "gist-easy").edit().clear().commit()
+        EasyConnect.addOffer(ctx, tag, folder, System.currentTimeMillis() + LinkInvites.VALID_MS, setup, 'd')
+        // B reaches A with the setup folder only.
+        val code = EasyConnect.Code(LinkInvite('d', LinkInvites.fingerprint("a-key"), token), idA, folder)
+        EasyConnect.reach(b, code, dirB, addresses = listOf("tcp://127.0.0.1:$portA"))
+        eventually(60_000, "A lets B in") {
+            EasyConnect.tickOffers(ctx, a) { dirA }
+            idB.takeIf { it in a.devices() }
+        }
+        assertTrue("B gets the setup folder, not My devices", idB !in a.folderDevices()[folder].orEmpty())
+        val p = eventually(90_000, "A's preview on B") { EasyConnect.previewIn(dirB) }
+        assertEquals("Alex's phone", p.device)
+        assertEquals(listOf("Morning pills", "Baste the turkey"), p.sample)
+        assertEquals(5, p.count)
+        return Triple(code, dirA, dirB)
+    }
+
+    @Test
+    fun noWithdrawsTheCodeOnTheOtherDevice() {
+        assumeTrue("this build has no Syncthing", a.available)
+        val (code, dirA, dirB) = meet()
+        val idB = b.deviceId()
+        val t = Thread { EasyConnect.answer(b, code, dirB, yes = false, waitMs = 60_000) {} }
+        t.start()
+        val result = eventually(90_000, "A hears no") {
+            EasyConnect.tickOffers(ctx, a) { dirA }
+            EasyConnect.takeResult(ctx, code.folderId)
+        }
+        assertEquals("no", result)
+        t.join(90_000)
+        assertTrue("A forgot B", idB !in a.devices())
+        assertTrue("A's setup folder is gone", !dirA.exists() && a.folder(EasyConnect.setupId(EasyConnect.tag(code.invite.token))) == null)
+        assertTrue("B's too", !dirB.exists())
+        assertTrue("B forgot A", code.deviceId !in b.devices())
+        assertTrue("never shared My devices", idB !in a.folderDevices()[code.folderId].orEmpty())
+    }
+
+    @Test
+    fun yesSharesTheRealFolder() {
+        assumeTrue("this build has no Syncthing", a.available)
+        val (code, dirA, dirB) = meet()
+        val idB = b.deviceId()
+        var joined = false
+        val t = Thread { EasyConnect.answer(b, code, dirB, yes = true, waitMs = 60_000) { joined = true } }
+        t.start()
+        val result = eventually(90_000, "A hears yes") {
+            EasyConnect.tickOffers(ctx, a) { dirA }
+            EasyConnect.takeResult(ctx, code.folderId)
+        }
+        assertEquals("yes", result)
+        t.join(90_000)
+        assertTrue(joined)
+        assertTrue("My devices shared with B now", idB in a.folderDevices()[code.folderId].orEmpty())
+        assertTrue("setup folder gone", !dirA.exists())
+    }
 }

@@ -462,16 +462,29 @@ they see what you share, but only you can change it, and the other way round.
   can hold it to just that (add the Gist folder there). A profile's folder is named when it's first
   needed and keeps its name if you rename the profile (the app you share folders with
   points there). Don't share a profile's folder itself; share each folder in it.
-- **☰ → Connections.** Add **your name** (what they see). One side taps **Invite…**
-  and says who it's for: Gist makes People/Jess and shows an **invite**, a QR code with a
-  code under it (like `AFYW-…`). Share People/Jess with them. The other taps
-  **Join…** and **scans** the QR code (or taps **Type the code**, for a device without a
-  camera). Gist finds their folder under People once it has arrived; until then
-  it says it's waiting, and joins by itself as soon as it's there. Share it into People
-  in your profile's folder.
-- **The invite is the key to the door.** It never goes in the folder, so someone who can
+- **☰ → Connections** lists every connection, your devices and people alike, each with
+  who it's with and its kind (**Your device** or **Person**, **Automatic** or
+  **Manual**). Tap one for its code to compare and what you can do with it.
+- **+ New connection** walks you through it: **It's my device** or **Another person**;
+  **Create the connection** (this phone shows a code) or **Connect to** theirs (this phone
+  scans it); and, creating, an **Automatic connection** (Gist keeps the two in step
+  itself: see [automatic connections](#easy-connect)) or a **Manual connection** (through
+  a folder you share yourself, with any app). For a person, Gist asks who it's with and
+  makes People/Jess for it. A manual code also has a code to type under the QR code (like
+  `AFYW-…`), for a device without a camera.
+- **Check before connecting.** Before anything is saved, the phone that scans (or types)
+  the code shows who it's connecting to (their name and device), how (automatic or
+  manual), what you'll be able to change and, for your own devices, a few of the
+  check-ins and tasks there. That comes from the other phone itself: for an automatic
+  connection, through a small setup link between the two (nothing else goes through it),
+  a few seconds after scanning; for a manual one, from the connection's folder once it has
+  arrived, encrypted so only someone with the code can read it. **Not this one** saves
+  nothing and tells the other phone, which withdraws its code: at once for an automatic
+  connection, or when its folder catches up for a manual one. **Cancel the code**, on the
+  phone showing it, withdraws it straight away too (it also runs out after 15 minutes).
+- **The code is the key to the door.** It never goes in the folder, so someone who can
   see the folder but not your screen can't join. It works **once**, for **15 minutes**;
-  **Show the invite** (on a connection still waiting) shows it again, or a new one if it
+  **Show the code** (on a connection still waiting) shows it again, or a new one if it
   ran out. Pass it in person or over a channel you trust, not through the shared folder.
   Both phones then show the same **code** (like `4F7A-91C2`), which you can still compare.
 - **Between phones** the folders have to be kept in step: by [Easy Connect](#easy-connect),
@@ -500,23 +513,21 @@ they see what you share, but only you can change it, and the other way round.
 
 ### Your devices
 
-**☰ → Connections → Your devices** keeps everything on your phone and tablet (say)
-in step: check-ins, tasks and answers. **Set up…** on one: Gist makes **My devices** in your
-Gist folder; share it with your other devices (into their Gist folders, as My
-devices). Then, for each of the others: tap **Add a device…** on one that's in, which shows
-an invite (a QR code and a code to type, good once for 15 minutes); on the new one tap
-**Join…** and scan or type it; Gist finds My devices by itself (waiting for it if
-it hasn't arrived yet). The new
-device waits to be let in until Gist opens on the one that showed the invite; only that
-device lets it in, and the new one takes the shared key only from it. Each pair then shows
-the same code.
+**Your devices** keeps everything on your phone and tablet (say) in step: check-ins, tasks
+and answers. On one: ☰ → Connections → **+ New connection** → **It's my device** →
+**Create the connection**; Gist makes **My devices** in your Gist folder (for a manual
+connection, share it with your other device yourself) and shows a code. On the other:
+**+ New connection** → **It's my device** → **Connect to my other device's**, scan it and
+confirm. The new device waits to be let in until Gist opens on the one that showed the
+code; only that device lets it in, and the new one takes the shared key only from it.
+Each pair then shows the same code.
 
 - **Edit on any.** The later edit of a check-in wins, and a delete reaches them all (unless
   it's been changed since).
 - **Answer once.** Answering (or dismissing or skipping) on one counts on all: once the
   others hear, they stop waiting and ringing for it. An alarm screen checks every 20
   seconds; other times, devices catch up when Gist is opened.
-- **Ring on this device** (on the same page) turns ringing off for one device: check-ins
+- **Ring on this device** (under This device on the Connections page) turns ringing off for one device: check-ins
   then remind quietly there and wait on the start page, where you can still **Check in**
   or **Dismiss** them.
 - **Your list and settings.** Dragging check-ins or groups into a new order, folding a
@@ -530,10 +541,10 @@ the same code.
   folder once, encrypted, so it's copied between devices once; a device that gets the change
   before the file waits for it. They're as big as Gist lets them be anywhere: photos are
   shrunk when you pick them, and videos and clips have a size limit.
-- **Stopping or removing a device.** **Stop syncing on this device** keeps everything on it
+- **Stopping or removing a device.** **Stop syncing with your devices** (under This
+  device on the Connections page) keeps everything on it
   and takes its files out of the folder, so your other devices stop listing it. For a
-  device that's lost or that you can't open, tap **Remove** next to it on any of your
-  others: your devices switch to a new key it doesn't have, so it can't read anything
+  device that's lost or that you can't open, tap it on any of your others and **Remove**: your devices switch to a new key it doesn't have, so it can't read anything
   synced from then on (what's already on it stays on it).
 - **Connections with other people.** Each connection is **kept on** one of your devices,
   the one you invited or joined on: it reads what they share and shares for you. Your
@@ -549,27 +560,24 @@ the same code.
 
 ### Easy Connect
 
-**Easy Connect** does the folder sharing for you, with [Syncthing](https://syncthing.net)
-built into Gist: nothing else to install, no folders to share by hand. One phone shows a
-code, the other scans it.
+An **automatic connection** does the folder sharing for you, with
+[Syncthing](https://syncthing.net) built into Gist: nothing else to install, no folders to
+share by hand. Pick **Automatic connection** when you create one (above); the other phone
+scans the code as usual.
 
-- **With your own devices:** ☰ → Connections → Your devices → **Show a code** on the one
-  that's set up (it sets up My devices first if needed), then **Scan a code** on the new one.
-- **With someone else:** ☰ → Connections → Easy Connect → **Show a code** (say who it's
-  for) on one phone and **Scan a code** on the other.
 - **Asked once:** access to the Gist folder (All files access, above), if it isn't allowed
   yet. Syncthing reaches the folders in it by their path too.
 - **Network access:** some phones can turn the network off for one app (GrapheneOS's
-  **Network** permission, a firewall app). Easy Connect needs it on for Gist; if it's off,
+  **Network** permission, a firewall app). Automatic connections need it on for Gist; if it's off,
   Gist says so and opens Gist's App info, where you allow it.
 - **While it's on**, Syncthing runs in the background (a notification says so) and keeps
   the folders in step whenever both phones can reach each other, on the same Wi-Fi or over
-  the internet. **Turn off Easy Connect** stops it.
+  the internet. **Turn off automatic connections** (under This device) stops it.
 - **What goes where:** only the folders you connect, only to the devices you connect them
   with, encrypted on the way. When the phones aren't on the same network, Syncthing finds
   them through its public discovery servers (which see your device's ID and address) and,
   if needed, sends the encrypted data through a relay. Gist turns off Syncthing's usage
-  and crash reports. Without Easy Connect, Gist never goes online.
+  and crash reports. Without automatic connections, Gist never goes online.
 - **Phones:** release builds include Syncthing for 64-bit phones (nearly all phones with
   Android 10+).
 - Your folders are still ordinary folders in Gist, so you can also share any of them

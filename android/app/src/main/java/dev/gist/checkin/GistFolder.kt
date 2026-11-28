@@ -59,7 +59,16 @@ class GistFolder(
      */
     var waiting: String?
         get() = prefs.getString(K_WAITING, null)
-        set(v) { prefs.edit().putString(K_WAITING, v).commit() }
+        set(v) { prefs.edit().putString(K_WAITING, v).remove(K_WAITING_OK).commit() }
+
+    /**
+     * Whether the join [waiting] was confirmed already (automatic connections confirm first,
+     * through Syncthing). A manual one is confirmed on the Connections page once its folder,
+     * with the other side's preview in it, has arrived; until then it's never joined.
+     */
+    var waitingConfirmed: Boolean
+        get() = prefs.getBoolean(K_WAITING_OK, false)
+        set(v) { prefs.edit().putBoolean(K_WAITING_OK, v).commit() }
 
     /** Where folder [sub] of the Gist folder is reached. */
     fun location(sub: String): String? = root?.let { at(it, sub) }
@@ -100,6 +109,7 @@ class GistFolder(
         private const val K_TEST_ROOT = "testRoot"
         private const val K_FOLDER = "folderName"
         private const val K_WAITING = "waiting"
+        private const val K_WAITING_OK = "waitingConfirmed"
         const val DEVICES = "My devices"
         const val PEOPLE = "People"
 

@@ -217,6 +217,10 @@ class SyncthingEngine(
     } ?: emptySet()
 
     /** Asks it to look at folder [id] now (rather than when it next notices a change). */
+    /** How much of folder [folder] device [device] has of ours, 0 to 100. */
+    fun completion(folder: String, device: String): Double =
+        JSONObject(call("GET", "/rest/db/completion?folder=$folder&device=$device")).optDouble("completion", 0.0)
+
     fun scan(id: String) {
         call("POST", "/rest/db/scan?folder=$id")
     }

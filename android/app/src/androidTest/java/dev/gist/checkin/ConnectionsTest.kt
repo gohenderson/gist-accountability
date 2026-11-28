@@ -264,10 +264,12 @@ class ConnectionsTest {
         val link = connectedTo(TestEnv.checkin("hc", "Her morning"))
         TestEnv.store.updateCheckin("c") { it.copy(sharedWith = setOf(link.id)) }
         ActivityScenario.launch<ConnectionsActivity>(ConnectionsActivity.intent(TestEnv.ctx)).use {
-            onView(tagged("link-name:${link.id}")).check(matches(withText("Jess")))
-            onView(tagged("link-code:${link.id}")).check(matches(withText(org.hamcrest.Matchers.startsWith("Code ${link.code}"))))
-            onView(tagged("link-counts:${link.id}")).check(matches(withText("You share 1 item · they share 1 item")))
-            onView(tagged("link-shown:${link.id}")).perform(scrollTo(), click())
+            onView(tagged("link:${link.id}:name")).check(matches(withText("Jess")))
+            onView(tagged("link:${link.id}:type")).check(matches(withText("Person · Manual")))
+            onView(tagged("link:${link.id}:extra")).check(matches(withText("You share 1 item · they share 1 item")))
+            onView(tagged("link:${link.id}")).perform(scrollTo(), click())
+            onView(tagged("link-code:${link.id}")).inRoot(isDialog()).check(matches(withText(org.hamcrest.Matchers.startsWith("Code ${link.code}"))))
+            onView(tagged("link-shown:${link.id}")).inRoot(isDialog()).perform(click())
         }
         assertFalse(links.get(link.id)!!.shown)
     }

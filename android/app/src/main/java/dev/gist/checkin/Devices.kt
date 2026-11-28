@@ -104,6 +104,19 @@ class Devices(
         return LinkInvite('d', LinkInvites.fingerprint(pub), unb64.decode(token)) to expires
     }
 
+    /** The invite shown now, if it's still open (without making one). */
+    fun openInvitation(now: Long = System.currentTimeMillis()): LinkInvite? {
+        val pub = publicKey ?: return null
+        val token = prefs.getString(K_INV_TOKEN, null) ?: return null
+        if (prefs.getLong(K_INV_EXPIRES, 0) < now) return null
+        return LinkInvite('d', LinkInvites.fingerprint(pub), unb64.decode(token))
+    }
+
+    /** Withdraws the invite shown now: nobody can join with it any more. */
+    fun cancelInvitation() {
+        prefs.edit().remove(K_INV_TOKEN).remove(K_INV_EXPIRES).commit()
+    }
+
     /** Why a join didn't work. */
     enum class JoinProblem { NOT_DEVICES, NOT_THEIR_INVITE }
 

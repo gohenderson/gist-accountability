@@ -98,7 +98,7 @@ class SettingsActivity : BaseActivity() {
         val engine = SyncthingEngine.shared(this@SettingsActivity)
         add(sectionTitle("Syncthing (debug)"))
         add(label("Debug builds only: checks Gist's Syncthing starts, answers and stops on this phone. " +
-            "Easy Connect itself is in Connections.", 15f), dp(6))
+            "Automatic connections are made in Connections.", 15f), dp(6))
         val status = muted(syncthingStatus ?: if (engine.running) "Running" else "Stopped", 13f).apply {
             tag = "syncthing-status"
             setTextIsSelectable(true)
